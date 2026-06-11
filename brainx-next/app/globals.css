@@ -267,3 +267,173 @@ html.light .aurora b {
     animation: none !important;
   }
 }
+
+/* ── TipTap Editor ─────────────────────────────────── */
+.tiptap-content .ProseMirror {
+  outline: none;
+  min-height: 280px;
+}
+
+/* Light-mode variant — Notion-style clean look */
+.tiptap-content--light .ProseMirror p,
+.tiptap-content--light .ProseMirror li {
+  color: #475569;
+  line-height: 1.85;
+}
+
+.tiptap-content--light .ProseMirror h1,
+.tiptap-content--light .ProseMirror h2,
+.tiptap-content--light .ProseMirror h3 {
+  color: #0f172a;
+}
+
+.tiptap-content--light .ProseMirror strong {
+  color: #0f172a;
+}
+
+.tiptap-content--light .ProseMirror blockquote {
+  border-left-color: #2563eb;
+  color: #64748b;
+}
+
+/* Placeholder in light mode */
+.tiptap-content--light .ProseMirror .is-editor-empty::before {
+  color: #94a3b8;
+}
+
+.tiptap-content .ProseMirror > * + * {
+  margin-top: 0.5em;
+}
+
+.tiptap-content .ProseMirror p {
+  line-height: 1.75;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-content .ProseMirror h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  margin-top: 1.25em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-content .ProseMirror h2 {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin-top: 1em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-content .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 0.875em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-content .ProseMirror ul,
+.tiptap-content .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap-content .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tiptap-content .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tiptap-content .ProseMirror li {
+  line-height: 1.7;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-content .ProseMirror strong {
+  font-weight: 700;
+  color: rgb(var(--txt));
+}
+
+.tiptap-content .ProseMirror em {
+  font-style: italic;
+}
+
+.tiptap-content .ProseMirror blockquote {
+  border-left: 3px solid rgb(var(--primary) / 0.6);
+  padding-left: 1em;
+  margin: 0.75em 0;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-content .ProseMirror code {
+  background: rgb(var(--surface2));
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.875em;
+}
+
+.tiptap-content .ProseMirror pre {
+  background: rgb(var(--surface2));
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.875em;
+}
+
+.tiptap-content .ProseMirror .is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--txt3));
+  pointer-events: none;
+  height: 0;
+}
+
+/* BlockNote — light mode: clean white surface (Notion-like) */
+html.light .bn-root[data-color-scheme=light] {
+  --bn-colors-editor-background: #ffffff;
+  --bn-colors-menu-background: #ffffff;
+  --bn-colors-tooltip-background: #f8fafc;
+  --bn-colors-hovered-background: #f1f5f9;
+  --bn-colors-selected-background: #dbeafe;
+  --bn-colors-border: #e2e8f0;
+  --bn-colors-editor-text: #0f172a;
+  --bn-colors-menu-text: #0f172a;
+  --bn-colors-side-menu: #94a3b8;
+}
+
+/* BlockNote — force dark/light surface to match BrainX */
+.bn-container[data-color-scheme] {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-background: rgb(var(--surface));
+  --bn-colors-tooltip-background: rgb(var(--surface2));
+  --bn-colors-hovered-background: rgb(var(--surface2));
+  --bn-colors-selected-background: rgb(var(--primary) / 0.15);
+  --bn-colors-border: rgb(var(--border));
+  --bn-colors-editor-text: rgb(var(--txt));
+  --bn-colors-menu-text: rgb(var(--txt));
+  --bn-colors-tooltip-text: rgb(var(--txt2));
+}
+
+/*
+ * BlockNote font-size override.
+ *
+ * WHY: BlockNote's bundled CSS sets `.bn-default-styles { font-size: 16px }`
+ * with a hardcoded pixel value directly on the editor's root element.
+ * Because this explicit declaration lives *inside* the shadow of BlockNote's
+ * component tree, a Tailwind text-sm / text-base class on a parent wrapper
+ * cannot override it — CSS inheritance is broken by the explicit value.
+ *
+ * FIX: We place a `data-bn-fontsize` attribute on our wrapper div and set a
+ * CSS custom property `--bn-fs` on it.  The rule below has higher specificity
+ * ([attr + class] beats [class]) and uses !important, so it reliably wins.
+ * Heading em-units (3em / 2em / 1.3em) are relative to .bn-default-styles,
+ * so they scale proportionally for free.
+ */
+[data-bn-fontsize] .bn-default-styles,
+[data-bn-fontsize] .bn-editor {
+  font-size: var(--bn-fs, 16px) !important;
+  transition: font-size 0.15s ease;
+}
