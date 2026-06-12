@@ -17,6 +17,20 @@ const TipTapCodeEditor = dynamic(
   }
 );
 
+const ShikiComparison = dynamic(
+  () => import("@/components/editor/ShikiComparison"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-3 animate-pulse">
+        <div className="h-8 rounded-xl bg-surface2/60 w-48" />
+        <div className="h-10 rounded-xl bg-surface2/60" />
+        <div className="h-72 rounded-xl bg-surface2/60" />
+      </div>
+    ),
+  }
+);
+
 export default function TipTapCodeTestPage() {
   return (
     <div className="min-h-screen bg-bg text-txt" data-route>
@@ -46,7 +60,18 @@ export default function TipTapCodeTestPage() {
           </p>
         </div>
 
+        {/* Existing TipTap code editor */}
         <TipTapCodeEditor />
+
+        {/* Divider */}
+        <div className="my-10 flex items-center gap-4">
+          <div className="flex-1 h-px bg-line/30" />
+          <span className="text-[11px] text-txt3 px-2">비교 테스트</span>
+          <div className="flex-1 h-px bg-line/30" />
+        </div>
+
+        {/* Shiki comparison section */}
+        <ShikiComparison />
       </div>
     </div>
   );
