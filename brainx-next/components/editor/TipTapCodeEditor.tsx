@@ -91,7 +91,7 @@ const ALL_LANGS: LangEntry[] = LANG_GROUPS.flatMap((g) => g.langs);
 
 // ── Sample code snippets ──────────────────────────────────────────────────
 
-const SAMPLES: Record<string, string> = {
+export const SAMPLES: Record<string, string> = {
   javascript: `// Fibonacci with memoization
 function fibonacci(n, memo = {}) {
   if (n in memo) return memo[n];
