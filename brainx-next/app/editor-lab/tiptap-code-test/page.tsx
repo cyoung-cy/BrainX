@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { cx } from "@/lib/utils";
 
 const TipTapCodeEditor = dynamic(
   () => import("@/components/editor/TipTapCodeEditor"),
@@ -31,12 +33,16 @@ const ShikiComparison = dynamic(
   }
 );
 
+type Tab = "editor" | "comparison";
+
 export default function TipTapCodeTestPage() {
+  const [tab, setTab] = useState<Tab>("editor");
+
   return (
     <div className="min-h-screen bg-bg text-txt" data-route>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         {/* Header */}
-        <div className="mb-7">
+        <div className="mb-6">
           <Link
             href="/editor-lab"
             className="inline-flex items-center gap-1 text-sm text-txt3 hover:text-txt transition-colors"
@@ -52,26 +58,38 @@ export default function TipTapCodeTestPage() {
             </span>
           </div>
           <p className="text-txt3 text-sm mt-2 leading-relaxed">
-            CodeBlockLowlight + lowlight (highlight.js) 기반 ·{" "}
-            <code className="text-primary text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded">
-              ```
-            </code>{" "}
-            입력으로 코드블록 생성 · 40개 이상 언어 하이라이팅 확인
+            에디터 하이라이팅 테스트 및 Lowlight · Shiki 비교
           </p>
         </div>
 
-        {/* Existing TipTap code editor */}
-        <TipTapCodeEditor />
-
-        {/* Divider */}
-        <div className="my-10 flex items-center gap-4">
-          <div className="flex-1 h-px bg-line/30" />
-          <span className="text-[11px] text-txt3 px-2">비교 테스트</span>
-          <div className="flex-1 h-px bg-line/30" />
+        {/* Tab switcher */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl bg-surface2/40 border border-line/30 w-fit">
+          <button
+            onClick={() => setTab("editor")}
+            className={cx(
+              "px-4 py-1.5 rounded-lg text-sm font-medium transition-all",
+              tab === "editor"
+                ? "bg-primary/20 text-primary font-semibold"
+                : "text-txt3 hover:text-txt"
+            )}
+          >
+            에디터 테스트
+          </button>
+          <button
+            onClick={() => setTab("comparison")}
+            className={cx(
+              "px-4 py-1.5 rounded-lg text-sm font-medium transition-all",
+              tab === "comparison"
+                ? "bg-primary/20 text-primary font-semibold"
+                : "text-txt3 hover:text-txt"
+            )}
+          >
+            Lowlight vs Shiki 비교
+          </button>
         </div>
 
-        {/* Shiki comparison section */}
-        <ShikiComparison />
+        {/* Content */}
+        {tab === "editor" ? <TipTapCodeEditor /> : <ShikiComparison />}
       </div>
     </div>
   );
