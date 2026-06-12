@@ -134,7 +134,7 @@ export default function EditorLabPage() {
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         {/* ── Page title ──────────────────────────── */}
-        <div className="mb-6 fade-up">
+        <div className="mb-4 fade-up">
           <h1 className="text-2xl sm:text-3xl font-bold font-display text-txt mb-2">
             에디터 비교 실험실
           </h1>
@@ -142,6 +142,34 @@ export default function EditorLabPage() {
             BrainX 최종 에디터 선정을 위한 비교 페이지입니다.
             각 에디터를 직접 사용하고 개발자 경험을 평가해보세요.
           </p>
+        </div>
+
+        {/* ── Code highlight test quick link ──────── */}
+        <div className={cx(
+          "flex items-center justify-between gap-3 mb-5 px-4 py-2.5 rounded-xl border",
+          isLight
+            ? "bg-blue-50/60 border-blue-200/80"
+            : "bg-primary/5 border-primary/15"
+        )}>
+          <div className="min-w-0">
+            <p className={cx("text-xs font-semibold", isLight ? "text-blue-700" : "text-primary")}>
+              코드 하이라이팅 테스트
+            </p>
+            <p className="text-[10px] text-txt3 truncate">
+              TipTap CodeBlockLowlight · lowlight · 40+ 언어 · ``` 마크다운 단축키
+            </p>
+          </div>
+          <Link
+            href="/editor-lab/tiptap-code-test"
+            className={cx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all whitespace-nowrap",
+              isLight
+                ? "bg-white border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300"
+                : "bg-primary/15 border-primary/30 text-primary hover:bg-primary/25"
+            )}
+          >
+            바로가기 →
+          </Link>
         </div>
 
         {/* ── Status bar ──────────────────────────── */}
