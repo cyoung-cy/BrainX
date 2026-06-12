@@ -62,7 +62,7 @@ function GraphCanvas({
   timeFilter: string;
   hiddenClusters: Partial<Record<ClusterId, boolean>>;
   controls: MutableRefObject<GraphControls | null>;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -75,7 +75,7 @@ function GraphCanvas({
   const dragBgRef = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
   const dragNodeRef = useRef<string | null>(null);
   const nodeEls = useRef<Record<string, SVGGElement | null>>({});
-  const edgeEls = useRef<Array<{ el: SVGLineElement; edge: (typeof edges)[number] }>>([]);
+  const edgeEls = useRef<Array<{ el: SVGPathElement | SVGLineElement; edge: (typeof edges)[number] }>>([]);
   const raf = useRef(0);
 
   const ageRank: Record<string, number> = {
@@ -111,6 +111,7 @@ function GraphCanvas({
     const step = () => {
       const pos = positionsRef.current;
 
+      // always run repulsion for fluid Obsidian-like movement
       for (let i = 0; i < notes.length; i += 1) {
         for (let j = i + 1; j < notes.length; j += 1) {
           const a = pos[notes[i].id];
@@ -197,11 +198,29 @@ function GraphCanvas({
       edgeEls.current.forEach(({ el, edge }) => {
         const a = pos[edge.source];
         const b = pos[edge.target];
-        if (!a || !b) return;
-        el.setAttribute("x1", String(a.x));
-        el.setAttribute("y1", String(a.y));
-        el.setAttribute("x2", String(b.x));
-        el.setAttribute("y2", String(b.y));
+        if (!a || !b || !el) return;
+        // if path (bezier), update 'd'; if line, update endpoints
+        if ((el as any).tagName && (el as any).tagName.toLowerCase() === 'path') {
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 1.999;
+          const offset = Math.min(100, dist * 0.22);
+          const cx1 = mx + (dy / dist) * offset;
+          const cy1 = my - (dx / dist) * offset;
+          const cx2 = mx - (dy / dist) * offset;
+          const cy2 = my + (dx / dist) * offset;
+          const d = `M ${a.x} ${a.y} C ${cx1} ${cy1} ${cx2} ${cy2} ${b.x} ${b.y}`;
+          try { (el as SVGPathElement).setAttribute('d', d); } catch (e) {}
+        } else {
+          try {
+            (el as SVGLineElement).setAttribute('x1', String(a.x));
+            (el as SVGLineElement).setAttribute('y1', String(a.y));
+            (el as SVGLineElement).setAttribute('x2', String(b.x));
+            (el as SVGLineElement).setAttribute('y2', String(b.y));
+          } catch (e) {}
+        }
       });
 
       notes.forEach((note) => {
@@ -264,6 +283,22 @@ function GraphCanvas({
       y: (clientY - rect.top - rect.height / 2 - view.y) / view.k
     };
   };
+
+  const selColor = selectedId ? clusterById(notes.find(n => n.id === selectedId)!.cluster).color : null;
+  const direct = new Set<string>();
+  if (selectedId) {
+    edges.forEach(e => {
+      if (e.source === selectedId) direct.add(e.target);
+      if (e.target === selectedId) direct.add(e.source);
+    });
+  }
+  const secondarySet = new Set<string>();
+  if (selectedId) {
+    edges.forEach(e => {
+      if (direct.has(e.source) && e.target !== selectedId && !direct.has(e.target)) secondarySet.add(e.target);
+      if (direct.has(e.target) && e.source !== selectedId && !direct.has(e.source)) secondarySet.add(e.source);
+    });
+  }
 
   return (
     <div
@@ -328,6 +363,9 @@ function GraphCanvas({
         onPointerDown={(event) => {
           const target = (event.target as HTMLElement | null)?.closest?.("[data-node]");
           if (target) return;
+          
+          onSelect(null);
+          
           dragBgRef.current = {
             x: event.clientX,
             y: event.clientY,
@@ -344,31 +382,55 @@ function GraphCanvas({
         </defs>
         <g ref={groupRef} transform={`translate(${size.width / 2},${size.height / 2}) scale(1)`}>
           <g>
-            {edges.map((edge) => {
-              const a = positionsRef.current[edge.source];
-              const b = positionsRef.current[edge.target];
-              if (!a || !b) return null;
-              return (
-                <line
-                  key={`${edge.source}-${edge.target}`}
-                  ref={(element) => {
-                    if (element) {
-                      const existing = edgeEls.current.find((entry) => entry.edge.source === edge.source && entry.edge.target === edge.target);
-                      if (existing) existing.el = element;
-                      else edgeEls.current.push({ el: element, edge });
-                    }
-                  }}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke={edge.bridge ? "rgb(34 211 238 / 0.35)" : "rgb(148 163 184 / 0.2)"}
-                  strokeWidth={edge.bridge ? 1.6 : 1}
-                  strokeDasharray={edge.bridge ? "5 5" : "none"}
-                  className="bridge"
-                />
-              );
-            })}
+            {(() => {
+              return edges.map((edge) => {
+                const a = positionsRef.current[edge.source];
+                const b = positionsRef.current[edge.target];
+                if (!a || !b) return null;
+
+                const isPrimary = !dragNodeRef.current && selectedId && (edge.source === selectedId || edge.target === selectedId);
+                const isSecondary = !dragNodeRef.current && selectedId && !isPrimary && (direct.has(edge.source) || direct.has(edge.target));
+                let strokeColor: string;
+                let strokeW: number | string = (edge.bridge ? 1.6 : 1);
+                let dash = edge.bridge ? "5 5" : "";
+                const style: any = {};
+                if (isPrimary && selColor) {
+                  strokeColor = `rgb(${selColor})`;
+                  strokeW = 2.2;
+                  dash = "4 4";
+                } else if (isSecondary && selColor) {
+                  strokeColor = `rgb(${selColor} / 0.45)`;
+                  strokeW = 1.4;
+                  dash = "";
+                  style.opacity = 0.75;
+                } else {
+                  strokeColor = edge.bridge ? "rgb(34 211 238 / 0.35)" : "rgb(148 163 184 / 0.18)";
+                }
+
+                return (
+                  <line
+                    key={`${edge.source}-${edge.target}`}
+                    ref={(element) => {
+                      if (element) {
+                        const existing = edgeEls.current.find((entry) => entry.edge.source === edge.source && entry.edge.target === edge.target);
+                        if (existing) existing.el = element as SVGLineElement;
+                        else edgeEls.current.push({ el: element as SVGLineElement, edge });
+                      }
+                    }}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={strokeW}
+                    strokeDasharray={dash}
+                    className="bridge bx-edge"
+                    style={style}
+                  />
+                );
+              });
+            })()}
           </g>
           <g>
             {notes.map((note) => {
@@ -377,6 +439,8 @@ function GraphCanvas({
               const hidden = hiddenClusters[note.cluster] ? 0.18 : 1;
               const dimmed = timeFilter !== "전체" && (ageRank[note.updated] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
               const selected = selectedId === note.id;
+              const isDirect = selectedId ? direct.has(note.id) : false;
+              const isDimmedBySelection = selectedId && !selected && !isDirect;
 
               return (
                 <g
@@ -387,24 +451,32 @@ function GraphCanvas({
                   }}
                   transform={`translate(${positionsRef.current[note.id]?.x ?? 0},${positionsRef.current[note.id]?.y ?? 0})`}
                   className="cursor-pointer"
-                  style={{ opacity: hidden * (dimmed ? 0.18 : 1), transition: "opacity 0.3s" }}
+                  style={{
+                    opacity: (dragNodeRef.current ? hidden * (dimmed ? 0.18 : 1) : (isDimmedBySelection ? 0.14 : 1) * hidden * (dimmed ? 0.18 : 1)),
+                    transition: "opacity 0.3s",
+                    willChange: 'transform',
+                    filter: dragNodeRef.current ? 'none' : (isDimmedBySelection ? 'grayscale(100%) brightness(60%)' : 'none')
+                  }}
                   onPointerDown={(event) => {
                     event.stopPropagation();
+                    try { (event.currentTarget as Element).setPointerCapture?.(event.pointerId); } catch (e) {}
                     dragNodeRef.current = note.id;
                   }}
-                  onClick={() => onSelect(note.id)}
+                  onClick={() => onSelect(selectedId === note.id ? null : note.id)}
                   onPointerEnter={() => setHovered(note)}
                   onPointerLeave={() => setHovered(null)}
                 >
-                  <circle r={radius * 2.2} fill={`rgb(${cluster.color} / 0.10)`} />
-                  {selected ? <circle r={radius + 7} fill="none" stroke={`rgb(${cluster.color})`} strokeWidth="1.5" strokeDasharray="3 3" className="bx-spin" /> : null}
+                  <circle r={radius * 2.6} fill={`rgb(${cluster.color} / 0.08)`} className="planet-halo" />
+                  {/* removed rotating background ring to avoid distraction */}
                   <circle
                     r={radius}
                     fill={`rgb(${cluster.color})`}
-                    stroke="rgb(255 255 255 / 0.55)"
-                    strokeWidth={selected ? 2 : 1}
-                    style={{ filter: selected ? `drop-shadow(0 0 10px rgb(${cluster.color}))` : "none" }}
+                    stroke="rgb(255 255 255 / 0.6)"
+                    strokeWidth={(selected || isDirect) ? 2 : 1}
+                    className={(selected || isDirect) ? "planet planet-selected" : "planet"}
+                    style={{ filter: (selected || isDirect) ? `drop-shadow(0 0 14px rgb(${cluster.color}))` : "none" }}
                   />
+                  {/* removed decorative shine circle to prevent moving interaction */}
                   <text
                     textAnchor="middle"
                     y={radius + 15}
@@ -458,6 +530,14 @@ function GraphCanvas({
             stroke-dashoffset: -20;
           }
         }
+        /* removed stars background */
+        /* edge visuals */
+        .bx-edge{ transition: stroke 160ms linear, filter 160ms linear, stroke-width 160ms linear; vector-effect: non-scaling-stroke; shape-rendering: geometricPrecision; }
+        .bridge.bridge-on{ stroke: rgb(34 211 238) !important; stroke-width: 2.4 !important; animation: dash 1s linear infinite; filter: drop-shadow(0 0 6px rgb(34 211 238)); }
+        /* planet visuals */
+        .planet-halo{ mix-blend-mode: screen; }
+        .planet{ transition: filter 200ms ease; }
+        .planet-selected{ animation: none; }
       `}</style>
     </div>
   );

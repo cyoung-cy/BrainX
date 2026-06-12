@@ -313,8 +313,8 @@ export function Toggle({
       )}
     >
       <span
-        style={{ width: knob, height: knob, transform: `translateX(${on ? width - knob - 4 : 4}px)` }}
-        className="absolute top-1/2 -translate-y-1/2 left-0 rounded-full bg-white shadow transition-transform duration-300"
+        style={{ width: knob, height: knob, left: on ? width - knob - 4 : 4 }}
+        className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-all duration-300"
       />
     </button>
   );
