@@ -391,6 +391,168 @@ html.light .aurora b {
   height: 0;
 }
 
+/* ── TipTap Note Content (BrainX Note Demo) ───── */
+.tiptap-note-content .ProseMirror {
+  outline: none;
+  min-height: 300px;
+  max-width: 72ch;
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-note-content .ProseMirror > * + * {
+  margin-top: 0.55em;
+}
+
+.tiptap-note-content .ProseMirror p {
+  line-height: 1.8;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-note-content .ProseMirror h1 {
+  font-size: 1.8em;
+  font-weight: 700;
+  margin-top: 1.4em;
+  margin-bottom: 0.2em;
+  color: rgb(var(--txt));
+  letter-spacing: -0.02em;
+}
+
+.tiptap-note-content .ProseMirror h2 {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin-top: 1.2em;
+  margin-bottom: 0.15em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-note-content .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-note-content .ProseMirror h4 {
+  font-size: 0.95em;
+  font-weight: 600;
+  margin-top: 0.9em;
+  color: rgb(var(--txt2));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tiptap-note-content .ProseMirror ul,
+.tiptap-note-content .ProseMirror ol {
+  padding-left: 1.6em;
+  margin: 0.4em 0;
+}
+
+.tiptap-note-content .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tiptap-note-content .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tiptap-note-content .ProseMirror li {
+  line-height: 1.75;
+  color: rgb(var(--txt2));
+  margin: 0.1em 0;
+}
+
+.tiptap-note-content .ProseMirror strong,
+.tiptap-note-content .ProseMirror b {
+  font-weight: 700;
+  color: rgb(var(--txt));
+}
+
+.tiptap-note-content .ProseMirror em {
+  font-style: italic;
+}
+
+.tiptap-note-content .ProseMirror s {
+  opacity: 0.6;
+}
+
+.tiptap-note-content .ProseMirror blockquote {
+  border-left: 3px solid rgb(var(--primary) / 0.5);
+  padding-left: 1em;
+  margin: 0.75em 0 0.75em 0;
+  color: rgb(var(--txt3));
+  font-style: italic;
+}
+
+.tiptap-note-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid rgb(var(--border) / 0.5);
+  margin: 1.5em 0;
+}
+
+.tiptap-note-content .ProseMirror code {
+  background: rgb(var(--surface2));
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.85em;
+  color: rgb(var(--cyan));
+}
+
+.tiptap-note-content .ProseMirror pre {
+  margin: 0.5em 0;
+  background: transparent;
+}
+
+.tiptap-note-content .ProseMirror .is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--txt3));
+  pointer-events: none;
+  height: 0;
+}
+
+/* Light mode overrides */
+.tiptap-note-content--light .ProseMirror {
+  color: #374151;
+}
+
+.tiptap-note-content--light .ProseMirror p,
+.tiptap-note-content--light .ProseMirror li {
+  color: #4b5563;
+}
+
+.tiptap-note-content--light .ProseMirror h1,
+.tiptap-note-content--light .ProseMirror h2,
+.tiptap-note-content--light .ProseMirror h3,
+.tiptap-note-content--light .ProseMirror h4 {
+  color: #111827;
+}
+
+.tiptap-note-content--light .ProseMirror strong,
+.tiptap-note-content--light .ProseMirror b {
+  color: #111827;
+}
+
+.tiptap-note-content--light .ProseMirror blockquote {
+  border-left-color: #2563eb;
+  color: #6b7280;
+}
+
+.tiptap-note-content--light .ProseMirror code {
+  background: #f1f5f9;
+  color: #0369a1;
+}
+
+.tiptap-note-content--light .ProseMirror hr {
+  border-top-color: #e2e8f0;
+}
+
+.tiptap-note-content--light .ProseMirror .is-editor-empty::before {
+  color: #9ca3af;
+}
+
 /* ── TipTap Code Test Editor ────────────────────────────────── */
 
 .tiptap-code-content .ProseMirror {
