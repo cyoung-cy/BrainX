@@ -33,8 +33,8 @@ export function SignupScreen() {
 
   return (
     <AuthShell>
-      <h1 className="mb-1.5 text-[26px] font-bold tracking-tight">두뇌를 깨우는 1분</h1>
-      <p className="mb-7 text-[14px] text-txt2">무료로 BrainX를 시작하세요.</p>
+      <h1 className="mb-1.5 text-[28px] font-bold tracking-tight">두뇌를 깨우는 1분</h1>
+      <p className="mb-7 text-[16px] text-txt2">무료로 BrainX를 시작하세요.</p>
       <Field label="이메일" type="email" placeholder="you@brainx.app" />
       <div className="mb-4 flex items-end gap-2">
         <div className="flex-1">
@@ -62,14 +62,14 @@ export function SignupScreen() {
             >
               {agree[term.key] ? <Icon name="check" size={13} /> : null}
             </span>
-            <span className="text-[13px] text-txt2">{term.label}</span>
+            <span className="text-[15px] text-txt2">{term.label}</span>
           </button>
         ))}
       </div>
       <Btn variant="primary" size="lg" className="w-full" disabled={!canProceed} onClick={() => router.push("/onboarding")}>
         가입하고 시작하기
       </Btn>
-      <p className="mt-6 text-center text-[13px] text-txt2">
+      <p className="mt-6 text-center text-[15px] text-txt2">
         이미 계정이 있으신가요?{" "}
         <button type="button" onClick={() => router.push("/login")} className="font-medium text-primary">
           로그인

@@ -63,8 +63,8 @@ export function SettingsScreen() {
           <Badge color="139 92 246" dot className="mb-2.5">
             설정 · 환경 관리
           </Badge>
-          <h1 className="text-[27px] font-bold tracking-tight">설정</h1>
-          <p className="mt-1.5 max-w-2xl text-[14px] text-txt2">테마, 검색, 공유, 알림, 레이아웃을 로컬에 저장합니다.</p>
+          <h1 className="text-[29px] font-bold tracking-tight">설정</h1>
+          <p className="mt-1.5 max-w-2xl text-[16px] text-txt2">테마, 검색, 공유, 알림, 레이아웃을 로컬에 저장합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -92,16 +92,16 @@ export function SettingsScreen() {
             <div className="flex items-center gap-4">
               <Avatar name={nickname} size={64} ring />
               <div className="min-w-0 flex-1">
-                <div className="text-[18px] font-semibold text-txt">{nickname}</div>
-                <div className="mt-1 text-[12px] text-txt3">research@brainx.app</div>
+                <div className="text-[20px] font-semibold text-txt">{nickname}</div>
+                <div className="mt-1 text-[14px] text-txt3">research@brainx.app</div>
               </div>
             </div>
             <label className="block">
-              <div className="mb-1.5 text-[12px] font-medium text-txt2">닉네임</div>
+              <div className="mb-1.5 text-[14px] font-medium text-txt2">닉네임</div>
               <input
                 value={nickname}
                 onChange={(event) => setNickname(event.target.value)}
-                className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[14px] text-txt outline-none focus:border-primary/60"
+                className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[16px] text-txt outline-none focus:border-primary/60"
               />
             </label>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -120,15 +120,15 @@ export function SettingsScreen() {
             <div className="space-y-3">
               <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                 <div>
-                  <div className="text-[13px] font-medium text-txt">사이드바 접기</div>
-                  <div className="text-[11.5px] text-txt3">워크스페이스 폭을 넓힙니다.</div>
+                  <div className="text-[15px] font-medium text-txt">사이드바 접기</div>
+                  <div className="text-[13.5px] text-txt3">워크스페이스 폭을 넓힙니다.</div>
                 </div>
                 <Toggle on={sidebarCollapsed} onChange={setSidebarCollapsed} />
               </div>
               <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                 <div>
-                  <div className="text-[13px] font-medium text-txt">테마</div>
-                  <div className="text-[11.5px] text-txt3">{theme === "dark" ? "다크" : "라이트"} 모드</div>
+                  <div className="text-[15px] font-medium text-txt">테마</div>
+                  <div className="text-[13.5px] text-txt3">{theme === "dark" ? "다크" : "라이트"} 모드</div>
                 </div>
                 <Toggle on={theme === "light"} onChange={(value) => setTheme(value ? "light" : "dark")} />
               </div>
@@ -140,8 +140,8 @@ export function SettingsScreen() {
               {ADMIN_FLAGS.map((flag) => (
                 <div key={flag.key} className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                   <div>
-                    <div className="text-[13px] font-medium text-txt">{flag.label}</div>
-                    <div className="text-[11.5px] text-txt3">{flag.desc}</div>
+                    <div className="text-[15px] font-medium text-txt">{flag.label}</div>
+                    <div className="text-[13.5px] text-txt3">{flag.desc}</div>
                   </div>
                   <Toggle on={preferences[flag.key]} onChange={() => updatePreference(flag.key)} />
                 </div>
@@ -156,15 +156,15 @@ export function SettingsScreen() {
           <div className="space-y-2.5">
             <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
               <div>
-                <div className="text-[13px] font-medium text-txt">이메일 요약</div>
-                <div className="text-[11.5px] text-txt3">주간 활동 리포트 전송</div>
+                <div className="text-[15px] font-medium text-txt">이메일 요약</div>
+                <div className="text-[13.5px] text-txt3">주간 활동 리포트 전송</div>
               </div>
               <Toggle on={preferences.emailDigest} onChange={() => updatePreference("emailDigest")} />
             </div>
             <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
               <div>
-                <div className="text-[13px] font-medium text-txt">컴팩트 모드</div>
-                <div className="text-[11.5px] text-txt3">목록 밀도를 높입니다</div>
+                <div className="text-[15px] font-medium text-txt">컴팩트 모드</div>
+                <div className="text-[13.5px] text-txt3">목록 밀도를 높입니다</div>
               </div>
               <Toggle on={preferences.compactMode} onChange={() => updatePreference("compactMode")} />
             </div>
@@ -178,12 +178,12 @@ export function SettingsScreen() {
         >
           <div className="grid gap-2 sm:grid-cols-2">
             <button type="button" className="rounded-xl border border-line/50 bg-surface2/40 px-3 py-3 text-left" onClick={() => pushToast("노트 JSON 내보내기를 준비했어요", "ok")}>
-              <div className="text-[13px] font-medium text-txt">노트 JSON</div>
-              <div className="mt-1 text-[11.5px] text-txt3">메타데이터 포함</div>
+              <div className="text-[15px] font-medium text-txt">노트 JSON</div>
+              <div className="mt-1 text-[13.5px] text-txt3">메타데이터 포함</div>
             </button>
             <button type="button" className="rounded-xl border border-line/50 bg-surface2/40 px-3 py-3 text-left" onClick={() => pushToast("설정 JSON 내보내기를 준비했어요", "ok")}>
-              <div className="text-[13px] font-medium text-txt">설정 JSON</div>
-              <div className="mt-1 text-[11.5px] text-txt3">테마·레이아웃 포함</div>
+              <div className="text-[15px] font-medium text-txt">설정 JSON</div>
+              <div className="mt-1 text-[13.5px] text-txt3">테마·레이아웃 포함</div>
             </button>
           </div>
         </SectionCard>

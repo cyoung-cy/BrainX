@@ -63,8 +63,8 @@ export function SupportScreen() {
           <Badge color="34 211 238" dot className="mb-2.5">
             지원 · 도움말
           </Badge>
-          <h1 className="text-[27px] font-bold tracking-tight">지원 센터</h1>
-          <p className="mt-1.5 max-w-2xl text-[14px] text-txt2">FAQ, 문의, 상태를 한 곳에 모아둔 mock 지원 화면입니다.</p>
+          <h1 className="text-[29px] font-bold tracking-tight">지원 센터</h1>
+          <p className="mt-1.5 max-w-2xl text-[16px] text-txt2">FAQ, 문의, 상태를 한 곳에 모아둔 mock 지원 화면입니다.</p>
         </div>
         <Btn variant="primary" icon="chat" onClick={() => pushToast("상담 요청을 접수했어요", "ok")}>
           상담 요청
@@ -75,12 +75,12 @@ export function SupportScreen() {
         <div className="grid gap-4">
           <SectionCard title="자주 묻는 질문" sub="검색어로 FAQ를 좁혀볼 수 있습니다.">
             <label className="mb-4 block">
-              <div className="mb-1.5 text-[12px] font-medium text-txt2">질문 검색</div>
+              <div className="mb-1.5 text-[14px] font-medium text-txt2">질문 검색</div>
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="예: 공유 링크, PDF, 환각"
-                className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[14px] text-txt outline-none focus:border-primary/60"
+                className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[16px] text-txt outline-none focus:border-primary/60"
               />
             </label>
             <div className="space-y-2">
@@ -92,10 +92,10 @@ export function SupportScreen() {
                   className="w-full rounded-xl border border-line/50 bg-surface2/40 p-4 text-left transition-colors hover:border-primary/35"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[14px] font-medium text-txt">{item.question}</div>
+                    <div className="text-[16px] font-medium text-txt">{item.question}</div>
                     <Icon name={open === item.id ? "chevD" : "chevR"} size={16} className="text-txt3" />
                   </div>
-                  {open === item.id ? <div className="mt-2 text-[13px] leading-relaxed text-txt2">{item.answer}</div> : null}
+                  {open === item.id ? <div className="mt-2 text-[15px] leading-relaxed text-txt2">{item.answer}</div> : null}
                 </button>
               ))}
             </div>
@@ -109,8 +109,8 @@ export function SupportScreen() {
                     <Icon name={channel.icon} size={18} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium text-txt">{channel.name}</div>
-                    <div className="truncate text-[11.5px] text-txt3">{channel.value}</div>
+                    <div className="text-[15px] font-medium text-txt">{channel.name}</div>
+                    <div className="truncate text-[13.5px] text-txt3">{channel.value}</div>
                   </div>
                   <Badge>{channel.desc}</Badge>
                 </div>
@@ -123,11 +123,11 @@ export function SupportScreen() {
           <SectionCard title="문의 작성" sub="문의는 실제 전송되지 않고 토스트로만 기록됩니다.">
             <div className="space-y-3">
               <label className="block">
-                <div className="mb-1.5 text-[12px] font-medium text-txt2">카테고리</div>
+                <div className="mb-1.5 text-[14px] font-medium text-txt2">카테고리</div>
                 <select
                   value={category}
                   onChange={(event) => setCategory(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[14px] text-txt outline-none"
+                  className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[16px] text-txt outline-none"
                 >
                   {["계정", "결제", "가져오기", "버그", "기능 요청"].map((item) => (
                     <option key={item} value={item}>
@@ -137,22 +137,22 @@ export function SupportScreen() {
                 </select>
               </label>
               <label className="block">
-                <div className="mb-1.5 text-[12px] font-medium text-txt2">제목</div>
+                <div className="mb-1.5 text-[14px] font-medium text-txt2">제목</div>
                 <input
                   value={subject}
                   onChange={(event) => setSubject(event.target.value)}
                   placeholder="예: 공유 링크가 열리지 않아요"
-                  className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[14px] text-txt outline-none focus:border-primary/60"
+                  className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[16px] text-txt outline-none focus:border-primary/60"
                 />
               </label>
               <label className="block">
-                <div className="mb-1.5 text-[12px] font-medium text-txt2">내용</div>
+                <div className="mb-1.5 text-[14px] font-medium text-txt2">내용</div>
                 <textarea
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
                   rows={6}
                   placeholder="문제가 재현되는 과정을 적어주세요."
-                  className="w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 py-3 text-[14px] text-txt outline-none focus:border-primary/60"
+                  className="w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 py-3 text-[16px] text-txt outline-none focus:border-primary/60"
                 />
               </label>
               <div className="flex gap-2">
@@ -188,8 +188,8 @@ export function SupportScreen() {
               ].map((ticket) => (
                 <div key={ticket.title} className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                   <div className="min-w-0">
-                    <div className="text-[13px] font-medium text-txt">{ticket.title}</div>
-                    <div className="text-[11.5px] text-txt3">답변 예정: 24시간 이내</div>
+                    <div className="text-[15px] font-medium text-txt">{ticket.title}</div>
+                    <div className="text-[13.5px] text-txt3">답변 예정: 24시간 이내</div>
                   </div>
                   <Badge color={ticket.tone} dot>{ticket.state}</Badge>
                 </div>

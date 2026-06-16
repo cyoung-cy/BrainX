@@ -35,8 +35,8 @@ export function MyPageScreen() {
           <Badge color="59 130 246" dot className="mb-2.5">
             프로필 · 개인 워크스페이스
           </Badge>
-          <h1 className="text-[27px] font-bold tracking-tight">내 페이지</h1>
-          <p className="mt-1.5 max-w-2xl text-[14px] text-txt2">
+          <h1 className="text-[29px] font-bold tracking-tight">내 페이지</h1>
+          <p className="mt-1.5 max-w-2xl text-[16px] text-txt2">
             개인 프로필, 사용량, 공개 링크, 활동 내역을 한 화면에서 확인합니다.
           </p>
         </div>
@@ -57,10 +57,10 @@ export function MyPageScreen() {
             <Avatar name="연우" size={72} ring />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-[22px] font-bold tracking-tight text-txt">김연우</h2>
+                <h2 className="text-[24px] font-bold tracking-tight text-txt">김연우</h2>
                 <Badge color="34 211 238" dot>BrainX Pro 체험 중</Badge>
               </div>
-              <p className="mt-1 text-[13px] text-txt2">research@brainx.app · 서울 · 개인 워크스페이스</p>
+              <p className="mt-1 text-[15px] text-txt2">research@brainx.app · 서울 · 개인 워크스페이스</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Btn variant="soft" size="sm" icon="settings" onClick={() => router.push("/settings")}>
                   설정
@@ -73,12 +73,12 @@ export function MyPageScreen() {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-surface2/40 p-4">
-              <div className="text-[12px] text-txt3">한 줄 소개</div>
-              <div className="mt-1 text-[14px] font-medium text-txt">노트를 연결해 생각을 확장하는 사람</div>
+              <div className="text-[14px] text-txt3">한 줄 소개</div>
+              <div className="mt-1 text-[16px] font-medium text-txt">노트를 연결해 생각을 확장하는 사람</div>
             </div>
             <div className="rounded-2xl bg-surface2/40 p-4">
-              <div className="text-[12px] text-txt3">가입일</div>
-              <div className="mt-1 text-[14px] font-medium text-txt">2026년 6월 1일</div>
+              <div className="text-[14px] text-txt3">가입일</div>
+              <div className="mt-1 text-[16px] font-medium text-txt">2026년 6월 1일</div>
             </div>
           </div>
         </Card>
@@ -91,7 +91,7 @@ export function MyPageScreen() {
               { label: "공유 노트 비중", value: 22 }
             ].map((item) => (
               <div key={item.label}>
-                <div className="mb-1.5 flex items-center justify-between text-[12px] text-txt2">
+                <div className="mb-1.5 flex items-center justify-between text-[14px] text-txt2">
                   <span>{item.label}</span>
                   <span className="font-mono text-txt3">{item.value}%</span>
                 </div>
@@ -122,8 +122,8 @@ export function MyPageScreen() {
                 >
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: `rgb(${cluster.color})` }} />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium text-txt">{note.title}</div>
-                    <div className="text-[11.5px] text-txt3">{note.updated} · {note.links.length} 연결</div>
+                    <div className="truncate text-[15px] font-medium text-txt">{note.title}</div>
+                    <div className="text-[13.5px] text-txt3">{note.updated} · {note.links.length} 연결</div>
                   </div>
                   <Icon name="chevR" size={15} className="text-txt3" />
                 </button>
@@ -142,9 +142,9 @@ export function MyPageScreen() {
                     <div className="mb-2 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ background: `rgb(${cluster.color})` }} />
-                        <span className="text-[13px] font-medium text-txt">{cluster.label}</span>
+                        <span className="text-[15px] font-medium text-txt">{cluster.label}</span>
                       </div>
-                      <span className="text-[11px] font-mono text-txt3">{count}개</span>
+                      <span className="text-[13px] font-mono text-txt3">{count}개</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-surface2">
                       <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${Math.max(12, Math.min(count * 18, 100))}%` }} />
@@ -156,7 +156,7 @@ export function MyPageScreen() {
           </SectionCard>
 
           <SectionCard title="저장 위치" sub="로컬 저장과 공유 범위를 정리합니다.">
-            <div className="space-y-2.5 text-[13px] text-txt2">
+            <div className="space-y-2.5 text-[15px] text-txt2">
               <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                 <span>브라우저 localStorage</span>
                 <Badge>활성</Badge>
