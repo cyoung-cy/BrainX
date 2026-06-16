@@ -1,17 +1,13 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
-
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { INTERESTS } from "@/lib/brainx-data";
-
 import { cx } from "@/lib/utils";
-
+import { completeOnboarding, readAuthSession } from "@/lib/auth-api";
 import { useBrainX } from "@/components/brainx-provider";
-
 import { Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
-
 import { Field } from "@/components/public/auth-shared";
 
 export function OnboardingScreen() {
@@ -19,14 +15,77 @@ export function OnboardingScreen() {
   const { pushToast } = useBrainX();
   const [step, setStep] = useState(0);
   const [nick, setNick] = useState("");
+  const [profileImageUrl, setProfileImageUrl] = useState("");
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const session = readAuthSession();
+    setNick(session?.nickname ?? "");
+    setProfileImageUrl(session?.profileImageUrl ?? "");
+    setOnboardingToken(session?.onboardingToken ?? null);
+  }, []);
+
+  const avatarInitial = useMemo(() => nick.trim()[0]?.toUpperCase() ?? "?", [nick]);
 
   const toggle = (item: string) => {
     setSelected((current) => (current.includes(item) ? current.filter((value) => value !== item) : [...current, item]));
   };
 
+  const handleProfileImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      pushToast("이미지 파일만 업로드할 수 있습니다.", "err");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProfileImageUrl(typeof reader.result === "string" ? reader.result : "");
+      pushToast("프로필 사진이 변경되었습니다.", "ok");
+    };
+    reader.onerror = () => {
+      pushToast("이미지를 불러오지 못했습니다.", "err");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleComplete = async () => {
+    if (!onboardingToken) {
+      pushToast("온보딩 토큰이 없습니다. 소셜 로그인을 다시 시도해 주세요.", "err");
+      router.push("/login");
+      return;
+    }
+    if (!nick.trim()) {
+      pushToast("이름을 입력해 주세요.", "err");
+      setStep(0);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await completeOnboarding({
+        onboardingToken,
+        nickname: nick.trim(),
+        profileImageUrl: profileImageUrl.trim() || null,
+        interests: selected
+      });
+      pushToast("온보딩이 완료되었습니다.", "ok");
+      router.push("/home");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "온보딩 완료에 실패했습니다.", "err");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div data-route className="relative flex h-full items-center justify-center overflow-y-auto p-6 scroll">
+    <div data-route className="scroll relative flex h-full items-center justify-center overflow-y-auto p-6">
       <div className="pointer-events-none absolute inset-0 grid-bg opacity-40" />
       <div className="absolute right-5 top-5">
         <ThemeToggle />
@@ -40,18 +99,31 @@ export function OnboardingScreen() {
 
         {step === 0 ? (
           <>
-            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">어떻게 불러드릴까요?</h1>
-            <p className="mb-6 text-[14px] text-txt2">프로필은 나중에 언제든 바꿀 수 있어요.</p>
+            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">프로필을 확인해 주세요</h1>
+            <p className="mb-6 text-[14px] text-txt2">소셜 계정에서 가져온 이름과 프로필 사진을 자유롭게 수정할 수 있습니다.</p>
             <div className="mb-5 flex items-center gap-4">
-              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent text-2xl font-bold text-white">
-                {nick[0] || "?"}
+              {profileImageUrl ? (
+                <img src={profileImageUrl} alt="프로필 이미지" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
+              ) : (
+                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent text-2xl font-bold text-white">
+                  {avatarInitial}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfileImageChange}
+                />
+                <Btn variant="soft" icon="upload" onClick={() => fileInputRef.current?.click()}>
+                  이미지 업로드
+                </Btn>
               </div>
-              <Btn variant="soft" icon="upload" onClick={() => pushToast("이미지를 업로드했어요", "ok")}>
-                이미지 업로드
-              </Btn>
             </div>
-            <Field label="닉네임" placeholder="예: 연우" value={nick} onChange={(event) => setNick(event.target.value)} />
-            <Btn variant="primary" size="lg" className="mt-2 w-full" onClick={() => setStep(1)}>
+            <Field label="이름" placeholder="사용할 이름" value={nick} onChange={(event) => setNick(event.target.value)} />
+            <Btn variant="primary" size="lg" className="mt-2 w-full" disabled={!nick.trim()} onClick={() => setStep(1)}>
               다음
             </Btn>
           </>
@@ -60,7 +132,7 @@ export function OnboardingScreen() {
         {step === 1 ? (
           <>
             <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">관심 분야를 알려주세요</h1>
-            <p className="mb-6 text-[14px] text-txt2">AI가 노트를 더 똑똑하게 연결하고 추천해요.</p>
+            <p className="mb-6 text-[14px] text-txt2">AI가 노트를 더 자연스럽게 연결하고 추천할 수 있게 도와줍니다.</p>
             <div className="mb-6 flex flex-wrap gap-2">
               {INTERESTS.map((interest) => (
                 <button
@@ -92,21 +164,26 @@ export function OnboardingScreen() {
             <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent shadow-glow">
               <Icon name="sparkle" size={26} className="text-white" />
             </div>
-            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">AI 개인화 준비 완료</h1>
+            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">회원가입을 완료할 준비가 됐어요</h1>
             <p className="mb-6 text-[14px] leading-relaxed text-txt2">
-              이제 노트를 쓰면 BrainX가 자동으로 정리·연결하고, 필요할 때 근거 있는 답을 찾아드릴게요. 첫 노트를 함께 시작해요.
+              완료 버튼을 누르면 소셜 계정 정보, 수정한 프로필, 관심 분야가 저장되고 BrainX 계정이 최종 생성됩니다.
             </p>
             <div className="mb-6 space-y-2.5 rounded-xl bg-surface2/40 p-4">
-              {["관심 분야 기반 자동 태깅", "노트 간 AI 연결 추천", "내 자료 기반 RAG 챗봇"].map((item) => (
+              {["프로필 정보 저장", "관심 분야 저장", "BrainX 계정 생성 및 로그인"].map((item) => (
                 <div key={item} className="flex items-center gap-2.5 text-[13.5px] text-txt2">
                   <Icon name="check" size={16} className="text-cyan" />
                   {item}
                 </div>
               ))}
             </div>
-            <Btn variant="primary" size="lg" className="w-full" icon="bolt" onClick={() => router.push("/home")}>
-              BrainX 시작하기
-            </Btn>
+            <div className="flex gap-2">
+              <Btn variant="soft" onClick={() => setStep(1)} disabled={submitting}>
+                이전
+              </Btn>
+              <Btn variant="primary" size="lg" className="flex-1" icon="bolt" disabled={submitting} onClick={handleComplete}>
+                {submitting ? "저장 중..." : "회원가입 완료"}
+              </Btn>
+            </div>
           </>
         ) : null}
       </Card>
