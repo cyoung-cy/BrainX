@@ -24,752 +24,740 @@ channels:
     messages:
       AdminUserCreated:
         $ref: '#/components/messages/AdminUserCreated'
-    description: 'Channel for AdminUserCreated. Producer: commerce-operations. Consumers: notification-email, security-audit.'
-    x-producer-service: commerce-operations
+    description: 'Channel for AdminUserCreated. Producer: Commerce-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   aiModelSettingsChanged:
     address: brainx.knowledge.intelligence.ai-model-settings-changed.v1
     messages:
       AiModelSettingsChanged:
         $ref: '#/components/messages/AiModelSettingsChanged'
-    description: 'Channel for AiModelSettingsChanged. Producer: knowledge-intelligence. Consumers: security-audit, knowledge-intelligence.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for AiModelSettingsChanged. Producer: AI-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - security-audit
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   aiSuggestionCreated:
     address: brainx.knowledge.intelligence.ai-suggestion-created.v1
     messages:
       AiSuggestionCreated:
         $ref: '#/components/messages/AiSuggestionCreated'
-    description: 'Channel for AiSuggestionCreated. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for AiSuggestionCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   aiSuggestionDecisionRecorded:
     address: brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1
     messages:
       AiSuggestionDecisionRecorded:
         $ref: '#/components/messages/AiSuggestionDecisionRecorded'
-    description: 'Channel for AiSuggestionDecisionRecorded. Producer: knowledge-intelligence. Consumers: analytics-dashboard,
-      knowledge-intelligence.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for AiSuggestionDecisionRecorded. Producer: AI-Service. Consumers: Admin-Service,
+      AI-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   apiClientCreated:
     address: brainx.content.ingestion.publishing.api-client-created.v1
     messages:
       ApiClientCreated:
         $ref: '#/components/messages/ApiClientCreated'
-    description: 'Channel for ApiClientCreated. Producer: content-ingestion-publishing. Consumers: security-audit, notification-email.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ApiClientCreated. Producer: Ingestion-Service. Consumers: Admin-Service, User-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - notification-email
+    - Admin-Service
+    - User-Service
   assetUploaded:
     address: brainx.content.ingestion.publishing.asset-uploaded.v1
     messages:
       AssetUploaded:
         $ref: '#/components/messages/AssetUploaded'
-    description: 'Channel for AssetUploaded. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing,
-      security-audit.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for AssetUploaded. Producer: Ingestion-Service. Consumers: Ingestion-Service,
+      Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - security-audit
+    - Ingestion-Service
+    - Admin-Service
   captureReceived:
     address: brainx.content.ingestion.publishing.capture-received.v1
     messages:
       CaptureReceived:
         $ref: '#/components/messages/CaptureReceived'
-    description: 'Channel for CaptureReceived. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing,
-      knowledge-intelligence, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service,
+      AI-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - knowledge-intelligence
-    - analytics-dashboard
+    - Ingestion-Service
+    - AI-Service
+    - Admin-Service
   chatMessageCreated:
     address: brainx.knowledge.intelligence.chat-message-created.v1
     messages:
       ChatMessageCreated:
         $ref: '#/components/messages/ChatMessageCreated'
-    description: 'Channel for ChatMessageCreated. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for ChatMessageCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   chatThreadCreated:
     address: brainx.knowledge.intelligence.chat-thread-created.v1
     messages:
       ChatThreadCreated:
         $ref: '#/components/messages/ChatThreadCreated'
-    description: 'Channel for ChatThreadCreated. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for ChatThreadCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   checkoutSessionCreated:
     address: brainx.commerce.operations.checkout-session-created.v1
     messages:
       CheckoutSessionCreated:
         $ref: '#/components/messages/CheckoutSessionCreated'
-    description: 'Channel for CheckoutSessionCreated. Producer: commerce-operations. Consumers: analytics-dashboard, security-audit.'
-    x-producer-service: commerce-operations
+    description: 'Channel for CheckoutSessionCreated. Producer: Commerce-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
-    - security-audit
+    - Admin-Service
   clientEventReceived:
     address: brainx.commerce.operations.client-event-received.v1
     messages:
       ClientEventReceived:
         $ref: '#/components/messages/ClientEventReceived'
-    description: 'Channel for ClientEventReceived. Producer: commerce-operations. Consumers: analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for ClientEventReceived. Producer: Commerce-Service. Consumers: Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   clusterJobCompleted:
     address: brainx.knowledge.intelligence.cluster-job-completed.v1
     messages:
       ClusterJobCompleted:
         $ref: '#/components/messages/ClusterJobCompleted'
-    description: 'Channel for ClusterJobCompleted. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for ClusterJobCompleted. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   clusterJobRequested:
     address: brainx.knowledge.intelligence.cluster-job-requested.v1
     messages:
       ClusterJobRequested:
         $ref: '#/components/messages/ClusterJobRequested'
-    description: 'Channel for ClusterJobRequested. Producer: knowledge-intelligence. Consumers: knowledge-intelligence.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for ClusterJobRequested. Producer: AI-Service. Consumers: AI-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
+    - AI-Service
   consentRecorded:
     address: brainx.identity.access.consent-recorded.v1
     messages:
       ConsentRecorded:
         $ref: '#/components/messages/ConsentRecorded'
-    description: 'Channel for ConsentRecorded. Producer: identity-access. Consumers: commerce-operations, analytics-dashboard,
-      security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for ConsentRecorded. Producer: User-Service. Consumers: Commerce-Service, Admin-Service,
+      Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - commerce-operations
-    - analytics-dashboard
-    - security-audit
+    - Commerce-Service
+    - Admin-Service
   consentUpdated:
     address: brainx.identity.access.consent-updated.v1
     messages:
       ConsentUpdated:
         $ref: '#/components/messages/ConsentUpdated'
-    description: 'Channel for ConsentUpdated. Producer: identity-access. Consumers: analytics-dashboard, commerce-operations,
-      security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for ConsentUpdated. Producer: User-Service. Consumers: Admin-Service, Commerce-Service,
+      Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - analytics-dashboard
-    - commerce-operations
-    - security-audit
+    - Admin-Service
+    - Commerce-Service
   conversionJobCompleted:
     address: brainx.content.ingestion.publishing.conversion-job-completed.v1
     messages:
       ConversionJobCompleted:
         $ref: '#/components/messages/ConversionJobCompleted'
-    description: 'Channel for ConversionJobCompleted. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing,
-      knowledge-workspace, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ConversionJobCompleted. Producer: Ingestion-Service. Consumers: Ingestion-Service,
+      Workspace-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - knowledge-workspace
-    - analytics-dashboard
+    - Ingestion-Service
+    - Workspace-Service
+    - Admin-Service
   conversionJobFailed:
     address: brainx.content.ingestion.publishing.conversion-job-failed.v1
     messages:
       ConversionJobFailed:
         $ref: '#/components/messages/ConversionJobFailed'
-    description: 'Channel for ConversionJobFailed. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing,
-      analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ConversionJobFailed. Producer: Ingestion-Service. Consumers: Ingestion-Service,
+      Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - analytics-dashboard
+    - Ingestion-Service
+    - Admin-Service
   conversionJobRequested:
     address: brainx.content.ingestion.publishing.conversion-job-requested.v1
     messages:
       ConversionJobRequested:
         $ref: '#/components/messages/ConversionJobRequested'
-    description: 'Channel for ConversionJobRequested. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ConversionJobRequested. Producer: Ingestion-Service. Consumers: Ingestion-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   emailVerificationRequested:
     address: brainx.identity.access.email-verification-requested.v1
     messages:
       EmailVerificationRequested:
         $ref: '#/components/messages/EmailVerificationRequested'
-    description: 'Channel for EmailVerificationRequested. Producer: identity-access. Consumers: notification-email, security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for EmailVerificationRequested. Producer: User-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   exportJobCompleted:
     address: brainx.content.ingestion.publishing.export-job-completed.v1
     messages:
       ExportJobCompleted:
         $ref: '#/components/messages/ExportJobCompleted'
-    description: 'Channel for ExportJobCompleted. Producer: content-ingestion-publishing. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ExportJobCompleted. Producer: Ingestion-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   exportJobFailed:
     address: brainx.content.ingestion.publishing.export-job-failed.v1
     messages:
       ExportJobFailed:
         $ref: '#/components/messages/ExportJobFailed'
-    description: 'Channel for ExportJobFailed. Producer: content-ingestion-publishing. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ExportJobFailed. Producer: Ingestion-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   exportJobRequested:
     address: brainx.content.ingestion.publishing.export-job-requested.v1
     messages:
       ExportJobRequested:
         $ref: '#/components/messages/ExportJobRequested'
-    description: 'Channel for ExportJobRequested. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ExportJobRequested. Producer: Ingestion-Service. Consumers: Ingestion-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   externalToolCalled:
     address: brainx.content.ingestion.publishing.external-tool-called.v1
     messages:
       ExternalToolCalled:
         $ref: '#/components/messages/ExternalToolCalled'
-    description: 'Channel for ExternalToolCalled. Producer: content-ingestion-publishing. Consumers: security-audit, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ExternalToolCalled. Producer: Ingestion-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   favoriteChanged:
     address: brainx.knowledge.workspace.favorite-changed.v1
     messages:
       FavoriteChanged:
         $ref: '#/components/messages/FavoriteChanged'
-    description: 'Channel for FavoriteChanged. Producer: knowledge-workspace. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for FavoriteChanged. Producer: Workspace-Service. Consumers: Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   folderChanged:
     address: brainx.knowledge.workspace.folder-changed.v1
     messages:
       FolderChanged:
         $ref: '#/components/messages/FolderChanged'
-    description: 'Channel for FolderChanged. Producer: knowledge-workspace. Consumers: analytics-dashboard, knowledge-intelligence.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for FolderChanged. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   folderCreated:
     address: brainx.knowledge.workspace.folder-created.v1
     messages:
       FolderCreated:
         $ref: '#/components/messages/FolderCreated'
-    description: 'Channel for FolderCreated. Producer: knowledge-workspace. Consumers: analytics-dashboard, knowledge-intelligence.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for FolderCreated. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   folderDeleted:
     address: brainx.knowledge.workspace.folder-deleted.v1
     messages:
       FolderDeleted:
         $ref: '#/components/messages/FolderDeleted'
-    description: 'Channel for FolderDeleted. Producer: knowledge-workspace. Consumers: analytics-dashboard, knowledge-intelligence.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for FolderDeleted. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   graphLayoutSaved:
     address: brainx.knowledge.workspace.graph-layout-saved.v1
     messages:
       GraphLayoutSaved:
         $ref: '#/components/messages/GraphLayoutSaved'
-    description: 'Channel for GraphLayoutSaved. Producer: knowledge-workspace. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for GraphLayoutSaved. Producer: Workspace-Service. Consumers: Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   guideDismissed:
     address: brainx.commerce.operations.guide-dismissed.v1
     messages:
       GuideDismissed:
         $ref: '#/components/messages/GuideDismissed'
-    description: 'Channel for GuideDismissed. Producer: commerce-operations. Consumers: analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for GuideDismissed. Producer: Commerce-Service. Consumers: Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   importJobCompleted:
     address: brainx.content.ingestion.publishing.import-job-completed.v1
     messages:
       ImportJobCompleted:
         $ref: '#/components/messages/ImportJobCompleted'
-    description: 'Channel for ImportJobCompleted. Producer: content-ingestion-publishing. Consumers: knowledge-workspace,
-      analytics-dashboard, notification-email.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ImportJobCompleted. Producer: Ingestion-Service. Consumers: Workspace-Service,
+      Admin-Service, User-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - knowledge-workspace
-    - analytics-dashboard
-    - notification-email
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
   importJobFailed:
     address: brainx.content.ingestion.publishing.import-job-failed.v1
     messages:
       ImportJobFailed:
         $ref: '#/components/messages/ImportJobFailed'
-    description: 'Channel for ImportJobFailed. Producer: content-ingestion-publishing. Consumers: analytics-dashboard, notification-email.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ImportJobFailed. Producer: Ingestion-Service. Consumers: Admin-Service, User-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - analytics-dashboard
-    - notification-email
+    - Admin-Service
+    - User-Service
   importJobRequested:
     address: brainx.content.ingestion.publishing.import-job-requested.v1
     messages:
       ImportJobRequested:
         $ref: '#/components/messages/ImportJobRequested'
-    description: 'Channel for ImportJobRequested. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for ImportJobRequested. Producer: Ingestion-Service. Consumers: Ingestion-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   insightReportCompleted:
     address: brainx.knowledge.intelligence.insight-report-completed.v1
     messages:
       InsightReportCompleted:
         $ref: '#/components/messages/InsightReportCompleted'
-    description: 'Channel for InsightReportCompleted. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for InsightReportCompleted. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   insightReportRequested:
     address: brainx.knowledge.intelligence.insight-report-requested.v1
     messages:
       InsightReportRequested:
         $ref: '#/components/messages/InsightReportRequested'
-    description: 'Channel for InsightReportRequested. Producer: knowledge-intelligence. Consumers: knowledge-intelligence.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for InsightReportRequested. Producer: AI-Service. Consumers: AI-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
+    - AI-Service
   integrationConnected:
     address: brainx.content.ingestion.publishing.integration-connected.v1
     messages:
       IntegrationConnected:
         $ref: '#/components/messages/IntegrationConnected'
-    description: 'Channel for IntegrationConnected. Producer: content-ingestion-publishing. Consumers: security-audit, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for IntegrationConnected. Producer: Ingestion-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   invoiceIssued:
     address: brainx.commerce.operations.invoice-issued.v1
     messages:
       InvoiceIssued:
         $ref: '#/components/messages/InvoiceIssued'
-    description: 'Channel for InvoiceIssued. Producer: commerce-operations. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for InvoiceIssued. Producer: Commerce-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   noteContentSaved:
     address: brainx.knowledge.workspace.note-content-saved.v1
     messages:
       NoteContentSaved:
         $ref: '#/components/messages/NoteContentSaved'
-    description: 'Channel for NoteContentSaved. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard, commerce-operations.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service, Commerce-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - commerce-operations
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
   noteCreated:
     address: brainx.knowledge.workspace.note-created.v1
     messages:
       NoteCreated:
         $ref: '#/components/messages/NoteCreated'
-    description: 'Channel for NoteCreated. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard, commerce-operations.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service, Commerce-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - commerce-operations
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
   noteDeleted:
     address: brainx.knowledge.workspace.note-deleted.v1
     messages:
       NoteDeleted:
         $ref: '#/components/messages/NoteDeleted'
-    description: 'Channel for NoteDeleted. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard, deletion-orchestrator, content-ingestion-publishing.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service, User-Service, Ingestion-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - deletion-orchestrator
-    - content-ingestion-publishing
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+    - Ingestion-Service
   noteLinkCreated:
     address: brainx.knowledge.workspace.note-link-created.v1
     messages:
       NoteLinkCreated:
         $ref: '#/components/messages/NoteLinkCreated'
-    description: 'Channel for NoteLinkCreated. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   noteLinkDeleted:
     address: brainx.knowledge.workspace.note-link-deleted.v1
     messages:
       NoteLinkDeleted:
         $ref: '#/components/messages/NoteLinkDeleted'
-    description: 'Channel for NoteLinkDeleted. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   noteMetadataChanged:
     address: brainx.knowledge.workspace.note-metadata-changed.v1
     messages:
       NoteMetadataChanged:
         $ref: '#/components/messages/NoteMetadataChanged'
-    description: 'Channel for NoteMetadataChanged. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteMetadataChanged. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   noteTagsChanged:
     address: brainx.knowledge.workspace.note-tags-changed.v1
     messages:
       NoteTagsChanged:
         $ref: '#/components/messages/NoteTagsChanged'
-    description: 'Channel for NoteTagsChanged. Producer: knowledge-workspace. Consumers: knowledge-intelligence, analytics-dashboard,
-      graph-projection.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service,
+      Workspace-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - analytics-dashboard
-    - graph-projection
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
   noteTrashed:
     address: brainx.knowledge.workspace.note-trashed.v1
     messages:
       NoteTrashed:
         $ref: '#/components/messages/NoteTrashed'
-    description: 'Channel for NoteTrashed. Producer: knowledge-workspace. Consumers: knowledge-intelligence, graph-projection,
-      analytics-dashboard, deletion-orchestrator.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service, User-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - deletion-orchestrator
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
   noteViewed:
     address: brainx.knowledge.workspace.note-viewed.v1
     messages:
       NoteViewed:
         $ref: '#/components/messages/NoteViewed'
-    description: 'Channel for NoteViewed. Producer: knowledge-workspace. Consumers: analytics-dashboard, knowledge-workspace.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NoteViewed. Producer: Workspace-Service. Consumers: Admin-Service, Workspace-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-workspace
+    - Admin-Service
+    - Workspace-Service
   notesMoved:
     address: brainx.knowledge.workspace.notes-moved.v1
     messages:
       NotesMoved:
         $ref: '#/components/messages/NotesMoved'
-    description: 'Channel for NotesMoved. Producer: knowledge-workspace. Consumers: knowledge-intelligence, analytics-dashboard,
-      graph-projection.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service,
+      Workspace-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - analytics-dashboard
-    - graph-projection
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
   notificationRequested:
     address: brainx.commerce.operations.notification-requested.v1
     messages:
       NotificationRequested:
         $ref: '#/components/messages/NotificationRequested'
-    description: 'Channel for NotificationRequested. Producer: commerce-operations. Consumers: notification-email.'
-    x-producer-service: commerce-operations
+    description: 'Channel for NotificationRequested. Producer: Commerce-Service. Consumers: User-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
+    - User-Service
   oAuthAccountLinked:
     address: brainx.identity.access.oauth-account-linked.v1
     messages:
       OAuthAccountLinked:
         $ref: '#/components/messages/OAuthAccountLinked'
-    description: 'Channel for OAuthAccountLinked. Producer: identity-access. Consumers: security-audit, analytics-dashboard.'
-    x-producer-service: identity-access
+    description: 'Channel for OAuthAccountLinked. Producer: User-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   oAuthAccountUnlinked:
     address: brainx.identity.access.oauth-account-unlinked.v1
     messages:
       OAuthAccountUnlinked:
         $ref: '#/components/messages/OAuthAccountUnlinked'
-    description: 'Channel for OAuthAccountUnlinked. Producer: identity-access. Consumers: security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for OAuthAccountUnlinked. Producer: User-Service. Consumers: Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
+    - Admin-Service
   passwordChanged:
     address: brainx.identity.access.password-changed.v1
     messages:
       PasswordChanged:
         $ref: '#/components/messages/PasswordChanged'
-    description: 'Channel for PasswordChanged. Producer: identity-access. Consumers: notification-email, security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for PasswordChanged. Producer: User-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   paymentFailed:
     address: brainx.commerce.operations.payment-failed.v1
     messages:
       PaymentFailed:
         $ref: '#/components/messages/PaymentFailed'
-    description: 'Channel for PaymentFailed. Producer: commerce-operations. Consumers: commerce-operations, notification-email,
-      analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for PaymentFailed. Producer: Commerce-Service. Consumers: Commerce-Service, User-Service,
+      Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   paymentSucceeded:
     address: brainx.commerce.operations.payment-succeeded.v1
     messages:
       PaymentSucceeded:
         $ref: '#/components/messages/PaymentSucceeded'
-    description: 'Channel for PaymentSucceeded. Producer: commerce-operations. Consumers: commerce-operations, notification-email,
-      analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for PaymentSucceeded. Producer: Commerce-Service. Consumers: Commerce-Service, User-Service,
+      Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   publishJobCompleted:
     address: brainx.content.ingestion.publishing.publish-job-completed.v1
     messages:
       PublishJobCompleted:
         $ref: '#/components/messages/PublishJobCompleted'
-    description: 'Channel for PublishJobCompleted. Producer: content-ingestion-publishing. Consumers: notification-email,
-      analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for PublishJobCompleted. Producer: Ingestion-Service. Consumers: User-Service,
+      Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   publishJobFailed:
     address: brainx.content.ingestion.publishing.publish-job-failed.v1
     messages:
       PublishJobFailed:
         $ref: '#/components/messages/PublishJobFailed'
-    description: 'Channel for PublishJobFailed. Producer: content-ingestion-publishing. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for PublishJobFailed. Producer: Ingestion-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   publishJobRequested:
     address: brainx.content.ingestion.publishing.publish-job-requested.v1
     messages:
       PublishJobRequested:
         $ref: '#/components/messages/PublishJobRequested'
-    description: 'Channel for PublishJobRequested. Producer: content-ingestion-publishing. Consumers: content-ingestion-publishing.'
-    x-producer-service: content-ingestion-publishing
+    description: 'Channel for PublishJobRequested. Producer: Ingestion-Service. Consumers: Ingestion-Service.'
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   semanticSearchPerformed:
     address: brainx.knowledge.intelligence.semantic-search-performed.v1
     messages:
       SemanticSearchPerformed:
         $ref: '#/components/messages/SemanticSearchPerformed'
-    description: 'Channel for SemanticSearchPerformed. Producer: knowledge-intelligence. Consumers: analytics-dashboard.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for SemanticSearchPerformed. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   shareLinkChanged:
     address: brainx.knowledge.workspace.share-link-changed.v1
     messages:
       ShareLinkChanged:
         $ref: '#/components/messages/ShareLinkChanged'
-    description: 'Channel for ShareLinkChanged. Producer: knowledge-workspace. Consumers: deletion-orchestrator, security-audit,
-      analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for ShareLinkChanged. Producer: Workspace-Service. Consumers: User-Service, Admin-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - security-audit
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   shareLinkCreated:
     address: brainx.knowledge.workspace.share-link-created.v1
     messages:
       ShareLinkCreated:
         $ref: '#/components/messages/ShareLinkCreated'
-    description: 'Channel for ShareLinkCreated. Producer: knowledge-workspace. Consumers: deletion-orchestrator, security-audit,
-      analytics-dashboard.'
-    x-producer-service: knowledge-workspace
+    description: 'Channel for ShareLinkCreated. Producer: Workspace-Service. Consumers: User-Service, Admin-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - security-audit
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   subscriptionChanged:
     address: brainx.commerce.operations.subscription-changed.v1
     messages:
       SubscriptionChanged:
         $ref: '#/components/messages/SubscriptionChanged'
-    description: 'Channel for SubscriptionChanged. Producer: commerce-operations. Consumers: commerce-operations, notification-email,
-      analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for SubscriptionChanged. Producer: Commerce-Service. Consumers: Commerce-Service, User-Service,
+      Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   supportTicketCreated:
     address: brainx.commerce.operations.support-ticket-created.v1
     messages:
       SupportTicketCreated:
         $ref: '#/components/messages/SupportTicketCreated'
-    description: 'Channel for SupportTicketCreated. Producer: commerce-operations. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for SupportTicketCreated. Producer: Commerce-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   supportTicketReplied:
     address: brainx.commerce.operations.support-ticket-replied.v1
     messages:
       SupportTicketReplied:
         $ref: '#/components/messages/SupportTicketReplied'
-    description: 'Channel for SupportTicketReplied. Producer: commerce-operations. Consumers: notification-email, analytics-dashboard.'
-    x-producer-service: commerce-operations
+    description: 'Channel for SupportTicketReplied. Producer: Commerce-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   tokenUsageRecorded:
     address: brainx.commerce.operations.token-usage-recorded.v1
     messages:
       TokenUsageRecorded:
         $ref: '#/components/messages/TokenUsageRecorded'
-    description: 'Channel for TokenUsageRecorded. Producer: commerce-operations. Consumers: analytics-dashboard, commerce-operations.'
-    x-producer-service: commerce-operations
+    description: 'Channel for TokenUsageRecorded. Producer: Commerce-Service. Consumers: Admin-Service, Commerce-Service.'
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
-    - commerce-operations
+    - Admin-Service
+    - Commerce-Service
   tokenUsageRecordedRequested:
     address: brainx.knowledge.intelligence.token-usage-recorded-requested.v1
     messages:
       TokenUsageRecordedRequested:
         $ref: '#/components/messages/TokenUsageRecordedRequested'
-    description: 'Channel for TokenUsageRecordedRequested. Producer: knowledge-intelligence. Consumers: commerce-operations.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for TokenUsageRecordedRequested. Producer: AI-Service. Consumers: Commerce-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - commerce-operations
+    - Commerce-Service
   twoFactorConfigured:
     address: brainx.identity.access.two-factor-configured.v1
     messages:
       TwoFactorConfigured:
         $ref: '#/components/messages/TwoFactorConfigured'
-    description: 'Channel for TwoFactorConfigured. Producer: identity-access. Consumers: notification-email, security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for TwoFactorConfigured. Producer: User-Service. Consumers: User-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   userDeletionCancelled:
     address: brainx.identity.access.user-deletion-cancelled.v1
     messages:
       UserDeletionCancelled:
         $ref: '#/components/messages/UserDeletionCancelled'
-    description: 'Channel for UserDeletionCancelled. Producer: identity-access. Consumers: deletion-orchestrator, notification-email,
-      commerce-operations.'
-    x-producer-service: identity-access
+    description: 'Channel for UserDeletionCancelled. Producer: User-Service. Consumers: User-Service, User-Service,
+      Commerce-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - notification-email
-    - commerce-operations
+    - User-Service
+    - Commerce-Service
   userDeletionRequested:
     address: brainx.identity.access.user-deletion-requested.v1
     messages:
       UserDeletionRequested:
         $ref: '#/components/messages/UserDeletionRequested'
-    description: 'Channel for UserDeletionRequested. Producer: identity-access. Consumers: deletion-orchestrator, notification-email,
-      commerce-operations, knowledge-workspace, content-ingestion-publishing, knowledge-intelligence.'
-    x-producer-service: identity-access
+    description: 'Channel for UserDeletionRequested. Producer: User-Service. Consumers: User-Service, User-Service,
+      Commerce-Service, Workspace-Service, Ingestion-Service, AI-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - notification-email
-    - commerce-operations
-    - knowledge-workspace
-    - content-ingestion-publishing
-    - knowledge-intelligence
+    - User-Service
+    - Commerce-Service
+    - Workspace-Service
+    - Ingestion-Service
+    - AI-Service
   userLoggedIn:
     address: brainx.identity.access.user-logged-in.v1
     messages:
       UserLoggedIn:
         $ref: '#/components/messages/UserLoggedIn'
-    description: 'Channel for UserLoggedIn. Producer: identity-access. Consumers: security-audit, analytics-dashboard.'
-    x-producer-service: identity-access
+    description: 'Channel for UserLoggedIn. Producer: User-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   userLoggedOut:
     address: brainx.identity.access.user-logged-out.v1
     messages:
       UserLoggedOut:
         $ref: '#/components/messages/UserLoggedOut'
-    description: 'Channel for UserLoggedOut. Producer: identity-access. Consumers: security-audit, analytics-dashboard.'
-    x-producer-service: identity-access
+    description: 'Channel for UserLoggedOut. Producer: User-Service. Consumers: Admin-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   userProfileUpdated:
     address: brainx.identity.access.user-profile-updated.v1
     messages:
       UserProfileUpdated:
         $ref: '#/components/messages/UserProfileUpdated'
-    description: 'Channel for UserProfileUpdated. Producer: identity-access. Consumers: knowledge-workspace, commerce-operations,
-      security-audit.'
-    x-producer-service: identity-access
+    description: 'Channel for UserProfileUpdated. Producer: User-Service. Consumers: Workspace-Service, Commerce-Service,
+      Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - knowledge-workspace
-    - commerce-operations
-    - security-audit
+    - Workspace-Service
+    - Commerce-Service
+    - Admin-Service
   userRegistered:
     address: brainx.identity.access.user-registered.v1
     messages:
       UserRegistered:
         $ref: '#/components/messages/UserRegistered'
-    description: 'Channel for UserRegistered. Producer: identity-access. Consumers: commerce-operations, knowledge-workspace,
-      notification-email, analytics-dashboard.'
-    x-producer-service: identity-access
+    description: 'Channel for UserRegistered. Producer: User-Service. Consumers: Commerce-Service, Workspace-Service,
+      User-Service, Admin-Service.'
+    x-producer-service: User-Service
     x-consumer-services:
-    - commerce-operations
-    - knowledge-workspace
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - Workspace-Service
+    - User-Service
+    - Admin-Service
   userStyleProfileChanged:
     address: brainx.knowledge.intelligence.user-style-profile-changed.v1
     messages:
       UserStyleProfileChanged:
         $ref: '#/components/messages/UserStyleProfileChanged'
-    description: 'Channel for UserStyleProfileChanged. Producer: knowledge-intelligence. Consumers: knowledge-intelligence,
-      security-audit.'
-    x-producer-service: knowledge-intelligence
+    description: 'Channel for UserStyleProfileChanged. Producer: AI-Service. Consumers: AI-Service,
+      Admin-Service.'
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - security-audit
+    - AI-Service
+    - Admin-Service
 operations:
   sendAdminUserCreated:
     action: send
@@ -777,794 +765,782 @@ operations:
       $ref: '#/channels/adminUserCreated'
     messages:
     - $ref: '#/channels/adminUserCreated/messages/AdminUserCreated'
-    summary: commerce-operations publishes AdminUserCreated
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes AdminUserCreated
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   sendAiModelSettingsChanged:
     action: send
     channel:
       $ref: '#/channels/aiModelSettingsChanged'
     messages:
     - $ref: '#/channels/aiModelSettingsChanged/messages/AiModelSettingsChanged'
-    summary: knowledge-intelligence publishes AiModelSettingsChanged
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes AiModelSettingsChanged
+    x-producer-service: AI-Service
     x-consumer-services:
-    - security-audit
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   sendAiSuggestionCreated:
     action: send
     channel:
       $ref: '#/channels/aiSuggestionCreated'
     messages:
     - $ref: '#/channels/aiSuggestionCreated/messages/AiSuggestionCreated'
-    summary: knowledge-intelligence publishes AiSuggestionCreated
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes AiSuggestionCreated
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendAiSuggestionDecisionRecorded:
     action: send
     channel:
       $ref: '#/channels/aiSuggestionDecisionRecorded'
     messages:
     - $ref: '#/channels/aiSuggestionDecisionRecorded/messages/AiSuggestionDecisionRecorded'
-    summary: knowledge-intelligence publishes AiSuggestionDecisionRecorded
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes AiSuggestionDecisionRecorded
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   sendApiClientCreated:
     action: send
     channel:
       $ref: '#/channels/apiClientCreated'
     messages:
     - $ref: '#/channels/apiClientCreated/messages/ApiClientCreated'
-    summary: content-ingestion-publishing publishes ApiClientCreated
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ApiClientCreated
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - notification-email
+    - Admin-Service
+    - User-Service
   sendAssetUploaded:
     action: send
     channel:
       $ref: '#/channels/assetUploaded'
     messages:
     - $ref: '#/channels/assetUploaded/messages/AssetUploaded'
-    summary: content-ingestion-publishing publishes AssetUploaded
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes AssetUploaded
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - security-audit
+    - Ingestion-Service
+    - Admin-Service
   sendCaptureReceived:
     action: send
     channel:
       $ref: '#/channels/captureReceived'
     messages:
     - $ref: '#/channels/captureReceived/messages/CaptureReceived'
-    summary: content-ingestion-publishing publishes CaptureReceived
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes CaptureReceived
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - knowledge-intelligence
-    - analytics-dashboard
+    - Ingestion-Service
+    - AI-Service
+    - Admin-Service
   sendChatMessageCreated:
     action: send
     channel:
       $ref: '#/channels/chatMessageCreated'
     messages:
     - $ref: '#/channels/chatMessageCreated/messages/ChatMessageCreated'
-    summary: knowledge-intelligence publishes ChatMessageCreated
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes ChatMessageCreated
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendChatThreadCreated:
     action: send
     channel:
       $ref: '#/channels/chatThreadCreated'
     messages:
     - $ref: '#/channels/chatThreadCreated/messages/ChatThreadCreated'
-    summary: knowledge-intelligence publishes ChatThreadCreated
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes ChatThreadCreated
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendCheckoutSessionCreated:
     action: send
     channel:
       $ref: '#/channels/checkoutSessionCreated'
     messages:
     - $ref: '#/channels/checkoutSessionCreated/messages/CheckoutSessionCreated'
-    summary: commerce-operations publishes CheckoutSessionCreated
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes CheckoutSessionCreated
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
-    - security-audit
+    - Admin-Service
   sendClientEventReceived:
     action: send
     channel:
       $ref: '#/channels/clientEventReceived'
     messages:
     - $ref: '#/channels/clientEventReceived/messages/ClientEventReceived'
-    summary: commerce-operations publishes ClientEventReceived
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes ClientEventReceived
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendClusterJobCompleted:
     action: send
     channel:
       $ref: '#/channels/clusterJobCompleted'
     messages:
     - $ref: '#/channels/clusterJobCompleted/messages/ClusterJobCompleted'
-    summary: knowledge-intelligence publishes ClusterJobCompleted
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes ClusterJobCompleted
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendClusterJobRequested:
     action: send
     channel:
       $ref: '#/channels/clusterJobRequested'
     messages:
     - $ref: '#/channels/clusterJobRequested/messages/ClusterJobRequested'
-    summary: knowledge-intelligence publishes ClusterJobRequested
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes ClusterJobRequested
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
+    - AI-Service
   sendConsentRecorded:
     action: send
     channel:
       $ref: '#/channels/consentRecorded'
     messages:
     - $ref: '#/channels/consentRecorded/messages/ConsentRecorded'
-    summary: identity-access publishes ConsentRecorded
-    x-producer-service: identity-access
+    summary: User-Service publishes ConsentRecorded
+    x-producer-service: User-Service
     x-consumer-services:
-    - commerce-operations
-    - analytics-dashboard
-    - security-audit
+    - Commerce-Service
+    - Admin-Service
   sendConsentUpdated:
     action: send
     channel:
       $ref: '#/channels/consentUpdated'
     messages:
     - $ref: '#/channels/consentUpdated/messages/ConsentUpdated'
-    summary: identity-access publishes ConsentUpdated
-    x-producer-service: identity-access
+    summary: User-Service publishes ConsentUpdated
+    x-producer-service: User-Service
     x-consumer-services:
-    - analytics-dashboard
-    - commerce-operations
-    - security-audit
+    - Admin-Service
+    - Commerce-Service
   sendConversionJobCompleted:
     action: send
     channel:
       $ref: '#/channels/conversionJobCompleted'
     messages:
     - $ref: '#/channels/conversionJobCompleted/messages/ConversionJobCompleted'
-    summary: content-ingestion-publishing publishes ConversionJobCompleted
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ConversionJobCompleted
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - knowledge-workspace
-    - analytics-dashboard
+    - Ingestion-Service
+    - Workspace-Service
+    - Admin-Service
   sendConversionJobFailed:
     action: send
     channel:
       $ref: '#/channels/conversionJobFailed'
     messages:
     - $ref: '#/channels/conversionJobFailed/messages/ConversionJobFailed'
-    summary: content-ingestion-publishing publishes ConversionJobFailed
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ConversionJobFailed
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
-    - analytics-dashboard
+    - Ingestion-Service
+    - Admin-Service
   sendConversionJobRequested:
     action: send
     channel:
       $ref: '#/channels/conversionJobRequested'
     messages:
     - $ref: '#/channels/conversionJobRequested/messages/ConversionJobRequested'
-    summary: content-ingestion-publishing publishes ConversionJobRequested
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ConversionJobRequested
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   sendEmailVerificationRequested:
     action: send
     channel:
       $ref: '#/channels/emailVerificationRequested'
     messages:
     - $ref: '#/channels/emailVerificationRequested/messages/EmailVerificationRequested'
-    summary: identity-access publishes EmailVerificationRequested
-    x-producer-service: identity-access
+    summary: User-Service publishes EmailVerificationRequested
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   sendExportJobCompleted:
     action: send
     channel:
       $ref: '#/channels/exportJobCompleted'
     messages:
     - $ref: '#/channels/exportJobCompleted/messages/ExportJobCompleted'
-    summary: content-ingestion-publishing publishes ExportJobCompleted
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ExportJobCompleted
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendExportJobFailed:
     action: send
     channel:
       $ref: '#/channels/exportJobFailed'
     messages:
     - $ref: '#/channels/exportJobFailed/messages/ExportJobFailed'
-    summary: content-ingestion-publishing publishes ExportJobFailed
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ExportJobFailed
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendExportJobRequested:
     action: send
     channel:
       $ref: '#/channels/exportJobRequested'
     messages:
     - $ref: '#/channels/exportJobRequested/messages/ExportJobRequested'
-    summary: content-ingestion-publishing publishes ExportJobRequested
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ExportJobRequested
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   sendExternalToolCalled:
     action: send
     channel:
       $ref: '#/channels/externalToolCalled'
     messages:
     - $ref: '#/channels/externalToolCalled/messages/ExternalToolCalled'
-    summary: content-ingestion-publishing publishes ExternalToolCalled
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ExternalToolCalled
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   sendFavoriteChanged:
     action: send
     channel:
       $ref: '#/channels/favoriteChanged'
     messages:
     - $ref: '#/channels/favoriteChanged/messages/FavoriteChanged'
-    summary: knowledge-workspace publishes FavoriteChanged
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes FavoriteChanged
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendFolderChanged:
     action: send
     channel:
       $ref: '#/channels/folderChanged'
     messages:
     - $ref: '#/channels/folderChanged/messages/FolderChanged'
-    summary: knowledge-workspace publishes FolderChanged
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes FolderChanged
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   sendFolderCreated:
     action: send
     channel:
       $ref: '#/channels/folderCreated'
     messages:
     - $ref: '#/channels/folderCreated/messages/FolderCreated'
-    summary: knowledge-workspace publishes FolderCreated
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes FolderCreated
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   sendFolderDeleted:
     action: send
     channel:
       $ref: '#/channels/folderDeleted'
     messages:
     - $ref: '#/channels/folderDeleted/messages/FolderDeleted'
-    summary: knowledge-workspace publishes FolderDeleted
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes FolderDeleted
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-intelligence
+    - Admin-Service
+    - AI-Service
   sendGraphLayoutSaved:
     action: send
     channel:
       $ref: '#/channels/graphLayoutSaved'
     messages:
     - $ref: '#/channels/graphLayoutSaved/messages/GraphLayoutSaved'
-    summary: knowledge-workspace publishes GraphLayoutSaved
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes GraphLayoutSaved
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendGuideDismissed:
     action: send
     channel:
       $ref: '#/channels/guideDismissed'
     messages:
     - $ref: '#/channels/guideDismissed/messages/GuideDismissed'
-    summary: commerce-operations publishes GuideDismissed
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes GuideDismissed
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendImportJobCompleted:
     action: send
     channel:
       $ref: '#/channels/importJobCompleted'
     messages:
     - $ref: '#/channels/importJobCompleted/messages/ImportJobCompleted'
-    summary: content-ingestion-publishing publishes ImportJobCompleted
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ImportJobCompleted
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - knowledge-workspace
-    - analytics-dashboard
-    - notification-email
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
   sendImportJobFailed:
     action: send
     channel:
       $ref: '#/channels/importJobFailed'
     messages:
     - $ref: '#/channels/importJobFailed/messages/ImportJobFailed'
-    summary: content-ingestion-publishing publishes ImportJobFailed
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ImportJobFailed
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - analytics-dashboard
-    - notification-email
+    - Admin-Service
+    - User-Service
   sendImportJobRequested:
     action: send
     channel:
       $ref: '#/channels/importJobRequested'
     messages:
     - $ref: '#/channels/importJobRequested/messages/ImportJobRequested'
-    summary: content-ingestion-publishing publishes ImportJobRequested
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes ImportJobRequested
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   sendInsightReportCompleted:
     action: send
     channel:
       $ref: '#/channels/insightReportCompleted'
     messages:
     - $ref: '#/channels/insightReportCompleted/messages/InsightReportCompleted'
-    summary: knowledge-intelligence publishes InsightReportCompleted
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes InsightReportCompleted
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendInsightReportRequested:
     action: send
     channel:
       $ref: '#/channels/insightReportRequested'
     messages:
     - $ref: '#/channels/insightReportRequested/messages/InsightReportRequested'
-    summary: knowledge-intelligence publishes InsightReportRequested
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes InsightReportRequested
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
+    - AI-Service
   sendIntegrationConnected:
     action: send
     channel:
       $ref: '#/channels/integrationConnected'
     messages:
     - $ref: '#/channels/integrationConnected/messages/IntegrationConnected'
-    summary: content-ingestion-publishing publishes IntegrationConnected
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes IntegrationConnected
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   sendInvoiceIssued:
     action: send
     channel:
       $ref: '#/channels/invoiceIssued'
     messages:
     - $ref: '#/channels/invoiceIssued/messages/InvoiceIssued'
-    summary: commerce-operations publishes InvoiceIssued
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes InvoiceIssued
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendNoteContentSaved:
     action: send
     channel:
       $ref: '#/channels/noteContentSaved'
     messages:
     - $ref: '#/channels/noteContentSaved/messages/NoteContentSaved'
-    summary: knowledge-workspace publishes NoteContentSaved
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteContentSaved
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - commerce-operations
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
   sendNoteCreated:
     action: send
     channel:
       $ref: '#/channels/noteCreated'
     messages:
     - $ref: '#/channels/noteCreated/messages/NoteCreated'
-    summary: knowledge-workspace publishes NoteCreated
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteCreated
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - commerce-operations
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
   sendNoteDeleted:
     action: send
     channel:
       $ref: '#/channels/noteDeleted'
     messages:
     - $ref: '#/channels/noteDeleted/messages/NoteDeleted'
-    summary: knowledge-workspace publishes NoteDeleted
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteDeleted
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - deletion-orchestrator
-    - content-ingestion-publishing
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+    - Ingestion-Service
   sendNoteLinkCreated:
     action: send
     channel:
       $ref: '#/channels/noteLinkCreated'
     messages:
     - $ref: '#/channels/noteLinkCreated/messages/NoteLinkCreated'
-    summary: knowledge-workspace publishes NoteLinkCreated
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteLinkCreated
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   sendNoteLinkDeleted:
     action: send
     channel:
       $ref: '#/channels/noteLinkDeleted'
     messages:
     - $ref: '#/channels/noteLinkDeleted/messages/NoteLinkDeleted'
-    summary: knowledge-workspace publishes NoteLinkDeleted
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteLinkDeleted
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   sendNoteMetadataChanged:
     action: send
     channel:
       $ref: '#/channels/noteMetadataChanged'
     messages:
     - $ref: '#/channels/noteMetadataChanged/messages/NoteMetadataChanged'
-    summary: knowledge-workspace publishes NoteMetadataChanged
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteMetadataChanged
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
   sendNoteTagsChanged:
     action: send
     channel:
       $ref: '#/channels/noteTagsChanged'
     messages:
     - $ref: '#/channels/noteTagsChanged/messages/NoteTagsChanged'
-    summary: knowledge-workspace publishes NoteTagsChanged
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteTagsChanged
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - analytics-dashboard
-    - graph-projection
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
   sendNoteTrashed:
     action: send
     channel:
       $ref: '#/channels/noteTrashed'
     messages:
     - $ref: '#/channels/noteTrashed/messages/NoteTrashed'
-    summary: knowledge-workspace publishes NoteTrashed
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteTrashed
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - graph-projection
-    - analytics-dashboard
-    - deletion-orchestrator
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
   sendNoteViewed:
     action: send
     channel:
       $ref: '#/channels/noteViewed'
     messages:
     - $ref: '#/channels/noteViewed/messages/NoteViewed'
-    summary: knowledge-workspace publishes NoteViewed
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NoteViewed
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - analytics-dashboard
-    - knowledge-workspace
+    - Admin-Service
+    - Workspace-Service
   sendNotesMoved:
     action: send
     channel:
       $ref: '#/channels/notesMoved'
     messages:
     - $ref: '#/channels/notesMoved/messages/NotesMoved'
-    summary: knowledge-workspace publishes NotesMoved
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes NotesMoved
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - analytics-dashboard
-    - graph-projection
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
   sendNotificationRequested:
     action: send
     channel:
       $ref: '#/channels/notificationRequested'
     messages:
     - $ref: '#/channels/notificationRequested/messages/NotificationRequested'
-    summary: commerce-operations publishes NotificationRequested
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes NotificationRequested
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
+    - User-Service
   sendOAuthAccountLinked:
     action: send
     channel:
       $ref: '#/channels/oAuthAccountLinked'
     messages:
     - $ref: '#/channels/oAuthAccountLinked/messages/OAuthAccountLinked'
-    summary: identity-access publishes OAuthAccountLinked
-    x-producer-service: identity-access
+    summary: User-Service publishes OAuthAccountLinked
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   sendOAuthAccountUnlinked:
     action: send
     channel:
       $ref: '#/channels/oAuthAccountUnlinked'
     messages:
     - $ref: '#/channels/oAuthAccountUnlinked/messages/OAuthAccountUnlinked'
-    summary: identity-access publishes OAuthAccountUnlinked
-    x-producer-service: identity-access
+    summary: User-Service publishes OAuthAccountUnlinked
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
+    - Admin-Service
   sendPasswordChanged:
     action: send
     channel:
       $ref: '#/channels/passwordChanged'
     messages:
     - $ref: '#/channels/passwordChanged/messages/PasswordChanged'
-    summary: identity-access publishes PasswordChanged
-    x-producer-service: identity-access
+    summary: User-Service publishes PasswordChanged
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   sendPaymentFailed:
     action: send
     channel:
       $ref: '#/channels/paymentFailed'
     messages:
     - $ref: '#/channels/paymentFailed/messages/PaymentFailed'
-    summary: commerce-operations publishes PaymentFailed
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes PaymentFailed
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   sendPaymentSucceeded:
     action: send
     channel:
       $ref: '#/channels/paymentSucceeded'
     messages:
     - $ref: '#/channels/paymentSucceeded/messages/PaymentSucceeded'
-    summary: commerce-operations publishes PaymentSucceeded
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes PaymentSucceeded
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   sendPublishJobCompleted:
     action: send
     channel:
       $ref: '#/channels/publishJobCompleted'
     messages:
     - $ref: '#/channels/publishJobCompleted/messages/PublishJobCompleted'
-    summary: content-ingestion-publishing publishes PublishJobCompleted
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes PublishJobCompleted
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendPublishJobFailed:
     action: send
     channel:
       $ref: '#/channels/publishJobFailed'
     messages:
     - $ref: '#/channels/publishJobFailed/messages/PublishJobFailed'
-    summary: content-ingestion-publishing publishes PublishJobFailed
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes PublishJobFailed
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendPublishJobRequested:
     action: send
     channel:
       $ref: '#/channels/publishJobRequested'
     messages:
     - $ref: '#/channels/publishJobRequested/messages/PublishJobRequested'
-    summary: content-ingestion-publishing publishes PublishJobRequested
-    x-producer-service: content-ingestion-publishing
+    summary: Ingestion-Service publishes PublishJobRequested
+    x-producer-service: Ingestion-Service
     x-consumer-services:
-    - content-ingestion-publishing
+    - Ingestion-Service
   sendSemanticSearchPerformed:
     action: send
     channel:
       $ref: '#/channels/semanticSearchPerformed'
     messages:
     - $ref: '#/channels/semanticSearchPerformed/messages/SemanticSearchPerformed'
-    summary: knowledge-intelligence publishes SemanticSearchPerformed
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes SemanticSearchPerformed
+    x-producer-service: AI-Service
     x-consumer-services:
-    - analytics-dashboard
+    - Admin-Service
   sendShareLinkChanged:
     action: send
     channel:
       $ref: '#/channels/shareLinkChanged'
     messages:
     - $ref: '#/channels/shareLinkChanged/messages/ShareLinkChanged'
-    summary: knowledge-workspace publishes ShareLinkChanged
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes ShareLinkChanged
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - security-audit
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendShareLinkCreated:
     action: send
     channel:
       $ref: '#/channels/shareLinkCreated'
     messages:
     - $ref: '#/channels/shareLinkCreated/messages/ShareLinkCreated'
-    summary: knowledge-workspace publishes ShareLinkCreated
-    x-producer-service: knowledge-workspace
+    summary: Workspace-Service publishes ShareLinkCreated
+    x-producer-service: Workspace-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - security-audit
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendSubscriptionChanged:
     action: send
     channel:
       $ref: '#/channels/subscriptionChanged'
     messages:
     - $ref: '#/channels/subscriptionChanged/messages/SubscriptionChanged'
-    summary: commerce-operations publishes SubscriptionChanged
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes SubscriptionChanged
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - commerce-operations
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - User-Service
+    - Admin-Service
   sendSupportTicketCreated:
     action: send
     channel:
       $ref: '#/channels/supportTicketCreated'
     messages:
     - $ref: '#/channels/supportTicketCreated/messages/SupportTicketCreated'
-    summary: commerce-operations publishes SupportTicketCreated
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes SupportTicketCreated
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendSupportTicketReplied:
     action: send
     channel:
       $ref: '#/channels/supportTicketReplied'
     messages:
     - $ref: '#/channels/supportTicketReplied/messages/SupportTicketReplied'
-    summary: commerce-operations publishes SupportTicketReplied
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes SupportTicketReplied
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - notification-email
-    - analytics-dashboard
+    - User-Service
+    - Admin-Service
   sendTokenUsageRecorded:
     action: send
     channel:
       $ref: '#/channels/tokenUsageRecorded'
     messages:
     - $ref: '#/channels/tokenUsageRecorded/messages/TokenUsageRecorded'
-    summary: commerce-operations publishes TokenUsageRecorded
-    x-producer-service: commerce-operations
+    summary: Commerce-Service publishes TokenUsageRecorded
+    x-producer-service: Commerce-Service
     x-consumer-services:
-    - analytics-dashboard
-    - commerce-operations
+    - Admin-Service
+    - Commerce-Service
   sendTokenUsageRecordedRequested:
     action: send
     channel:
       $ref: '#/channels/tokenUsageRecordedRequested'
     messages:
     - $ref: '#/channels/tokenUsageRecordedRequested/messages/TokenUsageRecordedRequested'
-    summary: knowledge-intelligence publishes TokenUsageRecordedRequested
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes TokenUsageRecordedRequested
+    x-producer-service: AI-Service
     x-consumer-services:
-    - commerce-operations
+    - Commerce-Service
   sendTwoFactorConfigured:
     action: send
     channel:
       $ref: '#/channels/twoFactorConfigured'
     messages:
     - $ref: '#/channels/twoFactorConfigured/messages/TwoFactorConfigured'
-    summary: identity-access publishes TwoFactorConfigured
-    x-producer-service: identity-access
+    summary: User-Service publishes TwoFactorConfigured
+    x-producer-service: User-Service
     x-consumer-services:
-    - notification-email
-    - security-audit
+    - User-Service
+    - Admin-Service
   sendUserDeletionCancelled:
     action: send
     channel:
       $ref: '#/channels/userDeletionCancelled'
     messages:
     - $ref: '#/channels/userDeletionCancelled/messages/UserDeletionCancelled'
-    summary: identity-access publishes UserDeletionCancelled
-    x-producer-service: identity-access
+    summary: User-Service publishes UserDeletionCancelled
+    x-producer-service: User-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - notification-email
-    - commerce-operations
+    - User-Service
+    - Commerce-Service
   sendUserDeletionRequested:
     action: send
     channel:
       $ref: '#/channels/userDeletionRequested'
     messages:
     - $ref: '#/channels/userDeletionRequested/messages/UserDeletionRequested'
-    summary: identity-access publishes UserDeletionRequested
-    x-producer-service: identity-access
+    summary: User-Service publishes UserDeletionRequested
+    x-producer-service: User-Service
     x-consumer-services:
-    - deletion-orchestrator
-    - notification-email
-    - commerce-operations
-    - knowledge-workspace
-    - content-ingestion-publishing
-    - knowledge-intelligence
+    - User-Service
+    - Commerce-Service
+    - Workspace-Service
+    - Ingestion-Service
+    - AI-Service
   sendUserLoggedIn:
     action: send
     channel:
       $ref: '#/channels/userLoggedIn'
     messages:
     - $ref: '#/channels/userLoggedIn/messages/UserLoggedIn'
-    summary: identity-access publishes UserLoggedIn
-    x-producer-service: identity-access
+    summary: User-Service publishes UserLoggedIn
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   sendUserLoggedOut:
     action: send
     channel:
       $ref: '#/channels/userLoggedOut'
     messages:
     - $ref: '#/channels/userLoggedOut/messages/UserLoggedOut'
-    summary: identity-access publishes UserLoggedOut
-    x-producer-service: identity-access
+    summary: User-Service publishes UserLoggedOut
+    x-producer-service: User-Service
     x-consumer-services:
-    - security-audit
-    - analytics-dashboard
+    - Admin-Service
   sendUserProfileUpdated:
     action: send
     channel:
       $ref: '#/channels/userProfileUpdated'
     messages:
     - $ref: '#/channels/userProfileUpdated/messages/UserProfileUpdated'
-    summary: identity-access publishes UserProfileUpdated
-    x-producer-service: identity-access
+    summary: User-Service publishes UserProfileUpdated
+    x-producer-service: User-Service
     x-consumer-services:
-    - knowledge-workspace
-    - commerce-operations
-    - security-audit
+    - Workspace-Service
+    - Commerce-Service
+    - Admin-Service
   sendUserRegistered:
     action: send
     channel:
       $ref: '#/channels/userRegistered'
     messages:
     - $ref: '#/channels/userRegistered/messages/UserRegistered'
-    summary: identity-access publishes UserRegistered
-    x-producer-service: identity-access
+    summary: User-Service publishes UserRegistered
+    x-producer-service: User-Service
     x-consumer-services:
-    - commerce-operations
-    - knowledge-workspace
-    - notification-email
-    - analytics-dashboard
+    - Commerce-Service
+    - Workspace-Service
+    - User-Service
+    - Admin-Service
   sendUserStyleProfileChanged:
     action: send
     channel:
       $ref: '#/channels/userStyleProfileChanged'
     messages:
     - $ref: '#/channels/userStyleProfileChanged/messages/UserStyleProfileChanged'
-    summary: knowledge-intelligence publishes UserStyleProfileChanged
-    x-producer-service: knowledge-intelligence
+    summary: AI-Service publishes UserStyleProfileChanged
+    x-producer-service: AI-Service
     x-consumer-services:
-    - knowledge-intelligence
-    - security-audit
+    - AI-Service
+    - Admin-Service
 components:
   messages:
     AdminUserCreated:
@@ -1582,13 +1558,13 @@ components:
               const: AdminUserCreated
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/AdminUserCreatedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - notification-email
-      - security-audit
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1609,13 +1585,13 @@ components:
               const: AiModelSettingsChanged
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/AiModelSettingsChangedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - security-audit
-      - knowledge-intelligence
+      - Admin-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1636,12 +1612,12 @@ components:
               const: AiSuggestionCreated
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/AiSuggestionCreatedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1662,13 +1638,13 @@ components:
               const: AiSuggestionDecisionRecorded
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/AiSuggestionDecisionRecordedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
-      - knowledge-intelligence
+      - Admin-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1689,13 +1665,13 @@ components:
               const: ApiClientCreated
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ApiClientCreatedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - security-audit
-      - notification-email
+      - Admin-Service
+      - User-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1716,13 +1692,13 @@ components:
               const: AssetUploaded
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/AssetUploadedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
-      - security-audit
+      - Ingestion-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1743,14 +1719,14 @@ components:
               const: CaptureReceived
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/CaptureReceivedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
-      - knowledge-intelligence
-      - analytics-dashboard
+      - Ingestion-Service
+      - AI-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1771,12 +1747,12 @@ components:
               const: ChatMessageCreated
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/ChatMessageCreatedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1797,12 +1773,12 @@ components:
               const: ChatThreadCreated
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/ChatThreadCreatedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1823,13 +1799,12 @@ components:
               const: CheckoutSessionCreated
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/CheckoutSessionCreatedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - analytics-dashboard
-      - security-audit
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1850,12 +1825,12 @@ components:
               const: ClientEventReceived
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/ClientEventReceivedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1876,12 +1851,12 @@ components:
               const: ClusterJobCompleted
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/ClusterJobCompletedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1902,12 +1877,12 @@ components:
               const: ClusterJobRequested
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/ClusterJobRequestedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - knowledge-intelligence
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1928,14 +1903,13 @@ components:
               const: ConsentRecorded
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/ConsentRecordedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - commerce-operations
-      - analytics-dashboard
-      - security-audit
+      - Commerce-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1956,14 +1930,13 @@ components:
               const: ConsentUpdated
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/ConsentUpdatedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - analytics-dashboard
-      - commerce-operations
-      - security-audit
+      - Admin-Service
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1984,14 +1957,14 @@ components:
               const: ConversionJobCompleted
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ConversionJobCompletedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
-      - knowledge-workspace
-      - analytics-dashboard
+      - Ingestion-Service
+      - Workspace-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2012,13 +1985,13 @@ components:
               const: ConversionJobFailed
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ConversionJobFailedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
-      - analytics-dashboard
+      - Ingestion-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2039,12 +2012,12 @@ components:
               const: ConversionJobRequested
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ConversionJobRequestedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
+      - Ingestion-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2065,13 +2038,13 @@ components:
               const: EmailVerificationRequested
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/EmailVerificationRequestedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - notification-email
-      - security-audit
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2092,13 +2065,13 @@ components:
               const: ExportJobCompleted
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ExportJobCompletedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2119,13 +2092,13 @@ components:
               const: ExportJobFailed
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ExportJobFailedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2146,12 +2119,12 @@ components:
               const: ExportJobRequested
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ExportJobRequestedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
+      - Ingestion-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2172,13 +2145,12 @@ components:
               const: ExternalToolCalled
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ExternalToolCalledPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - security-audit
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2199,12 +2171,12 @@ components:
               const: FavoriteChanged
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/FavoriteChangedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2225,13 +2197,13 @@ components:
               const: FolderChanged
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/FolderChangedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
-      - knowledge-intelligence
+      - Admin-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2252,13 +2224,13 @@ components:
               const: FolderCreated
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/FolderCreatedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
-      - knowledge-intelligence
+      - Admin-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2279,13 +2251,13 @@ components:
               const: FolderDeleted
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/FolderDeletedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
-      - knowledge-intelligence
+      - Admin-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2306,12 +2278,12 @@ components:
               const: GraphLayoutSaved
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/GraphLayoutSavedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2332,12 +2304,12 @@ components:
               const: GuideDismissed
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/GuideDismissedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2358,14 +2330,14 @@ components:
               const: ImportJobCompleted
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ImportJobCompletedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - knowledge-workspace
-      - analytics-dashboard
-      - notification-email
+      - Workspace-Service
+      - Admin-Service
+      - User-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2386,13 +2358,13 @@ components:
               const: ImportJobFailed
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ImportJobFailedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - analytics-dashboard
-      - notification-email
+      - Admin-Service
+      - User-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2413,12 +2385,12 @@ components:
               const: ImportJobRequested
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/ImportJobRequestedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
+      - Ingestion-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2439,12 +2411,12 @@ components:
               const: InsightReportCompleted
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/InsightReportCompletedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2465,12 +2437,12 @@ components:
               const: InsightReportRequested
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/InsightReportRequestedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - knowledge-intelligence
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2491,13 +2463,12 @@ components:
               const: IntegrationConnected
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/IntegrationConnectedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - security-audit
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2518,13 +2489,13 @@ components:
               const: InvoiceIssued
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/InvoiceIssuedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2545,15 +2516,15 @@ components:
               const: NoteContentSaved
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteContentSavedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
-      - commerce-operations
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2574,15 +2545,15 @@ components:
               const: NoteCreated
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteCreatedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
-      - commerce-operations
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2603,16 +2574,16 @@ components:
               const: NoteDeleted
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteDeletedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
-      - deletion-orchestrator
-      - content-ingestion-publishing
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - User-Service
+      - Ingestion-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2633,14 +2604,14 @@ components:
               const: NoteLinkCreated
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteLinkCreatedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2661,14 +2632,14 @@ components:
               const: NoteLinkDeleted
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteLinkDeletedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2689,14 +2660,14 @@ components:
               const: NoteMetadataChanged
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteMetadataChangedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2717,14 +2688,14 @@ components:
               const: NoteTagsChanged
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteTagsChangedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - analytics-dashboard
-      - graph-projection
+      - AI-Service
+      - Admin-Service
+      - Workspace-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2745,15 +2716,15 @@ components:
               const: NoteTrashed
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteTrashedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - graph-projection
-      - analytics-dashboard
-      - deletion-orchestrator
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - User-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2774,13 +2745,13 @@ components:
               const: NoteViewed
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NoteViewedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - analytics-dashboard
-      - knowledge-workspace
+      - Admin-Service
+      - Workspace-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2801,14 +2772,14 @@ components:
               const: NotesMoved
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/NotesMovedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - analytics-dashboard
-      - graph-projection
+      - AI-Service
+      - Admin-Service
+      - Workspace-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2829,12 +2800,12 @@ components:
               const: NotificationRequested
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/NotificationRequestedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - notification-email
+      - User-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2855,13 +2826,12 @@ components:
               const: OAuthAccountLinked
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/OAuthAccountLinkedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - security-audit
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2882,12 +2852,12 @@ components:
               const: OAuthAccountUnlinked
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/OAuthAccountUnlinkedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - security-audit
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2908,13 +2878,13 @@ components:
               const: PasswordChanged
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/PasswordChangedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - notification-email
-      - security-audit
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2935,14 +2905,14 @@ components:
               const: PaymentFailed
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/PaymentFailedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - commerce-operations
-      - notification-email
-      - analytics-dashboard
+      - Commerce-Service
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2963,14 +2933,14 @@ components:
               const: PaymentSucceeded
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/PaymentSucceededPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - commerce-operations
-      - notification-email
-      - analytics-dashboard
+      - Commerce-Service
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -2991,13 +2961,13 @@ components:
               const: PublishJobCompleted
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/PublishJobCompletedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3018,13 +2988,13 @@ components:
               const: PublishJobFailed
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/PublishJobFailedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3045,12 +3015,12 @@ components:
               const: PublishJobRequested
             producer:
               type: string
-              const: content-ingestion-publishing
+              const: Ingestion-Service
             payload:
               $ref: '#/components/schemas/PublishJobRequestedPayload'
-      x-producer-service: content-ingestion-publishing
+      x-producer-service: Ingestion-Service
       x-consumer-services:
-      - content-ingestion-publishing
+      - Ingestion-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3071,12 +3041,12 @@ components:
               const: SemanticSearchPerformed
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/SemanticSearchPerformedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3097,14 +3067,13 @@ components:
               const: ShareLinkChanged
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/ShareLinkChangedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - deletion-orchestrator
-      - security-audit
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3125,14 +3094,13 @@ components:
               const: ShareLinkCreated
             producer:
               type: string
-              const: knowledge-workspace
+              const: Workspace-Service
             payload:
               $ref: '#/components/schemas/ShareLinkCreatedPayload'
-      x-producer-service: knowledge-workspace
+      x-producer-service: Workspace-Service
       x-consumer-services:
-      - deletion-orchestrator
-      - security-audit
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3153,14 +3121,14 @@ components:
               const: SubscriptionChanged
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/SubscriptionChangedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - commerce-operations
-      - notification-email
-      - analytics-dashboard
+      - Commerce-Service
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3181,13 +3149,13 @@ components:
               const: SupportTicketCreated
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/SupportTicketCreatedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3208,13 +3176,13 @@ components:
               const: SupportTicketReplied
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/SupportTicketRepliedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - notification-email
-      - analytics-dashboard
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3235,13 +3203,13 @@ components:
               const: TokenUsageRecorded
             producer:
               type: string
-              const: commerce-operations
+              const: Commerce-Service
             payload:
               $ref: '#/components/schemas/TokenUsageRecordedPayload'
-      x-producer-service: commerce-operations
+      x-producer-service: Commerce-Service
       x-consumer-services:
-      - analytics-dashboard
-      - commerce-operations
+      - Admin-Service
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3262,12 +3230,12 @@ components:
               const: TokenUsageRecordedRequested
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/TokenUsageRecordedRequestedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - commerce-operations
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3288,13 +3256,13 @@ components:
               const: TwoFactorConfigured
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/TwoFactorConfiguredPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - notification-email
-      - security-audit
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3315,14 +3283,13 @@ components:
               const: UserDeletionCancelled
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserDeletionCancelledPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - deletion-orchestrator
-      - notification-email
-      - commerce-operations
+      - User-Service
+      - Commerce-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3343,17 +3310,16 @@ components:
               const: UserDeletionRequested
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserDeletionRequestedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - deletion-orchestrator
-      - notification-email
-      - commerce-operations
-      - knowledge-workspace
-      - content-ingestion-publishing
-      - knowledge-intelligence
+      - User-Service
+      - Commerce-Service
+      - Workspace-Service
+      - Ingestion-Service
+      - AI-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3374,13 +3340,12 @@ components:
               const: UserLoggedIn
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserLoggedInPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - security-audit
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3401,13 +3366,12 @@ components:
               const: UserLoggedOut
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserLoggedOutPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - security-audit
-      - analytics-dashboard
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3428,14 +3392,14 @@ components:
               const: UserProfileUpdated
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserProfileUpdatedPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - knowledge-workspace
-      - commerce-operations
-      - security-audit
+      - Workspace-Service
+      - Commerce-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3456,15 +3420,15 @@ components:
               const: UserRegistered
             producer:
               type: string
-              const: identity-access
+              const: User-Service
             payload:
               $ref: '#/components/schemas/UserRegisteredPayload'
-      x-producer-service: identity-access
+      x-producer-service: User-Service
       x-consumer-services:
-      - commerce-operations
-      - knowledge-workspace
-      - notification-email
-      - analytics-dashboard
+      - Commerce-Service
+      - Workspace-Service
+      - User-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -3485,13 +3449,13 @@ components:
               const: UserStyleProfileChanged
             producer:
               type: string
-              const: knowledge-intelligence
+              const: AI-Service
             payload:
               $ref: '#/components/schemas/UserStyleProfileChangedPayload'
-      x-producer-service: knowledge-intelligence
+      x-producer-service: AI-Service
       x-consumer-services:
-      - knowledge-intelligence
-      - security-audit
+      - AI-Service
+      - Admin-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -4884,23 +4848,15 @@ x-ssot:
     ledger write.'
   - Note read models, search indexes, graph projections, dashboards and wordclouds are eventually consistent.
 x-service-catalog:
-- id: identity-access
-  description: User identity, authentication, account security and consent ledger
-- id: knowledge-workspace
-  description: Authoritative note/folder/link/share/workspace ledger
-- id: content-ingestion-publishing
-  description: Assets, conversions, imports, exports, extension capture and publishing
-- id: knowledge-intelligence
-  description: Semantic search, RAG, LLM features and AI suggestions; owns read models only
-- id: commerce-operations
-  description: Plans, billing, entitlements, token ledger, admin, telemetry and support
-- id: notification-email
-  description: Email, push and administrator notification workers
-- id: security-audit
-  description: Audit logging, risk detection and abuse monitoring
-- id: analytics-dashboard
-  description: Client event, knowledge dashboard, wordcloud and guide projections
-- id: graph-projection
-  description: Backlink and graph node/edge projection workers
-- id: deletion-orchestrator
-  description: Deferred deletion, anonymization and purge orchestration
+- id: User-Service
+  description: User identity, authentication, onboarding, account security, consent, my page and note usage statistics
+- id: Admin-Service
+  description: Administrator console, user management, payment/refund operations, monitoring, user statistics, support replies and model token usage dashboards
+- id: AI-Service
+  description: Semantic search, RAG, LLM orchestration, AI recommendation, summarization and token usage event production
+- id: Ingestion-Service
+  description: File processing, conversion, import, export and external integration workflows
+- id: Commerce-Service
+  description: Payment APIs, plans, subscriptions, billing and commerce entitlement workflows
+- id: Workspace-Service
+  description: Authoritative notes, folders, links, graph and workspace ledger
