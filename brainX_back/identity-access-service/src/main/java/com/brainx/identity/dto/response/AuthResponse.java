@@ -50,6 +50,7 @@ public class AuthResponse {
             private boolean twoFactorEnabled;
             private boolean emailVerified;
             private List<String> linkedProviders;
+            private boolean hasPassword;
         }
 
         @Getter
@@ -75,6 +76,7 @@ public class AuthResponse {
                     .twoFactorEnabled(user.isTwoFactorEnabled())
                     .emailVerified(user.isEmailVerified())
                     .linkedProviders(providers)
+                    .hasPassword(user.getPasswordHash() != null && !user.getPasswordHash().isBlank())
                     .build();
 
             ConsentInfo consentInfo = null;

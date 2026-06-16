@@ -34,7 +34,8 @@ public class User {
     @Column(name = "nickname", length = 50)
     private String nickname;
 
-    @Column(name = "profile_image_url", length = 500)
+    @Lob
+    @Column(name = "profile_image_url", columnDefinition = "LONGTEXT")
     private String profileImageUrl;
 
     @Enumerated(EnumType.STRING)
