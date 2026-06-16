@@ -4,7 +4,7 @@ import React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { PaneNode, MockNote } from "./types";
 import { DropZone } from "./paneUtils";
-import PaneLeafView from "./PaneLeafView";
+import PaneLeafView, { type EditMode } from "./PaneLeafView";
 
 interface Props {
   node: PaneNode;
@@ -12,12 +12,12 @@ interface Props {
   activeId: string;
   totalLeaves: number;
   dragNoteId: string | null;
+  paneMode: Record<string, EditMode>;
   onActivate: (id: string) => void;
-  onSplitRight: (id: string) => void;
-  onSplitDown: (id: string) => void;
   onClose: (id: string) => void;
-  onChangeNote: (paneId: string, noteId: string) => void;
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
+  onTitleChange: (noteId: string, newTitle: string) => void;
+  onModeChange: (paneId: string, mode: EditMode) => void;
 }
 
 export default function PaneTreeRenderer({
@@ -26,12 +26,12 @@ export default function PaneTreeRenderer({
   activeId,
   totalLeaves,
   dragNoteId,
+  paneMode,
   onActivate,
-  onSplitRight,
-  onSplitDown,
   onClose,
-  onChangeNote,
   onDrop,
+  onTitleChange,
+  onModeChange,
 }: Props) {
   if (node.type === "leaf") {
     const note = notes.find((n) => n.id === node.noteId) ?? notes[0];
@@ -41,14 +41,13 @@ export default function PaneTreeRenderer({
         note={note}
         isActive={activeId === node.id}
         totalLeaves={totalLeaves}
-        allNotes={notes}
         dragNoteId={dragNoteId}
+        mode={paneMode[node.id] ?? "read"}
+        onModeChange={onModeChange}
         onActivate={() => onActivate(node.id)}
-        onSplitRight={() => onSplitRight(node.id)}
-        onSplitDown={() => onSplitDown(node.id)}
         onClose={() => onClose(node.id)}
-        onChangeNote={(noteId) => onChangeNote(node.id, noteId)}
         onDrop={(zone, noteId) => onDrop(node.id, zone, noteId)}
+        onTitleChange={onTitleChange}
       />
     );
   }
@@ -66,12 +65,12 @@ export default function PaneTreeRenderer({
               activeId={activeId}
               totalLeaves={totalLeaves}
               dragNoteId={dragNoteId}
+              paneMode={paneMode}
               onActivate={onActivate}
-              onSplitRight={onSplitRight}
-              onSplitDown={onSplitDown}
               onClose={onClose}
-              onChangeNote={onChangeNote}
               onDrop={onDrop}
+              onTitleChange={onTitleChange}
+              onModeChange={onModeChange}
             />
           </Panel>
 

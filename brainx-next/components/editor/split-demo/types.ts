@@ -1,8 +1,15 @@
+export type NoteCategory = "backend" | "frontend" | "ai" | "architecture" | "database" | "devops";
+
+export type SortOption = "modified" | "viewed" | "created" | "title" | "favorites" | "ai";
+
 export interface MockNote {
   id: string;
   title: string;
   content: string;
   tags: string[];
+  category: NoteCategory;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface PaneLeaf {

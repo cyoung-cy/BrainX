@@ -1,7 +1,7 @@
 import { PaneLeaf, PaneNode, PaneSplit } from "./types";
 
-/** DnD 드롭 위치 — 패널을 5개 구역으로 구분 */
-export type DropZone = "left" | "right" | "top" | "bottom" | "center";
+/** DnD 드롭 위치 — 패널을 4방향으로 구분 (분할 전용) */
+export type DropZone = "left" | "right" | "top" | "bottom";
 
 let _counter = 0;
 export function uid(): string {
