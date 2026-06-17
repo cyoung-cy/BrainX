@@ -27,11 +27,11 @@ jwt:
   secret: ${JWT_SECRET:brainx-identity-service-secret-key-must-be-at-least-256-bits-long-for-hs256}
 
 notion:
-  client-id: ${NOTION_CLIENT_ID}
-  client-secret: ${NOTION_CLIENT_SECRET}
+  client-id: ${NOTION_CLIENT_ID:381d872b-594c-81ef-aeaa-0037997a32b6}
+  client-secret: ${NOTION_CLIENT_SECRET:}
   oauth-url: https://api.notion.com/v1/oauth/authorize
   token-url: https://api.notion.com/v1/oauth/token
-  redirect-uri: http://localhost:5173/import/notion/callback
+  redirect-uri: http://localhost:3000/notion-callback
 
 workspace-service:
   base-url: http://localhost:8082
