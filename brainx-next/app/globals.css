@@ -465,8 +465,10 @@ html.light .aurora b {
 
 .tiptap-note-content .ProseMirror strong,
 .tiptap-note-content .ProseMirror b {
+  /* color는 지정하지 않음: Color/TextStyle mark(<span style="color:...">)가
+     strong의 상위 또는 하위 어느 쪽에 위치하든 직접 지정한 color가 항상
+     이 규칙에 의해 덮어써지는 문제(Bold+글자색 동시 적용 불가)를 방지한다. */
   font-weight: 700;
-  color: rgb(var(--txt));
 }
 
 .tiptap-note-content .ProseMirror em {
@@ -527,11 +529,6 @@ html.light .aurora b {
 .tiptap-note-content--light .ProseMirror h2,
 .tiptap-note-content--light .ProseMirror h3,
 .tiptap-note-content--light .ProseMirror h4 {
-  color: #111827;
-}
-
-.tiptap-note-content--light .ProseMirror strong,
-.tiptap-note-content--light .ProseMirror b {
   color: #111827;
 }
 

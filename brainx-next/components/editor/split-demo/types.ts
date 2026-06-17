@@ -2,12 +2,31 @@ export type NoteCategory = "backend" | "frontend" | "ai" | "architecture" | "dat
 
 export type SortOption = "modified" | "viewed" | "created" | "title" | "favorites" | "ai";
 
+export interface MockFolder {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
+  color?: string;
+  favorite?: boolean;
+}
+
+export interface Tab {
+  id: string;
+  noteId: string;
+}
+
+export interface PaneTabsState {
+  tabs: Tab[];
+  activeTabId: string;
+}
+
 export interface MockNote {
   id: string;
   title: string;
   content: string;
   tags: string[];
   category: NoteCategory;
+  folderId?: string;
   createdAt: number;
   updatedAt: number;
 }

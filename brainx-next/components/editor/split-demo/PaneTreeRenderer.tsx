@@ -2,9 +2,9 @@
 
 import React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { PaneNode, MockNote } from "./types";
+import { PaneNode, MockNote, PaneTabsState } from "./types";
 import { DropZone } from "./paneUtils";
-import PaneLeafView, { type EditMode } from "./PaneLeafView";
+import PaneLeafView, { type EditMode, type AiActionType } from "./PaneLeafView";
 
 interface Props {
   node: PaneNode;
@@ -13,11 +13,17 @@ interface Props {
   totalLeaves: number;
   dragNoteId: string | null;
   paneMode: Record<string, EditMode>;
+  paneTabs: Record<string, PaneTabsState>;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
+  onContentChange: (noteId: string, newContentHtml: string) => void;
   onModeChange: (paneId: string, mode: EditMode) => void;
+  onTabActivate: (paneId: string, tabId: string) => void;
+  onTabClose: (paneId: string, tabId: string) => void;
+  onNewTab: (paneId: string) => void;
+  onAiAction: (type: AiActionType, text: string) => void;
 }
 
 export default function PaneTreeRenderer({
@@ -27,18 +33,32 @@ export default function PaneTreeRenderer({
   totalLeaves,
   dragNoteId,
   paneMode,
+  paneTabs,
   onActivate,
   onClose,
   onDrop,
   onTitleChange,
+  onContentChange,
   onModeChange,
+  onTabActivate,
+  onTabClose,
+  onNewTab,
+  onAiAction,
 }: Props) {
   if (node.type === "leaf") {
-    const note = notes.find((n) => n.id === node.noteId) ?? notes[0];
+    const tabsState = paneTabs[node.id];
+    const activeTabId = tabsState?.activeTabId ?? "";
+    const activeNoteId =
+      tabsState?.tabs.find((t) => t.id === activeTabId)?.noteId ?? node.noteId;
+    const note = notes.find((n) => n.id === activeNoteId) ?? notes[0];
+
     return (
       <PaneLeafView
         node={node}
         note={note}
+        allNotes={notes}
+        tabs={tabsState?.tabs ?? [{ id: activeTabId, noteId: activeNoteId }]}
+        activeTabId={activeTabId}
         isActive={activeId === node.id}
         totalLeaves={totalLeaves}
         dragNoteId={dragNoteId}
@@ -48,6 +68,11 @@ export default function PaneTreeRenderer({
         onClose={() => onClose(node.id)}
         onDrop={(zone, noteId) => onDrop(node.id, zone, noteId)}
         onTitleChange={onTitleChange}
+        onContentChange={onContentChange}
+        onTabActivate={(tabId) => onTabActivate(node.id, tabId)}
+        onTabClose={(tabId) => onTabClose(node.id, tabId)}
+        onNewTab={() => onNewTab(node.id)}
+        onAiAction={onAiAction}
       />
     );
   }
@@ -66,11 +91,17 @@ export default function PaneTreeRenderer({
               totalLeaves={totalLeaves}
               dragNoteId={dragNoteId}
               paneMode={paneMode}
+              paneTabs={paneTabs}
               onActivate={onActivate}
               onClose={onClose}
               onDrop={onDrop}
               onTitleChange={onTitleChange}
+              onContentChange={onContentChange}
               onModeChange={onModeChange}
+              onTabActivate={onTabActivate}
+              onTabClose={onTabClose}
+              onNewTab={onNewTab}
+              onAiAction={onAiAction}
             />
           </Panel>
 

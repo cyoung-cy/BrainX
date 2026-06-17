@@ -1,25 +1,36 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, MouseEvent } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import type { Editor } from "@tiptap/core";
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { TextStyle } from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import Highlight from "@tiptap/extension-highlight";
 import { createLowlight, all } from "lowlight";
-import { Eye, EyeOff, X } from "lucide-react";
+import { Link2, Highlighter, Sparkles, Wand2 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { PaneLeaf, MockNote } from "./types";
+import { PaneLeaf, MockNote, Tab } from "./types";
 import { DropZone } from "./paneUtils";
 import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
+import TabBar from "./TabBar";
+import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
 
 export type EditMode = "read" | "edit";
+export type AiActionType = "summarize" | "rewrite";
 
 interface Props {
   node: PaneLeaf;
   note: MockNote;
+  allNotes: MockNote[];
+  tabs: Tab[];
+  activeTabId: string;
   isActive: boolean;
   totalLeaves: number;
   dragNoteId: string | null;
@@ -29,6 +40,11 @@ interface Props {
   onClose: () => void;
   onDrop: (zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
+  onContentChange: (noteId: string, newContentHtml: string) => void;
+  onTabActivate: (tabId: string) => void;
+  onTabClose: (tabId: string) => void;
+  onNewTab: () => void;
+  onAiAction: (type: AiActionType, text: string) => void;
 }
 
 const lowlight = createLowlight(all);
@@ -115,6 +131,20 @@ function markdownToHtml(md: string): string {
 
   flushList();
   return out.join("");
+}
+
+/**
+ * 노트 콘텐츠를 에디터에 로드할 HTML로 변환.
+ * - 빈 노트: 그대로 빈 문자열 (새 노트)
+ * - 이미 편집되어 HTML로 저장된 노트(에디터가 저장한 getHTML() 결과): 그대로 사용
+ *   (다시 markdownToHtml을 통과시키면 태그가 텍스트로 escape되어 깨짐)
+ * - 최초 시드 데이터(마크다운 원문): markdownToHtml로 변환
+ */
+function resolveEditorHtml(rawContent: string): string {
+  const trimmed = rawContent.trim();
+  if (trimmed === "") return "";
+  if (trimmed.startsWith("<")) return rawContent;
+  return markdownToHtml(rawContent);
 }
 
 /* ── Obsidian Live Preview ────────────────────────────────────────────── */
@@ -346,10 +376,268 @@ const HeadingMarkerEdit = Extension.create({
   },
 });
 
+/* ── 버블 툴바 ─────────────────────────────────────────────────────────── */
+function BubbleBtn({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      title={title}
+      className={cx(
+        "grid h-[26px] min-w-[26px] place-items-center rounded px-1 transition-colors",
+        active ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function BubbleToolbar({
+  editor,
+  onAiAction,
+}: {
+  editor: Editor;
+  onAiAction: (type: AiActionType, text: string) => void;
+}) {
+  const getSelectedText = useCallback(() => {
+    const { from, to } = editor.state.selection;
+    return editor.state.doc.textBetween(from, to, " ");
+  }, [editor]);
+
+  const [recentTextColors, setRecentTextColors] = useState<string[]>([]);
+  const [recentHighlights, setRecentHighlights] = useState<string[]>([]);
+  const pushRecent = (list: string[], value: string) => [value, ...list.filter((v) => v !== value)].slice(0, 4);
+
+  const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
+  const currentHighlight = (editor.getAttributes("highlight").color as string) ?? null;
+
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-lg border border-line/60 px-1 py-1"
+      style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 20px -4px rgba(2,6,23,0.35)" }}
+    >
+      <BubbleBtn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="굵게">
+        <span className="text-[13px] font-bold leading-none">B</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} title="기울임">
+        <span className="text-[13px] italic leading-none">I</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()} title="밑줄">
+        <span className="text-[13px] underline leading-none">U</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()} title="취소선">
+        <span className="text-[13px] leading-none line-through">S</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()} title="인라인 코드">
+        <span className="text-[11px] font-mono leading-none">{"</>"}</span>
+      </BubbleBtn>
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      <BubbleBtn
+        active={editor.isActive("link")}
+        onClick={() => {
+          const prev = (editor.getAttributes("link").href as string) ?? "";
+          const url = window.prompt("링크 주소 입력 (빈 값이면 제거):", prev || "https://");
+          if (url === null) return;
+          const trimmed = url.trim();
+          if (trimmed === "") {
+            editor.chain().focus().unsetLink().run();
+          } else {
+            editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
+          }
+        }}
+        title="링크"
+      >
+        <Link2 size={13} />
+      </BubbleBtn>
+
+      {/* 글자 색상 — 드래그 직후 바로 보이는 빠른 스와치 + 더보기(커스텀/최근) */}
+      <span
+        className="grid h-[26px] w-[16px] shrink-0 place-items-center text-[13px] font-bold leading-none"
+        style={{ color: currentTextColor ?? undefined }}
+        aria-hidden
+      >
+        A
+      </span>
+      <QuickSwatchRow
+        swatches={TEXT_COLOR_QUICK}
+        currentValue={currentTextColor}
+        shape="circle"
+        onSelect={(color) => {
+          editor.chain().focus().setColor(color).run();
+          setRecentTextColors((prev) => pushRecent(prev, color));
+        }}
+      />
+      <MoreColorPopover
+        title="글자 색상"
+        currentValue={currentTextColor}
+        recentValues={recentTextColors}
+        resetLabel="기본값으로 되돌리기"
+        shape="circle"
+        onSelect={(color) => {
+          editor.chain().focus().setColor(color).run();
+          setRecentTextColors((prev) => pushRecent(prev, color));
+        }}
+        onReset={() => editor.chain().focus().unsetColor().run()}
+      />
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      {/* 형광펜 — 드래그 직후 바로 보이는 빠른 스와치 + 더보기(커스텀/최근) */}
+      <Highlighter
+        size={13}
+        className="shrink-0"
+        style={currentHighlight ? { color: currentHighlight } : undefined}
+        aria-hidden
+      />
+      <QuickSwatchRow
+        swatches={HIGHLIGHT_SWATCHES}
+        currentValue={currentHighlight}
+        shape="square"
+        onSelect={(color) => {
+          editor.chain().focus().toggleHighlight({ color }).run();
+          setRecentHighlights((prev) => pushRecent(prev, color));
+        }}
+      />
+      <MoreColorPopover
+        title="형광펜"
+        currentValue={currentHighlight}
+        recentValues={recentHighlights}
+        resetLabel="형광펜 제거"
+        shape="square"
+        onSelect={(color) => {
+          editor.chain().focus().toggleHighlight({ color }).run();
+          setRecentHighlights((prev) => pushRecent(prev, color));
+        }}
+        onReset={() => editor.chain().focus().unsetHighlight().run()}
+      />
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      <BubbleBtn
+        active={false}
+        onClick={() => onAiAction("summarize", getSelectedText())}
+        title="AI로 요약"
+      >
+        <Sparkles size={13} />
+      </BubbleBtn>
+      <BubbleBtn
+        active={false}
+        onClick={() => onAiAction("rewrite", getSelectedText())}
+        title="AI로 다시쓰기"
+      >
+        <Wand2 size={13} />
+      </BubbleBtn>
+    </div>
+  );
+}
+
+/* ── 공통 Editor Extensions ────────────────────────────────────────────
+   PaneLeafView마다 동일한 extensions 배열을 새로 만들면 StarterKit이 내장한
+   link/underline과 별도 import가 다시 섞여 "Duplicate extension names" 경고가
+   재발하기 쉽다. 모든 PaneLeafView 인스턴스가 이 단일 배열을 공유하도록 모듈
+   스코프에 한 번만 정의한다. (link/underline은 StarterKit 내장분만 사용) */
+const NOTE_EDITOR_EXTENSIONS = [
+  StarterKit.configure({
+    codeBlock: false,
+    link: { openOnClick: false, autolink: false },
+  }),
+  MarkdownLivePreview,
+  MarkdownCodeFenceEnter,
+  HeadingMarkerEdit,
+  HeadingFold,
+  TextStyle,
+  Color,
+  Highlight.configure({ multicolor: true }),
+  CodeBlockLowlight.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        filename: {
+          default: null,
+          parseHTML: (el) => el.getAttribute("data-filename") ?? null,
+          renderHTML: (attrs) =>
+            attrs.filename ? { "data-filename": String(attrs.filename) } : {},
+        },
+      };
+    },
+    addNodeView() {
+      return ReactNodeViewRenderer(CodeBlockView);
+    },
+    addInputRules() {
+      return [
+        textblockTypeInputRule({
+          find: /^```([a-z]+)?[\s\n]$/,
+          type: this.type,
+          getAttributes: (match) => ({ language: match[1] ?? null }),
+        }),
+      ];
+    },
+    addKeyboardShortcuts() {
+      return {
+        // Ctrl/Cmd+A: 코드블록 내용만 전체 선택 (노트 전체 선택 방지)
+        "Mod-a": () => {
+          const { state } = this.editor;
+          const { $from } = state.selection;
+          if ($from.parent.type.name !== "codeBlock") return false;
+          const from = $from.start($from.depth);
+          const to   = $from.end($from.depth);
+          return this.editor.commands.setTextSelection({ from, to });
+        },
+        // 빈 코드블록에서 Backspace → paragraph로 변환
+        Backspace: () => {
+          const { state } = this.editor;
+          const { $from, empty } = state.selection;
+          if (!empty || $from.parent.type.name !== "codeBlock") return false;
+          if ($from.parent.textContent !== "") return false;
+          return this.editor.commands.clearNodes();
+        },
+        // Escape → 코드블록 밖으로 커서 이동 (마지막 블록이면 paragraph 삽입)
+        Escape: () => {
+          const { state } = this.editor;
+          const { $from } = state.selection;
+          if ($from.parent.type.name !== "codeBlock") return false;
+          // $from.depth: codeBlock 내부 depth (보통 1), after(depth)로 codeBlock 끝 다음 위치
+          const afterPos = $from.after($from.depth);
+          if (afterPos < state.doc.content.size) {
+            // afterPos+1: 다음 노드의 첫 번째 내부 위치 (노드 경계 → 내부)
+            return this.editor.commands.focus(afterPos + 1);
+          }
+          return this.editor
+            .chain()
+            .insertContentAt(afterPos, { type: "paragraph" })
+            .focus(afterPos + 1)
+            .run();
+        },
+      };
+    },
+  }).configure({
+    lowlight,
+    exitOnTripleEnter: true,
+    exitOnArrowDown: true,
+  }),
+];
+
 /* ── 메인 컴포넌트 ────────────────────────────────────────────────────── */
 export default function PaneLeafView({
   node,
   note,
+  allNotes,
+  tabs,
+  activeTabId,
   isActive,
   totalLeaves,
   dragNoteId,
@@ -359,9 +647,15 @@ export default function PaneLeafView({
   onClose,
   onDrop,
   onTitleChange,
+  onContentChange,
+  onTabActivate,
+  onTabClose,
+  onNewTab,
+  onAiAction,
 }: Props) {
   const [hoverZone, setHoverZone] = useState<DropZone | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── 제목 편집 상태 ── */
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -384,11 +678,19 @@ export default function PaneLeafView({
     }
   }, [isEditingTitle]);
 
-  const commitTitle = useCallback(() => {
+  const commitTitle = useCallback((focusBody = false) => {
     const t = titleDraft.trim();
     if (t && t !== note.title) onTitleChange(note.id, t);
     setTitleDraft(t || note.title);
     setIsEditingTitle(false);
+    if (focusBody) {
+      // 제목 input이 사라지는 렌더 이후에 포커스해야 실제로 적용됨.
+      // 본문이 비어있으면 첫 빈 paragraph, 내용이 있으면 맨 앞 — 'start'가 두 경우 모두 처리.
+      requestAnimationFrame(() => {
+        editor?.chain().focus("start").run();
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [titleDraft, note.title, note.id, onTitleChange]);
 
   const cancelTitle = useCallback(() => {
@@ -397,81 +699,8 @@ export default function PaneLeafView({
   }, [note.title]);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ codeBlock: false }),
-      MarkdownLivePreview,
-      MarkdownCodeFenceEnter,
-      HeadingMarkerEdit,
-      HeadingFold,
-      CodeBlockLowlight.extend({
-        addAttributes() {
-          return {
-            ...this.parent?.(),
-            filename: {
-              default: null,
-              parseHTML: (el) => el.getAttribute("data-filename") ?? null,
-              renderHTML: (attrs) =>
-                attrs.filename ? { "data-filename": String(attrs.filename) } : {},
-            },
-          };
-        },
-        addNodeView() {
-          return ReactNodeViewRenderer(CodeBlockView);
-        },
-        addInputRules() {
-          return [
-            textblockTypeInputRule({
-              find: /^```([a-z]+)?[\s\n]$/,
-              type: this.type,
-              getAttributes: (match) => ({ language: match[1] ?? null }),
-            }),
-          ];
-        },
-        addKeyboardShortcuts() {
-          return {
-            // Ctrl/Cmd+A: 코드블록 내용만 전체 선택 (노트 전체 선택 방지)
-            "Mod-a": () => {
-              const { state } = this.editor;
-              const { $from } = state.selection;
-              if ($from.parent.type.name !== "codeBlock") return false;
-              const from = $from.start($from.depth);
-              const to   = $from.end($from.depth);
-              return this.editor.commands.setTextSelection({ from, to });
-            },
-            // 빈 코드블록에서 Backspace → paragraph로 변환
-            Backspace: () => {
-              const { state } = this.editor;
-              const { $from, empty } = state.selection;
-              if (!empty || $from.parent.type.name !== "codeBlock") return false;
-              if ($from.parent.textContent !== "") return false;
-              return this.editor.commands.clearNodes();
-            },
-            // Escape → 코드블록 밖으로 커서 이동 (마지막 블록이면 paragraph 삽입)
-            Escape: () => {
-              const { state } = this.editor;
-              const { $from } = state.selection;
-              if ($from.parent.type.name !== "codeBlock") return false;
-              // $from.depth: codeBlock 내부 depth (보통 1), after(depth)로 codeBlock 끝 다음 위치
-              const afterPos = $from.after($from.depth);
-              if (afterPos < state.doc.content.size) {
-                // afterPos+1: 다음 노드의 첫 번째 내부 위치 (노드 경계 → 내부)
-                return this.editor.commands.focus(afterPos + 1);
-              }
-              return this.editor
-                .chain()
-                .insertContentAt(afterPos, { type: "paragraph" })
-                .focus(afterPos + 1)
-                .run();
-            },
-          };
-        },
-      }).configure({
-        lowlight,
-        exitOnTripleEnter: true,
-        exitOnArrowDown: true,
-      }),
-    ],
-    content: markdownToHtml(note.content),
+    extensions: NOTE_EDITOR_EXTENSIONS,
+    content: resolveEditorHtml(note.content),
     immediatelyRender: false,
     editable: false,
     editorProps: {
@@ -481,14 +710,29 @@ export default function PaneLeafView({
         translate: "no",
       },
     },
+    /* 본문 변경 → mock notes state로 디바운스 동기화 (탭 전환/재방문 시 내용 유지) */
+    onUpdate: ({ editor: ed }) => {
+      const html = ed.getHTML();
+      const noteId = note.id;
+      if (contentSyncTimerRef.current) clearTimeout(contentSyncTimerRef.current);
+      contentSyncTimerRef.current = setTimeout(() => {
+        onContentChange(noteId, html);
+      }, 400);
+    },
   });
 
-  /* note 변경 → 내용 + 모드 초기화 */
+  /* note 변경(탭 전환 등) → 내용 갱신 + 모드 초기화.
+     단, 빈 노트(새로 생성된 노트)는 바로 작성할 수 있도록 편집 모드로 연다. */
   useEffect(() => {
     if (!editor) return;
-    editor.commands.setContent(markdownToHtml(note.content));
-    onModeChange(node.id, "read");
-    editor.setEditable(false);
+    if (contentSyncTimerRef.current) {
+      clearTimeout(contentSyncTimerRef.current);
+      contentSyncTimerRef.current = null;
+    }
+    editor.commands.setContent(resolveEditorHtml(note.content));
+    const isBlankNote = note.content.trim() === "";
+    onModeChange(node.id, isBlankNote ? "edit" : "read");
+    editor.setEditable(isBlankNote);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
 
@@ -498,10 +742,12 @@ export default function PaneLeafView({
     editor.setEditable(mode === "edit");
   }, [editor, mode]);
 
-  const stop = (fn: () => void) => (e: MouseEvent) => {
-    e.stopPropagation();
-    fn();
-  };
+  /* 언마운트 시 보류 중인 디바운스 동기화 정리 */
+  useEffect(() => {
+    return () => {
+      if (contentSyncTimerRef.current) clearTimeout(contentSyncTimerRef.current);
+    };
+  }, []);
 
   function getZone(e: React.DragEvent<HTMLDivElement>): DropZone {
     const el = overlayRef.current;
@@ -526,54 +772,23 @@ export default function PaneLeafView({
         transition: "border-color 0.15s",
       }}
     >
-      {/* ── 패널 헤더 */}
-      <div
-        className="flex h-10 shrink-0 items-center gap-2 border-b border-line/50 px-3"
-        style={{
-          background: isActive ? "rgb(var(--primary) / 0.05)" : "rgb(var(--bg2))",
+      {/* ── 탭 바 (탭 목록 + 모드 토글 + 패널 닫기) */}
+      <TabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        notes={allNotes}
+        mode={mode}
+        showModeToggle
+        showCloseButton={totalLeaves > 1}
+        onTabActivate={(tabId) => { onActivate(); onTabActivate(tabId); }}
+        onTabClose={onTabClose}
+        onNewTab={onNewTab}
+        onModeToggle={() => {
+          if (isEdit && isEditingTitle) commitTitle();
+          onModeChange(node.id, isEdit ? "read" : "edit");
         }}
-      >
-        {isActive && (
-          <span
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: "rgb(var(--primary))" }}
-          />
-        )}
-
-        <span
-          className="min-w-0 flex-1 truncate"
-          style={{
-            fontSize: "13px",
-            fontWeight: isActive ? 600 : 400,
-            color: isActive ? "rgb(var(--txt))" : "rgb(var(--txt2))",
-          }}
-        >
-          {note.title}
-        </span>
-
-        <button
-          onClick={stop(() => {
-            // 편집 모드 → 읽기 모드 전환 시 제목 저장
-            if (isEdit && isEditingTitle) commitTitle();
-            onModeChange(node.id, isEdit ? "read" : "edit");
-          })}
-          title={isEdit ? "읽기 모드로 전환" : "편집 모드로 전환"}
-          className={cx(
-            "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-all",
-            isEdit
-              ? "text-primary hover:bg-primary/10"
-              : "text-txt3/60 hover:bg-surface2/70 hover:text-txt"
-          )}
-        >
-          {isEdit ? <EyeOff size={13} /> : <Eye size={13} />}
-        </button>
-
-        {totalLeaves > 1 && (
-          <PanelBtn onClick={stop(onClose)} title="패널 닫기" isClose>
-            <X size={11} />
-          </PanelBtn>
-        )}
-      </div>
+        onClosePanel={onClose}
+      />
 
       {/* ── 콘텐츠 */}
       <div
@@ -587,9 +802,15 @@ export default function PaneLeafView({
               ref={titleInputRef}
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={commitTitle}
+              onBlur={() => commitTitle()}
               onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); commitTitle(); }
+                // IME(한글 등) 조합 중 Enter는 조합 확정용이므로 제목 커밋을 건너뜀
+                if (e.nativeEvent.isComposing || e.key === "Process") return;
+                if (e.key === "Enter") {
+                  // Shift+Enter도 동일하게 처리 — 제목 입력은 줄바꿈을 지원하지 않음
+                  e.preventDefault();
+                  commitTitle(true);
+                }
                 if (e.key === "Escape") { cancelTitle(); }
               }}
               onClick={(e) => e.stopPropagation()}
@@ -634,12 +855,23 @@ export default function PaneLeafView({
               if (isEdit) e.stopPropagation();
             }}
           >
+            {editor && (
+              <BubbleMenu
+                editor={editor}
+                shouldShow={({ editor: ed, from, to }: { editor: Editor; from: number; to: number }) =>
+                  ed.isEditable && from !== to && !ed.isActive("codeBlock")
+                }
+                options={{ placement: "top", offset: 8 }}
+              >
+                <BubbleToolbar editor={editor} onAiAction={onAiAction} />
+              </BubbleMenu>
+            )}
             <EditorContent editor={editor} />
           </div>
 
           {isEdit && (
             <p className="mt-4 text-[11px] text-txt3" style={{ opacity: 0.45 }}>
-              # 제목 · - 목록 · &gt; 인용 · **굵게** · `코드` · ``` 코드블록
+              # 제목 · - 목록 · &gt; 인용 · **굵게** · `코드` · ``` 코드블록 · 텍스트 선택 → 버블 툴바
             </p>
           )}
         </div>
@@ -650,6 +882,7 @@ export default function PaneLeafView({
         <div
           ref={overlayRef}
           className="absolute inset-0 z-10"
+          style={{ top: 36 }}
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
@@ -728,38 +961,5 @@ function SplitPreviewOverlay({ zone }: { zone: DropZone }) {
         {SPLIT_LABEL[zone]}
       </div>
     </div>
-  );
-}
-
-/* ── 패널 헤더 버튼 */
-function PanelBtn({
-  children,
-  onClick,
-  title,
-  isClose = false,
-}: {
-  children: React.ReactNode;
-  onClick: (e: MouseEvent) => void;
-  title: string;
-  isClose?: boolean;
-}) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      className={cx(
-        "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-all",
-        hov && isClose
-          ? "bg-red-500/10 text-red-500"
-          : hov
-          ? "bg-surface2/70 text-txt"
-          : "text-txt3/60"
-      )}
-    >
-      {children}
-    </button>
   );
 }

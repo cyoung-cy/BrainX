@@ -1,25 +1,10 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, Star, ChevronDown, ChevronRight, FileText, Folder, Check, Clock } from "lucide-react";
+import { Search, Star, ChevronDown, ChevronRight, FileText, Folder, Check, Clock, Plus } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MockNote, NoteCategory, SortOption } from "./types";
-
-/* ── 폴더 설정 ─────────────────────────────────────── */
-interface FolderConfig {
-  id: NoteCategory;
-  label: string;
-  iconColor: string;
-}
-
-const FOLDERS: FolderConfig[] = [
-  { id: "backend",      label: "Backend",      iconColor: "#60a5fa" },
-  { id: "frontend",     label: "Frontend",     iconColor: "#4ade80" },
-  { id: "ai",           label: "AI",           iconColor: "rgb(var(--accent))" },
-  { id: "architecture", label: "Architecture", iconColor: "#fb923c" },
-  { id: "database",     label: "Database",     iconColor: "rgb(var(--cyan))" },
-  { id: "devops",       label: "DevOps",       iconColor: "#818cf8" },
-];
+import { MockFolder, MockNote, SortOption } from "./types";
+import FolderTree from "./FolderTree";
 
 /* ── 정렬 옵션 ─────────────────────────────────────── */
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -116,23 +101,54 @@ function SortDropdown({ value, onChange }: { value: SortOption; onChange: (v: So
 /* ── Props ──────────────────────────────────────────── */
 interface Props {
   notes: MockNote[];
+  folders: MockFolder[];
   activeNoteId: string;
+  selectedFolderId: string | null;
+  onSelectFolder: (folderId: string | null) => void;
   onNoteClick: (noteId: string) => void;
+  onCreateFolder: (parentFolderId: string | null, name: string) => void;
+  onCreateNote: (folderId?: string) => void;
+  onRenameFolder: (folderId: string, newName: string) => void;
+  onChangeFolderColor: (folderId: string, color: string) => void;
+  onToggleFolderFavorite: (folderId: string) => void;
+  onDeleteFolder: (folderId: string) => void;
   onDragStart: (noteId: string) => void;
   onDragEnd: () => void;
+  onMoveNoteToFolder: (noteId: string, targetFolderId: string | null) => void;
+  onReorderNote: (noteId: string, referenceNoteId: string, position: "before" | "after") => void;
+  onMoveFolderToParent: (folderId: string, targetParentId: string | null) => void;
+  onReorderFolder: (folderId: string, referenceFolderId: string, position: "before" | "after") => void;
 }
 
 /* ── 메인 컴포넌트 ──────────────────────────────────── */
-export default function NoteSidebar({ notes, activeNoteId, onNoteClick, onDragStart, onDragEnd }: Props) {
+export default function NoteSidebar({
+  notes,
+  folders,
+  activeNoteId,
+  selectedFolderId,
+  onSelectFolder,
+  onNoteClick,
+  onCreateFolder,
+  onCreateNote,
+  onRenameFolder,
+  onChangeFolderColor,
+  onToggleFolderFavorite,
+  onDeleteFolder,
+  onDragStart,
+  onDragEnd,
+  onMoveNoteToFolder,
+  onReorderNote,
+  onMoveFolderToParent,
+  onReorderFolder,
+}: Props) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("modified");
   const [favorites, setFavorites] = useState<Set<string>>(
     () => new Set(["spring", "brainx-arch", "rag-flow"])
   );
-  const [expandedFolders, setExpandedFolders] = useState<Set<NoteCategory>>(
-    () => new Set<NoteCategory>(["backend", "frontend", "ai", "architecture"])
-  );
   const [favExpanded, setFavExpanded] = useState(true);
+
+  const favFolders = useMemo(() => folders.filter((f) => f.favorite), [folders]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return notes;
@@ -140,16 +156,10 @@ export default function NoteSidebar({ notes, activeNoteId, onNoteClick, onDragSt
     return notes.filter((n) => n.title.toLowerCase().includes(q));
   }, [notes, search]);
 
+  const isSearching = search.trim().length > 0;
+
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const toggleFolder = (id: NoteCategory) => {
-    setExpandedFolders((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
@@ -161,11 +171,16 @@ export default function NoteSidebar({ notes, activeNoteId, onNoteClick, onDragSt
     [filtered, sortBy, favorites]
   );
 
+  const searchResults = useMemo(
+    () => sortNotes(filtered, sortBy, favorites),
+    [filtered, sortBy, favorites]
+  );
+
   return (
     <div className="hidden w-60 shrink-0 flex-col border-r border-line/50 md:flex" style={{ background: "rgb(var(--bg2))" }}>
 
       {/* ── 헤더 ──────────────────────────────────────── */}
-      <div className="border-b border-line/50 px-3 py-3 space-y-2">
+      <div className="border-b border-line/50 px-3 py-3 space-y-2.5">
         {/* 타이틀 + 카운트 */}
         <div className="flex items-center px-0.5">
           <span className="text-[12px] font-semibold text-txt">노트 탐색기</span>
@@ -176,6 +191,17 @@ export default function NoteSidebar({ notes, activeNoteId, onNoteClick, onDragSt
             {notes.length}
           </span>
         </div>
+
+        {/* + 새 노트 버튼 */}
+        <button
+          type="button"
+          onClick={() => onCreateNote(selectedFolderId ?? undefined)}
+          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-full text-[13px] font-semibold text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md active:scale-[0.98]"
+          style={{ background: "rgb(var(--primary))" }}
+        >
+          <Plus size={15} />
+          새 노트
+        </button>
 
         {/* 검색창 */}
         <div
@@ -201,186 +227,154 @@ export default function NoteSidebar({ notes, activeNoteId, onNoteClick, onDragSt
       {/* ── 콘텐츠 ──────────────────────────────────── */}
       <div className="scroll flex-1 overflow-y-auto py-2">
 
-        {/* 즐겨찾기 */}
-        {favNotes.length > 0 && (
-          <div className="mb-1 px-2">
-            <button
-              onClick={() => setFavExpanded((v) => !v)}
-              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-surface2/40"
-            >
-              {favExpanded
-                ? <ChevronDown size={11} className="shrink-0 text-txt3" />
-                : <ChevronRight size={11} className="shrink-0 text-txt3" />
-              }
-              <Star size={11} className="shrink-0 fill-yellow-400 text-yellow-400" />
-              <span className="flex-1 text-[11px] font-semibold text-txt">즐겨찾기</span>
-              <span className="text-[10px] text-txt3">{favNotes.length}</span>
-            </button>
-
-            {favExpanded && (
-              <div className="mt-0.5 pl-3">
-                {favNotes.map((note) => (
-                  <NoteRow
-                    key={note.id}
-                    note={note}
-                    isActive={note.id === activeNoteId}
-                    isFavorite
-                    iconColor="#f59e0b"
-                    onNoteClick={onNoteClick}
-                    onToggleFavorite={toggleFavorite}
-                    onDragStart={onDragStart}
-                    onDragEnd={onDragEnd}
-                  />
-                ))}
-              </div>
+        {isSearching ? (
+          /* 검색 중: 폴더 무시하고 평면 리스트로 표시 */
+          <div className="px-2">
+            {searchResults.length === 0 ? (
+              <p className="px-2 py-4 text-center text-[11px] text-txt3">검색 결과가 없습니다</p>
+            ) : (
+              searchResults.map((note) => (
+                <div
+                  key={note.id}
+                  draggable
+                  onClick={() => onNoteClick(note.id)}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", note.id);
+                    e.dataTransfer.effectAllowed = "copy";
+                    onDragStart(note.id);
+                  }}
+                  onDragEnd={onDragEnd}
+                  className={cx(
+                    "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+                    note.id === activeNoteId ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+                  )}
+                  style={{ background: note.id === activeNoteId ? "rgb(var(--primary) / 0.12)" : undefined }}
+                >
+                  <FileText size={11} className="shrink-0 text-txt3" />
+                  <span className="flex-1 truncate">{note.title}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(note.id); }}
+                    className={cx(
+                      "shrink-0 p-0.5 transition-opacity",
+                      favorites.has(note.id) ? "opacity-100" : "opacity-0 group-hover:opacity-50"
+                    )}
+                  >
+                    <Star size={10} className={favorites.has(note.id) ? "fill-yellow-400 text-yellow-400" : "text-txt3"} />
+                  </button>
+                </div>
+              ))
             )}
           </div>
-        )}
-
-        {/* 구분선 */}
-        {favNotes.length > 0 && (
-          <div className="mx-3 my-2 border-t border-line/30" />
-        )}
-
-        {/* 폴더 목록 */}
-        <div className="px-2">
-          {FOLDERS.map((folder) => {
-            const folderNotes = sortNotes(
-              filtered.filter((n) => n.category === folder.id),
-              sortBy,
-              favorites
-            );
-            if (folderNotes.length === 0) return null;
-            const expanded = expandedFolders.has(folder.id);
-
-            return (
-              <div key={folder.id} className="mb-0.5">
+        ) : (
+          <>
+            {/* 즐겨찾기 (노트 + 폴더) */}
+            {(favNotes.length > 0 || favFolders.length > 0) && (
+              <div className="mb-1 px-2">
                 <button
-                  onClick={() => toggleFolder(folder.id)}
+                  onClick={() => setFavExpanded((v) => !v)}
                   className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-surface2/40"
                 >
-                  {expanded
+                  {favExpanded
                     ? <ChevronDown size={11} className="shrink-0 text-txt3" />
                     : <ChevronRight size={11} className="shrink-0 text-txt3" />
                   }
-                  <Folder size={11} className="shrink-0" style={{ color: folder.iconColor }} />
-                  <span className="flex-1 text-[11px] font-semibold text-txt">{folder.label}</span>
-                  <span className="text-[10px] text-txt3">{folderNotes.length}</span>
+                  <Star size={11} className="shrink-0 fill-yellow-400 text-yellow-400" />
+                  <span className="flex-1 text-[11px] font-semibold text-txt">즐겨찾기</span>
+                  <span className="text-[10px] text-txt3">{favNotes.length + favFolders.length}</span>
                 </button>
 
-                {expanded && (
+                {favExpanded && (
                   <div className="mt-0.5 pl-3">
-                    {folderNotes.map((note) => (
-                      <NoteRow
+                    {favFolders.map((folder) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => onSelectFolder(folder.id)}
+                        className={cx(
+                          "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+                          selectedFolderId === folder.id ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+                        )}
+                        style={{ background: selectedFolderId === folder.id ? "rgb(var(--primary) / 0.12)" : undefined }}
+                      >
+                        <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
+                        <span className="flex-1 truncate">{folder.name}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onToggleFolderFavorite(folder.id); }}
+                          className="shrink-0 p-0.5 opacity-100"
+                          title="즐겨찾기 해제"
+                        >
+                          <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                        </button>
+                      </div>
+                    ))}
+                    {favNotes.map((note) => (
+                      <div
                         key={note.id}
-                        note={note}
-                        isActive={note.id === activeNoteId}
-                        isFavorite={favorites.has(note.id)}
-                        iconColor={folder.iconColor}
-                        onNoteClick={onNoteClick}
-                        onToggleFavorite={toggleFavorite}
-                        onDragStart={onDragStart}
+                        draggable
+                        onClick={() => onNoteClick(note.id)}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", note.id);
+                          e.dataTransfer.effectAllowed = "copy";
+                          onDragStart(note.id);
+                        }}
                         onDragEnd={onDragEnd}
-                      />
+                        className={cx(
+                          "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+                          note.id === activeNoteId ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+                        )}
+                        style={{ background: note.id === activeNoteId ? "rgb(var(--primary) / 0.12)" : undefined }}
+                      >
+                        <FileText size={11} className="shrink-0" style={{ color: "#f59e0b" }} />
+                        <span className="flex-1 truncate">{note.title}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleFavorite(note.id); }}
+                          className="shrink-0 p-0.5 opacity-100"
+                        >
+                          <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
+            )}
+
+            {(favNotes.length > 0 || favFolders.length > 0) && (
+              <div className="mx-3 my-2 border-t border-line/30" />
+            )}
+
+            {/* 폴더 트리 */}
+            <FolderTree
+              folders={folders}
+              notes={filtered}
+              activeNoteId={activeNoteId}
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={onSelectFolder}
+              onNoteClick={onNoteClick}
+              onCreateFolder={onCreateFolder}
+              onCreateNote={onCreateNote}
+              onRenameFolder={onRenameFolder}
+              onChangeFolderColor={onChangeFolderColor}
+              onToggleFolderFavorite={onToggleFolderFavorite}
+              onDeleteFolder={onDeleteFolder}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onMoveNoteToFolder={onMoveNoteToFolder}
+              onReorderNote={onReorderNote}
+              onMoveFolderToParent={onMoveFolderToParent}
+              onReorderFolder={onReorderFolder}
+            />
+          </>
+        )}
 
         {/* 드래그 힌트 */}
         <div className="mx-3 mt-3 rounded-lg border border-line/30 px-3 py-2">
           <p className="text-[10px] leading-relaxed text-txt3">
-            <span className="font-medium text-txt3">클릭</span> → 현재 패널 교체
+            <span className="font-medium text-txt3">클릭</span> → 활성 패널에 탭으로 열기
             <br />
             <span className="font-medium text-txt3">드래그</span> → 패널 분할
           </p>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── 노트 행 ────────────────────────────────────────── */
-function NoteRow({
-  note,
-  isActive,
-  isFavorite,
-  iconColor,
-  onNoteClick,
-  onToggleFavorite,
-  onDragStart,
-  onDragEnd,
-}: {
-  note: MockNote;
-  isActive: boolean;
-  isFavorite: boolean;
-  iconColor: string;
-  onNoteClick: (id: string) => void;
-  onToggleFavorite: (id: string) => void;
-  onDragStart: (id: string) => void;
-  onDragEnd: () => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <div
-      draggable
-      onClick={() => onNoteClick(note.id)}
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", note.id);
-        e.dataTransfer.effectAllowed = "copy";
-        setDragging(true);
-        onDragStart(note.id);
-      }}
-      onDragEnd={() => {
-        setDragging(false);
-        onDragEnd();
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={cx(
-        "group relative flex h-7 w-full cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 pr-1 text-[12px] transition-colors",
-        isActive
-          ? "font-medium text-txt"
-          : "text-txt2 hover:text-txt",
-        dragging && "opacity-40"
-      )}
-      style={{
-        background: isActive ? "rgb(var(--primary) / 0.12)" : hovered ? "rgb(var(--surface2) / 0.6)" : "transparent",
-      }}
-    >
-      {/* 활성 바 */}
-      {isActive && (
-        <span
-          className="absolute left-0 h-4 w-0.5 rounded-r"
-          style={{ background: "rgb(var(--primary))", marginLeft: "-1px" }}
-        />
-      )}
-
-      <FileText
-        size={11}
-        className="shrink-0"
-        style={{ color: isActive ? iconColor : "rgb(var(--txt3))" }}
-      />
-      <span className="flex-1 truncate">{note.title}</span>
-
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(note.id); }}
-        className={cx(
-          "shrink-0 p-0.5 transition-opacity",
-          isFavorite ? "opacity-100" : hovered ? "opacity-50" : "opacity-0"
-        )}
-        title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
-      >
-        <Star
-          size={10}
-          className={isFavorite ? "fill-yellow-400 text-yellow-400" : "text-txt3"}
-        />
-      </button>
     </div>
   );
 }

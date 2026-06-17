@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
@@ -153,13 +153,21 @@ function LinkChip({
 }
 
 /* ── 메인 컴포넌트 ──────────────────────────────────── */
+export interface PendingAiRequest {
+  type: "summarize" | "rewrite";
+  text: string;
+  nonce: number;
+}
+
 interface Props {
   activeNote: MockNote;
   allNotes: MockNote[];
   onCollapse: () => void;
+  pendingAiRequest?: PendingAiRequest | null;
+  onAiRequestHandled?: () => void;
 }
 
-export default function ContextPanel({ activeNote, allNotes, onCollapse }: Props) {
+export default function ContextPanel({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled }: Props) {
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState<Array<{ role: "ai" | "user"; text: string; streaming?: boolean }>>([
@@ -196,6 +204,39 @@ export default function ContextPanel({ activeNote, allNotes, onCollapse }: Props
       }
     }, 16);
   };
+
+  /* 버블 툴바의 AI 버튼(요약/다시쓰기) → 인라인 AI 채팅에 mock 응답 추가 */
+  useEffect(() => {
+    if (!pendingAiRequest) return;
+    const { type, text } = pendingAiRequest;
+    const preview = text.trim() ? (text.length > 60 ? `${text.slice(0, 60)}…` : text) : "(선택된 텍스트 없음)";
+    const label = type === "summarize" ? "선택한 텍스트 요약 요청" : "선택한 텍스트 다시쓰기 요청";
+
+    setChatOpen(true);
+    setAiMessages((m) => [...m, { role: "user", text: `${label}: "${preview}"` }]);
+
+    const answer =
+      type === "summarize"
+        ? `요약 결과: "${preview}"의 핵심은 ${ctx.aiSuggestions[0] ?? "이 노트의 주요 개념"}과 연결돼요. (Mock 응답)`
+        : `다시쓰기 제안: "${preview}"를 더 간결하고 명확한 문장으로 다듬어 보세요. (Mock 응답)`;
+
+    setAiMessages((m) => [...m, { role: "ai", text: "", streaming: true }]);
+    let idx = 0;
+    const timer = window.setInterval(() => {
+      idx += 4;
+      setAiMessages((m) => {
+        const next = [...m];
+        next[next.length - 1] = { role: "ai", text: answer.slice(0, idx), streaming: idx < answer.length };
+        return next;
+      });
+      if (idx >= answer.length) {
+        window.clearInterval(timer);
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 16);
+    onAiRequestHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAiRequest?.nonce]);
 
   const totalLinks = ctx.connections.length + ctx.backlinks.length;
 
