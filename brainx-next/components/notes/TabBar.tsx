@@ -3,8 +3,8 @@
 import { useRef, useEffect } from "react";
 import { X, Plus, Eye, EyeOff } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { Tab, MockNote } from "./types";
-import type { EditMode } from "./PaneLeafView";
+import { Tab, MockNote } from "@/lib/notes/noteTypes";
+import type { EditMode } from "./NoteEditor";
 
 interface TabBarProps {
   tabs: Tab[];
@@ -18,6 +18,11 @@ interface TabBarProps {
   onNewTab: () => void;
   onModeToggle: () => void;
   onClosePanel: () => void;
+}
+
+function tabLabel(tab: Tab, notes: MockNote[]): string {
+  if (tab.kind === "start") return "새 탭";
+  return notes.find((n) => n.id === tab.noteId)?.title ?? "제목 없음";
 }
 
 export default function TabBar({
@@ -55,7 +60,7 @@ export default function TabBar({
         style={{ scrollbarWidth: "thin" }}
       >
         {tabs.map((tab) => {
-          const note = notes.find((n) => n.id === tab.noteId);
+          const label = tabLabel(tab, notes);
           const isActive = tab.id === activeTabId;
 
           return (
@@ -64,11 +69,13 @@ export default function TabBar({
               type="button"
               data-tab-id={tab.id}
               onClick={(e) => { e.stopPropagation(); onTabActivate(tab.id); }}
-              title={note?.title ?? "제목 없음"}
+              title={label}
               className={cx(
                 "group relative flex h-full min-w-[110px] max-w-[170px] shrink-0 items-center gap-1.5 border-r px-3 text-[12px] transition-colors",
                 isActive
                   ? "font-medium text-txt"
+                  : tab.kind === "start"
+                  ? "text-txt3/70 hover:text-txt2"
                   : "text-txt3 hover:text-txt2"
               )}
               style={{
@@ -83,8 +90,8 @@ export default function TabBar({
                 />
               )}
 
-              <span className="min-w-0 flex-1 truncate text-left">
-                {note?.title ?? "제목 없음"}
+              <span className={cx("min-w-0 flex-1 truncate text-left", tab.kind === "start" && "italic")}>
+                {label}
               </span>
 
               {tabs.length > 1 && (
@@ -110,7 +117,7 @@ export default function TabBar({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onNewTab(); }}
-          title="새 탭 (새 노트)"
+          title="새 탭"
           className="grid h-full w-8 shrink-0 place-items-center text-txt3 transition-colors hover:bg-surface2/50 hover:text-txt"
         >
           <Plus size={13} />

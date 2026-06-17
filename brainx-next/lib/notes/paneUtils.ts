@@ -1,4 +1,4 @@
-import { PaneLeaf, PaneNode, PaneSplit } from "./types";
+import { PaneLeaf, PaneNode, PaneSplit } from "./noteTypes";
 
 /** DnD 드롭 위치 — 패널을 4방향으로 구분 (분할 전용) */
 export type DropZone = "left" | "right" | "top" | "bottom";

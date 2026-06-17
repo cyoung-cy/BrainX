@@ -2,9 +2,15 @@
 
 import React from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { PaneNode, MockNote, PaneTabsState } from "./types";
-import { DropZone } from "./paneUtils";
-import PaneLeafView, { type EditMode, type AiActionType } from "./PaneLeafView";
+import { PaneNode, MockNote, PaneTabsState, Tab } from "@/lib/notes/noteTypes";
+import { DropZone } from "@/lib/notes/paneUtils";
+import EditorPanel from "./EditorPanel";
+import type { EditMode, AiActionType } from "./NoteEditor";
+
+export interface QuickSwitcherTarget {
+  paneId: string;
+  tabId: string;
+}
 
 interface Props {
   node: PaneNode;
@@ -14,6 +20,7 @@ interface Props {
   dragNoteId: string | null;
   paneMode: Record<string, EditMode>;
   paneTabs: Record<string, PaneTabsState>;
+  quickSwitcher: QuickSwitcherTarget | null;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
@@ -24,6 +31,10 @@ interface Props {
   onTabClose: (paneId: string, tabId: string) => void;
   onNewTab: (paneId: string) => void;
   onAiAction: (type: AiActionType, text: string) => void;
+  onCreateNoteInTab: (paneId: string, tabId: string) => void;
+  onOpenQuickSwitcher: (paneId: string, tabId: string) => void;
+  onQuickSwitcherSelect: (noteId: string) => void;
+  onQuickSwitcherClose: () => void;
 }
 
 export default function PaneTreeRenderer({
@@ -34,6 +45,7 @@ export default function PaneTreeRenderer({
   dragNoteId,
   paneMode,
   paneTabs,
+  quickSwitcher,
   onActivate,
   onClose,
   onDrop,
@@ -44,20 +56,26 @@ export default function PaneTreeRenderer({
   onTabClose,
   onNewTab,
   onAiAction,
+  onCreateNoteInTab,
+  onOpenQuickSwitcher,
+  onQuickSwitcherSelect,
+  onQuickSwitcherClose,
 }: Props) {
   if (node.type === "leaf") {
     const tabsState = paneTabs[node.id];
     const activeTabId = tabsState?.activeTabId ?? "";
-    const activeNoteId =
-      tabsState?.tabs.find((t) => t.id === activeTabId)?.noteId ?? node.noteId;
-    const note = notes.find((n) => n.id === activeNoteId) ?? notes[0];
+    const fallbackTab: Tab = { id: activeTabId, kind: "note", noteId: node.noteId };
+    const activeTab: Tab = tabsState?.tabs.find((t) => t.id === activeTabId) ?? fallbackTab;
+    const note = activeTab.kind === "note" ? notes.find((n) => n.id === activeTab.noteId) ?? notes[0] : null;
+    const tabs = tabsState?.tabs ?? [fallbackTab];
 
     return (
-      <PaneLeafView
+      <EditorPanel
         node={node}
+        activeTab={activeTab}
         note={note}
         allNotes={notes}
-        tabs={tabsState?.tabs ?? [{ id: activeTabId, noteId: activeNoteId }]}
+        tabs={tabs}
         activeTabId={activeTabId}
         isActive={activeId === node.id}
         totalLeaves={totalLeaves}
@@ -73,6 +91,11 @@ export default function PaneTreeRenderer({
         onTabClose={(tabId) => onTabClose(node.id, tabId)}
         onNewTab={() => onNewTab(node.id)}
         onAiAction={onAiAction}
+        onCreateNoteInTab={() => onCreateNoteInTab(node.id, activeTab.id)}
+        onOpenQuickSwitcher={() => onOpenQuickSwitcher(node.id, activeTab.id)}
+        quickSwitcherOpen={quickSwitcher?.paneId === node.id && quickSwitcher?.tabId === activeTabId}
+        onQuickSwitcherSelect={onQuickSwitcherSelect}
+        onQuickSwitcherClose={onQuickSwitcherClose}
       />
     );
   }
@@ -92,6 +115,7 @@ export default function PaneTreeRenderer({
               dragNoteId={dragNoteId}
               paneMode={paneMode}
               paneTabs={paneTabs}
+              quickSwitcher={quickSwitcher}
               onActivate={onActivate}
               onClose={onClose}
               onDrop={onDrop}
@@ -102,6 +126,10 @@ export default function PaneTreeRenderer({
               onTabClose={onTabClose}
               onNewTab={onNewTab}
               onAiAction={onAiAction}
+              onCreateNoteInTab={onCreateNoteInTab}
+              onOpenQuickSwitcher={onOpenQuickSwitcher}
+              onQuickSwitcherSelect={onQuickSwitcherSelect}
+              onQuickSwitcherClose={onQuickSwitcherClose}
             />
           </Panel>
 

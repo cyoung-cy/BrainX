@@ -4,8 +4,8 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
-import { MockNote } from "./types";
-import { MOCK_CONTEXT_DATA } from "./mockData";
+import { MockNote } from "@/lib/notes/noteTypes";
+import { MOCK_CONTEXT_DATA } from "@/lib/notes/mockNotes";
 
 /* ── 헤딩 파싱 ─────────────────────────────────────── */
 function parseHeadings(content: string) {
@@ -160,14 +160,14 @@ export interface PendingAiRequest {
 }
 
 interface Props {
-  activeNote: MockNote;
+  activeNote: MockNote | null;
   allNotes: MockNote[];
   onCollapse: () => void;
   pendingAiRequest?: PendingAiRequest | null;
   onAiRequestHandled?: () => void;
 }
 
-export default function ContextPanel({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled }: Props) {
+export default function RightSidebar({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled }: Props) {
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState<Array<{ role: "ai" | "user"; text: string; streaming?: boolean }>>([
@@ -176,11 +176,11 @@ export default function ContextPanel({ activeNote, allNotes, onCollapse, pending
   const [chatOpen, setChatOpen] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const toc = useMemo(() => parseHeadings(activeNote.content), [activeNote.content]);
-  const ctx = MOCK_CONTEXT_DATA[activeNote.id] ?? { backlinks: [], connections: [], aiSuggestions: [] };
+  const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
+  const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
 
   const sendAi = () => {
-    if (!aiInput.trim()) return;
+    if (!activeNote || !aiInput.trim()) return;
     const prompt = aiInput.trim();
     setAiMessages((m) => [...m, { role: "user", text: prompt }]);
     setAiInput("");
@@ -252,7 +252,7 @@ export default function ContextPanel({ activeNote, allNotes, onCollapse, pending
       >
         <Icon name="sparkle" size={14} className="shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px] font-semibold text-txt">{activeNote.title}</p>
+          <p className="truncate text-[12px] font-semibold text-txt">{activeNote?.title ?? "노트 없음"}</p>
           <p className="text-[10px] text-txt3">컨텍스트 패널</p>
         </div>
         <button
@@ -265,6 +265,16 @@ export default function ContextPanel({ activeNote, allNotes, onCollapse, pending
         </button>
       </div>
 
+      {!activeNote ? (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-center text-[12px] leading-relaxed text-txt3">
+            노트를 열면 목차·연결·AI 제안이
+            <br />
+            여기에 표시돼요.
+          </p>
+        </div>
+      ) : (
+      <>
       {/* ── 스크롤 영역 ────────────────────────────── */}
       <div className="scroll flex-1 space-y-2.5 overflow-y-auto p-3">
 
@@ -426,6 +436,8 @@ export default function ContextPanel({ activeNote, allNotes, onCollapse, pending
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
@@ -15,37 +15,13 @@ import Highlight from "@tiptap/extension-highlight";
 import { createLowlight, all } from "lowlight";
 import { Link2, Highlighter, Sparkles, Wand2 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { PaneLeaf, MockNote, Tab } from "./types";
-import { DropZone } from "./paneUtils";
+import { MockNote } from "@/lib/notes/noteTypes";
 import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
-import TabBar from "./TabBar";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
 
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
-
-interface Props {
-  node: PaneLeaf;
-  note: MockNote;
-  allNotes: MockNote[];
-  tabs: Tab[];
-  activeTabId: string;
-  isActive: boolean;
-  totalLeaves: number;
-  dragNoteId: string | null;
-  mode: EditMode;
-  onModeChange: (paneId: string, mode: EditMode) => void;
-  onActivate: () => void;
-  onClose: () => void;
-  onDrop: (zone: DropZone, noteId: string) => void;
-  onTitleChange: (noteId: string, newTitle: string) => void;
-  onContentChange: (noteId: string, newContentHtml: string) => void;
-  onTabActivate: (tabId: string) => void;
-  onTabClose: (tabId: string) => void;
-  onNewTab: () => void;
-  onAiAction: (type: AiActionType, text: string) => void;
-}
 
 const lowlight = createLowlight(all);
 
@@ -548,8 +524,8 @@ function BubbleToolbar({
 /* ── 공통 Editor Extensions ────────────────────────────────────────────
    PaneLeafView마다 동일한 extensions 배열을 새로 만들면 StarterKit이 내장한
    link/underline과 별도 import가 다시 섞여 "Duplicate extension names" 경고가
-   재발하기 쉽다. 모든 PaneLeafView 인스턴스가 이 단일 배열을 공유하도록 모듈
-   스코프에 한 번만 정의한다. (link/underline은 StarterKit 내장분만 사용) */
+   재발하기 쉽다. 모든 인스턴스가 이 단일 배열을 공유하도록 모듈 스코프에 한 번만
+   정의한다. (link/underline은 StarterKit 내장분만 사용) */
 const NOTE_EDITOR_EXTENSIONS = [
   StarterKit.configure({
     codeBlock: false,
@@ -631,72 +607,25 @@ const NOTE_EDITOR_EXTENSIONS = [
   }),
 ];
 
-/* ── 메인 컴포넌트 ────────────────────────────────────────────────────── */
-export default function PaneLeafView({
-  node,
-  note,
-  allNotes,
-  tabs,
-  activeTabId,
-  isActive,
-  totalLeaves,
-  dragNoteId,
-  mode,
-  onModeChange,
-  onActivate,
-  onClose,
-  onDrop,
-  onTitleChange,
-  onContentChange,
-  onTabActivate,
-  onTabClose,
-  onNewTab,
-  onAiAction,
-}: Props) {
-  const [hoverZone, setHoverZone] = useState<DropZone | null>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
+export interface NoteEditorHandle {
+  focusStart: () => void;
+}
+
+interface NoteEditorProps {
+  paneId: string;
+  note: MockNote;
+  mode: EditMode;
+  onModeChange: (paneId: string, mode: EditMode) => void;
+  onContentChange: (noteId: string, newContentHtml: string) => void;
+  onAiAction: (type: AiActionType, text: string) => void;
+}
+
+/** TipTap 에디터 코어 — Bubble Toolbar, 색상/형광펜, 코드블록을 포함한 노트 본문 편집 영역 */
+const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEditor(
+  { paneId, note, mode, onModeChange, onContentChange, onAiAction },
+  ref
+) {
   const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /* ── 제목 편집 상태 ── */
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(note.title);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
-  // note 교체 시 초기화
-  useEffect(() => {
-    setTitleDraft(note.title);
-    setIsEditingTitle(false);
-  }, [note.id, note.title]);
-
-  // 제목 입력창 포커스
-  useEffect(() => {
-    if (isEditingTitle) {
-      requestAnimationFrame(() => {
-        titleInputRef.current?.focus();
-        titleInputRef.current?.select();
-      });
-    }
-  }, [isEditingTitle]);
-
-  const commitTitle = useCallback((focusBody = false) => {
-    const t = titleDraft.trim();
-    if (t && t !== note.title) onTitleChange(note.id, t);
-    setTitleDraft(t || note.title);
-    setIsEditingTitle(false);
-    if (focusBody) {
-      // 제목 input이 사라지는 렌더 이후에 포커스해야 실제로 적용됨.
-      // 본문이 비어있으면 첫 빈 paragraph, 내용이 있으면 맨 앞 — 'start'가 두 경우 모두 처리.
-      requestAnimationFrame(() => {
-        editor?.chain().focus("start").run();
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [titleDraft, note.title, note.id, onTitleChange]);
-
-  const cancelTitle = useCallback(() => {
-    setTitleDraft(note.title);
-    setIsEditingTitle(false);
-  }, [note.title]);
 
   const editor = useEditor({
     extensions: NOTE_EDITOR_EXTENSIONS,
@@ -721,6 +650,12 @@ export default function PaneLeafView({
     },
   });
 
+  useImperativeHandle(ref, () => ({
+    focusStart: () => {
+      editor?.chain().focus("start").run();
+    },
+  }), [editor]);
+
   /* note 변경(탭 전환 등) → 내용 갱신 + 모드 초기화.
      단, 빈 노트(새로 생성된 노트)는 바로 작성할 수 있도록 편집 모드로 연다. */
   useEffect(() => {
@@ -731,10 +666,13 @@ export default function PaneLeafView({
     }
     editor.commands.setContent(resolveEditorHtml(note.content));
     const isBlankNote = note.content.trim() === "";
-    onModeChange(node.id, isBlankNote ? "edit" : "read");
+    onModeChange(paneId, isBlankNote ? "edit" : "read");
     editor.setEditable(isBlankNote);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.id]);
+    // editor를 deps에 포함: NoteEditor가 새로 마운트되는 시점(예: 빈 시작 탭 → 새 노트로 교체)에는
+    // immediatelyRender:false로 인해 첫 렌더에서 editor가 아직 null이라 이 effect가 조기 종료되는데,
+    // note.id만 의존하면 editor가 준비된 뒤에도 재실행되지 않아 새 노트가 영구히 읽기 모드로 고정된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id, editor]);
 
   /* mode 변경 → editable 토글 */
   useEffect(() => {
@@ -749,217 +687,22 @@ export default function PaneLeafView({
     };
   }, []);
 
-  function getZone(e: React.DragEvent<HTMLDivElement>): DropZone {
-    const el = overlayRef.current;
-    if (!el) return "right";
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    const dx = Math.abs(x - 0.5);
-    const dy = Math.abs(y - 0.5);
-    if (dx > dy) return x < 0.5 ? "left" : "right";
-    return y < 0.5 ? "top" : "bottom";
-  }
-
-  const isEdit = mode === "edit";
-
   return (
-    <div
-      onClick={onActivate}
-      className="relative flex h-full flex-col overflow-hidden"
-      style={{
-        borderTop: `2px solid ${isActive ? "rgb(var(--primary))" : "transparent"}`,
-        transition: "border-color 0.15s",
-      }}
-    >
-      {/* ── 탭 바 (탭 목록 + 모드 토글 + 패널 닫기) */}
-      <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        notes={allNotes}
-        mode={mode}
-        showModeToggle
-        showCloseButton={totalLeaves > 1}
-        onTabActivate={(tabId) => { onActivate(); onTabActivate(tabId); }}
-        onTabClose={onTabClose}
-        onNewTab={onNewTab}
-        onModeToggle={() => {
-          if (isEdit && isEditingTitle) commitTitle();
-          onModeChange(node.id, isEdit ? "read" : "edit");
-        }}
-        onClosePanel={onClose}
-      />
-
-      {/* ── 콘텐츠 */}
-      <div
-        className="scroll flex-1 overflow-y-auto"
-        style={{ background: "rgb(var(--surface))" }}
-      >
-        <div className="px-8 py-7">
-          {/* 노트 제목: 편집 모드에서는 클릭 → 인라인 input */}
-          {isEdit && isEditingTitle ? (
-            <input
-              ref={titleInputRef}
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => commitTitle()}
-              onKeyDown={(e) => {
-                // IME(한글 등) 조합 중 Enter는 조합 확정용이므로 제목 커밋을 건너뜀
-                if (e.nativeEvent.isComposing || e.key === "Process") return;
-                if (e.key === "Enter") {
-                  // Shift+Enter도 동일하게 처리 — 제목 입력은 줄바꿈을 지원하지 않음
-                  e.preventDefault();
-                  commitTitle(true);
-                }
-                if (e.key === "Escape") { cancelTitle(); }
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className="mb-1.5 w-full bg-transparent text-[22px] font-bold leading-tight tracking-tight text-txt outline-none"
-              placeholder="제목 입력..."
-            />
-          ) : (
-            <h1
-              className={cx(
-                "mb-1.5 text-[22px] font-bold leading-tight tracking-tight text-txt",
-                isEdit && "cursor-text hover:text-primary/90 transition-colors"
-              )}
-              onClick={(e) => {
-                if (!isEdit) return;
-                e.stopPropagation();
-                setTitleDraft(note.title);
-                setIsEditingTitle(true);
-              }}
-              title={isEdit ? "클릭하여 제목 편집" : undefined}
-            >
-              {note.title}
-            </h1>
-          )}
-
-          {note.tags.length > 0 && (
-            <div className="mb-6 flex flex-wrap gap-1.5">
-              {note.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-line/60 px-2.5 py-0.5 text-[11px] font-medium text-txt3"
-                  style={{ background: "rgb(var(--surface2) / 0.6)" }}
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div
-            className="split-pane-editor tiptap-note-content"
-            onClick={(e) => {
-              if (isEdit) e.stopPropagation();
-            }}
-          >
-            {editor && (
-              <BubbleMenu
-                editor={editor}
-                shouldShow={({ editor: ed, from, to }: { editor: Editor; from: number; to: number }) =>
-                  ed.isEditable && from !== to && !ed.isActive("codeBlock")
-                }
-                options={{ placement: "top", offset: 8 }}
-              >
-                <BubbleToolbar editor={editor} onAiAction={onAiAction} />
-              </BubbleMenu>
-            )}
-            <EditorContent editor={editor} />
-          </div>
-
-          {isEdit && (
-            <p className="mt-4 text-[11px] text-txt3" style={{ opacity: 0.45 }}>
-              # 제목 · - 목록 · &gt; 인용 · **굵게** · `코드` · ``` 코드블록 · 텍스트 선택 → 버블 툴바
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* ── DnD 오버레이 */}
-      {dragNoteId !== null && (
-        <div
-          ref={overlayRef}
-          className="absolute inset-0 z-10"
-          style={{ top: 36 }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-            const z = getZone(e);
-            if (z !== hoverZone) setHoverZone(z);
-          }}
-          onDragLeave={() => setHoverZone(null)}
-          onDrop={(e) => {
-            e.preventDefault();
-            const noteId = e.dataTransfer.getData("text/plain");
-            const zone = getZone(e);
-            setHoverZone(null);
-            if (noteId) onDrop(zone, noteId);
-          }}
+    <div className="split-pane-editor tiptap-note-content" onClick={(e) => { if (mode === "edit") e.stopPropagation(); }}>
+      {editor && (
+        <BubbleMenu
+          editor={editor}
+          shouldShow={({ editor: ed, from, to }: { editor: Editor; from: number; to: number }) =>
+            ed.isEditable && from !== to && !ed.isActive("codeBlock")
+          }
+          options={{ placement: "top", offset: 8 }}
         >
-          {hoverZone && <SplitPreviewOverlay zone={hoverZone} />}
-        </div>
+          <BubbleToolbar editor={editor} onAiAction={onAiAction} />
+        </BubbleMenu>
       )}
+      <EditorContent editor={editor} />
     </div>
   );
-}
+});
 
-/* ── 분할 미리보기 오버레이 */
-const SPLIT_LABEL: Record<DropZone, string> = {
-  left: "왼쪽에 새 패널 생성",
-  right: "오른쪽에 새 패널 생성",
-  top: "위에 새 패널 생성",
-  bottom: "아래에 새 패널 생성",
-};
-
-const SPLIT_POS: Record<DropZone, React.CSSProperties> = {
-  left:   { top: 0, left: 0, width: "50%", height: "100%" },
-  right:  { top: 0, right: 0, width: "50%", height: "100%" },
-  top:    { top: 0, left: 0, right: 0, height: "50%" },
-  bottom: { bottom: 0, left: 0, right: 0, height: "50%" },
-};
-
-const SPLIT_DIVIDER: Record<DropZone, React.CSSProperties> = {
-  left:   { position: "absolute", top: 0, right: -1, width: 2, height: "100%", background: "rgb(var(--primary))" },
-  right:  { position: "absolute", top: 0, left: -1,  width: 2, height: "100%", background: "rgb(var(--primary))" },
-  top:    { position: "absolute", bottom: -1, left: 0, right: 0, height: 2, background: "rgb(var(--primary))" },
-  bottom: { position: "absolute", top: -1,    left: 0, right: 0, height: 2, background: "rgb(var(--primary))" },
-};
-
-function SplitPreviewOverlay({ zone }: { zone: DropZone }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        background: "rgb(var(--primary) / 0.14)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        pointerEvents: "none",
-        transition: "all 0.08s ease",
-        ...SPLIT_POS[zone],
-      }}
-    >
-      <div style={SPLIT_DIVIDER[zone]} />
-      <div
-        style={{
-          position: "relative",
-          background: "rgb(var(--surface))",
-          border: "1.5px solid rgb(var(--primary) / 0.45)",
-          borderRadius: 8,
-          padding: "5px 14px",
-          fontSize: 11,
-          fontWeight: 600,
-          color: "rgb(var(--primary))",
-          whiteSpace: "nowrap",
-          fontFamily: "var(--font-sans)",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
-          letterSpacing: "0.01em",
-        }}
-      >
-        {SPLIT_LABEL[zone]}
-      </div>
-    </div>
-  );
-}
+export default NoteEditor;

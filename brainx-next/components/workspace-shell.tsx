@@ -9,7 +9,7 @@ import { cx } from "@/lib/utils";
 
 const NAV = [
   { id: "home", label: "홈", icon: "home" as const, path: "/home" },
-  { id: "notes", label: "노트", icon: "notes" as const, path: "/notes/n1" },
+  { id: "notes", label: "노트", icon: "notes" as const, path: "/notes" },
   { id: "graph", label: "마인드맵", icon: "graph" as const, path: "/graph" },
   { id: "chat", label: "AI 챗", icon: "chat" as const, path: "/chat" },
   { id: "import", label: "가져오기", icon: "import" as const, path: "/import" },
@@ -24,7 +24,7 @@ const NAV2 = [
 ];
 
 function isActive(pathname: string, path: string) {
-  if (path === "/notes/n1") return pathname.startsWith("/notes");
+  if (path === "/notes") return pathname.startsWith("/notes");
   return pathname === path;
 }
 
@@ -247,7 +247,7 @@ function TopBar() {
   const router = useRouter();
   const mobileNav = [
     { label: "홈", icon: "home" as const, path: "/home" },
-    { label: "노트", icon: "notes" as const, path: "/notes/n1" },
+    { label: "노트", icon: "notes" as const, path: "/notes" },
     { label: "그래프", icon: "graph" as const, path: "/graph" },
     { label: "챗", icon: "chat" as const, path: "/chat" },
     { label: "가져오기", icon: "import" as const, path: "/import" },

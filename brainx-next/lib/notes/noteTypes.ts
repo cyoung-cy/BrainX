@@ -10,16 +10,6 @@ export interface MockFolder {
   favorite?: boolean;
 }
 
-export interface Tab {
-  id: string;
-  noteId: string;
-}
-
-export interface PaneTabsState {
-  tabs: Tab[];
-  activeTabId: string;
-}
-
 export interface MockNote {
   id: string;
   title: string;
@@ -29,6 +19,26 @@ export interface MockNote {
   folderId?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/** 일반 노트 탭 */
+export interface NoteTab {
+  id: string;
+  kind: "note";
+  noteId: string;
+}
+
+/** Obsidian 스타일 빈 시작 탭 — 새 파일 생성하기/파일로 이동하기/닫기 */
+export interface StartTab {
+  id: string;
+  kind: "start";
+}
+
+export type Tab = NoteTab | StartTab;
+
+export interface PaneTabsState {
+  tabs: Tab[];
+  activeTabId: string;
 }
 
 export interface PaneLeaf {
@@ -46,3 +56,12 @@ export interface PaneSplit {
 }
 
 export type PaneNode = PaneLeaf | PaneSplit;
+
+/** localStorage에 저장되는 워크스페이스 세션 전체 상태 */
+export interface NotesWorkspaceSession {
+  root: PaneNode;
+  activeId: string;
+  paneTabs: Record<string, PaneTabsState>;
+  notes: MockNote[];
+  folders: MockFolder[];
+}

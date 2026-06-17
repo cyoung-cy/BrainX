@@ -1,4 +1,4 @@
-import { MockFolder, MockNote } from "./types";
+import { MockFolder, MockNote } from "./noteTypes";
 
 export type DropPosition = "before" | "after" | "into";
 

@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Search, Star, ChevronDown, ChevronRight, FileText, Folder, Check, Clock, Plus } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MockFolder, MockNote, SortOption } from "./types";
+import { MockFolder, MockNote, SortOption } from "@/lib/notes/noteTypes";
 import FolderTree from "./FolderTree";
 
 /* ── 정렬 옵션 ─────────────────────────────────────── */
@@ -121,7 +121,7 @@ interface Props {
 }
 
 /* ── 메인 컴포넌트 ──────────────────────────────────── */
-export default function NoteSidebar({
+export default function NotesExplorer({
   notes,
   folders,
   activeNoteId,

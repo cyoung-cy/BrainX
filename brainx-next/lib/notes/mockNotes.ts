@@ -1,4 +1,4 @@
-import { MockFolder, MockNote } from "./types";
+import { MockFolder, MockNote } from "./noteTypes";
 
 /* ── 타임스탬프 헬퍼 (daysAgo 기준) ─────────────────── */
 const D = (daysAgo: number): number => 1750000000000 - daysAgo * 86_400_000;

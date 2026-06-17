@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { RotateCcw, ChevronLeft } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MockFolder, MockNote, PaneNode, PaneTabsState } from "./types";
-import type { EditMode, AiActionType } from "./PaneLeafView";
-import { MOCK_NOTES, MOCK_FOLDERS } from "./mockData";
+import { MockFolder, MockNote, PaneNode, PaneTabsState, Tab, NotesWorkspaceSession } from "@/lib/notes/noteTypes";
+import type { EditMode, AiActionType } from "./NoteEditor";
+import { MOCK_NOTES, MOCK_FOLDERS } from "@/lib/notes/mockNotes";
 import {
   uid,
   splitNodeAt,
@@ -13,32 +13,63 @@ import {
   countLeaves,
   findFirstLeafId,
   DropZone,
-} from "./paneUtils";
+} from "@/lib/notes/paneUtils";
 import { AUTO_THEME } from "./theme";
 import { SplitThemeContext } from "./SplitThemeContext";
-import PaneTreeRenderer from "./PaneTreeRenderer";
-import NoteSidebar from "./NoteSidebar";
-import ContextPanel, { type PendingAiRequest } from "./ContextPanel";
-import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "./folderDnd";
+import PaneTreeRenderer, { type QuickSwitcherTarget } from "./PaneTreeRenderer";
+import NotesExplorer from "./NotesExplorer";
+import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
+import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
+
+export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
+
+interface NotesWorkspaceProps {
+  initialTab: InitialTab;
+  /** 지정 시 localStorage에 세션(분할/탭/노트/폴더)을 영속화한다. 데모(split-demo)는 비워서 매번 초기화. */
+  persistKey?: string;
+  /** 대표 활성 노트가 바뀔 때 호출 — 페이지에서 URL을 갱신하는 데 사용 */
+  onActiveNoteChange?: (noteId: string) => void;
+}
 
 /* 패널 트리 + 탭 상태를 함께 초기화 (동일한 paneId로 묶기 위해 한번에 생성) */
-function createInitialPaneState() {
+function createInitialPaneState(initialTab: InitialTab) {
   const rootId = uid();
   const tabId = uid();
-  const firstNoteId = MOCK_NOTES[0].id;
+  const tab: Tab =
+    initialTab.kind === "note" ? { id: tabId, kind: "note", noteId: initialTab.noteId } : { id: tabId, kind: "start" };
+  const leafNoteId = initialTab.kind === "note" ? initialTab.noteId : MOCK_NOTES[0].id;
   return {
-    root: { type: "leaf", id: rootId, noteId: firstNoteId } as PaneNode,
+    root: { type: "leaf", id: rootId, noteId: leafNoteId } as PaneNode,
     activeId: rootId,
     paneTabs: {
-      [rootId]: { tabs: [{ id: tabId, noteId: firstNoteId }], activeTabId: tabId },
+      [rootId]: { tabs: [tab], activeTabId: tabId },
     } as Record<string, PaneTabsState>,
   };
 }
 
-export default function SplitDemoClient() {
+function readSession(persistKey: string): NotesWorkspaceSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(persistKey);
+    if (!raw) return null;
+    return JSON.parse(raw) as NotesWorkspaceSession;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(persistKey: string, session: NotesWorkspaceSession) {
+  try {
+    window.localStorage.setItem(persistKey, JSON.stringify(session));
+  } catch {
+    // ignore storage issues
+  }
+}
+
+export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteChange }: NotesWorkspaceProps) {
   // 최초 1회만 생성되는 초기값 (pane root와 paneTabs가 같은 paneId를 공유해야 함)
   const initRef = useRef<ReturnType<typeof createInitialPaneState> | null>(null);
-  if (!initRef.current) initRef.current = createInitialPaneState();
+  if (!initRef.current) initRef.current = createInitialPaneState(initialTab);
   const init = initRef.current;
 
   const [state, setState] = useState<{ root: PaneNode; activeId: string }>(() => ({
@@ -55,15 +86,19 @@ export default function SplitDemoClient() {
   const [paneMode, setPaneMode] = useState<Record<string, EditMode>>({});
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [aiRequest, setAiRequest] = useState<PendingAiRequest | null>(null);
+  const [quickSwitcher, setQuickSwitcher] = useState<QuickSwitcherTarget | null>(null);
   const aiNonceRef = useRef(0);
+  const hydratedRef = useRef(false);
+  const prevActiveNoteIdRef = useRef<string | null>(null);
+  const prevInitialKeyRef = useRef<string>(initialTab.kind === "note" ? initialTab.noteId : "start");
 
   const panelCount = countLeaves(state.root);
 
-  /* 활성 패널의 활성 탭 → 현재 노트 (우측 컨텍스트 패널 기준) */
+  /* 활성 패널의 활성 탭 → 현재 노트 (우측 컨텍스트 패널 기준). start 탭이면 null. */
   const activeTabsState = paneTabs[state.activeId];
-  const activeNoteId =
-    activeTabsState?.tabs.find((t) => t.id === activeTabsState.activeTabId)?.noteId ?? notes[0].id;
-  const activeNote = notes.find((n) => n.id === activeNoteId) ?? notes[0];
+  const activeTab = activeTabsState?.tabs.find((t) => t.id === activeTabsState.activeTabId) ?? null;
+  const activeNoteId = activeTab?.kind === "note" ? activeTab.noteId : null;
+  const activeNote = activeNoteId ? notes.find((n) => n.id === activeNoteId) ?? null : null;
 
   /* ── 핸들러 ────────────────────────────────────────── */
 
@@ -74,16 +109,16 @@ export default function SplitDemoClient() {
       const current = prev[paneId];
       if (!current) {
         const newTabId = uid();
-        return { ...prev, [paneId]: { tabs: [{ id: newTabId, noteId }], activeTabId: newTabId } };
+        return { ...prev, [paneId]: { tabs: [{ id: newTabId, kind: "note", noteId }], activeTabId: newTabId } };
       }
-      const existing = current.tabs.find((t) => t.noteId === noteId);
+      const existing = current.tabs.find((t) => t.kind === "note" && t.noteId === noteId);
       if (existing) {
         return { ...prev, [paneId]: { ...current, activeTabId: existing.id } };
       }
       const newTabId = uid();
       return {
         ...prev,
-        [paneId]: { tabs: [...current.tabs, { id: newTabId, noteId }], activeTabId: newTabId },
+        [paneId]: { tabs: [...current.tabs, { id: newTabId, kind: "note", noteId }], activeTabId: newTabId },
       };
     });
   }, [state.activeId]);
@@ -146,7 +181,7 @@ export default function SplitDemoClient() {
     }));
     setPaneTabs((prev) => ({
       ...prev,
-      [newLeafId]: { tabs: [{ id: newTabId, noteId }], activeTabId: newTabId },
+      [newLeafId]: { tabs: [{ id: newTabId, kind: "note", noteId }], activeTabId: newTabId },
     }));
   }, []);
 
@@ -174,7 +209,7 @@ export default function SplitDemoClient() {
     });
   }, []);
 
-  /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성) */
+  /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성), 지정한 패널의 새 탭으로 연다 */
   const createNote = useCallback((folderId: string | undefined, paneId: string) => {
     const newNoteId = `note-${uid()}`;
     const newTabId = uid();
@@ -191,10 +226,12 @@ export default function SplitDemoClient() {
     setNotes((prev) => [...prev, newNote]);
     setPaneTabs((prev) => {
       const current = prev[paneId];
-      const newTabs = current ? [...current.tabs, { id: newTabId, noteId: newNoteId }] : [{ id: newTabId, noteId: newNoteId }];
+      const newTab: Tab = { id: newTabId, kind: "note", noteId: newNoteId };
+      const newTabs = current ? [...current.tabs, newTab] : [newTab];
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTabId } };
     });
     setState((prev) => ({ ...prev, activeId: paneId }));
+    return newNoteId;
   }, []);
 
   /* 사이드바 "+ 새 노트" 버튼 → 현재 선택된 폴더 안에, 활성 패널의 새 탭으로 생성 */
@@ -202,10 +239,71 @@ export default function SplitDemoClient() {
     createNote(folderId, state.activeId);
   }, [createNote, state.activeId]);
 
-  /* 탭 바의 "+" 버튼 → 해당 패널에 새 노트를 새 탭으로 생성 */
+  /* 탭 바의 "+" 버튼 → 해당 패널에 빈 "새 탭"(start)을 추가 (Obsidian Ctrl+T와 동일) */
   const handleNewTab = useCallback((paneId: string) => {
-    createNote(selectedFolderId ?? undefined, paneId);
-  }, [createNote, selectedFolderId]);
+    const newTabId = uid();
+    setPaneTabs((prev) => {
+      const current = prev[paneId];
+      const newTab: Tab = { id: newTabId, kind: "start" };
+      const newTabs = current ? [...current.tabs, newTab] : [newTab];
+      return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTabId } };
+    });
+    setState((prev) => ({ ...prev, activeId: paneId }));
+  }, []);
+
+  /* 특정 탭(보통 start 탭)을 새로 만든 노트로 같은 자리에서 교체 */
+  const replaceTabWithNote = useCallback((paneId: string, tabId: string, noteId: string) => {
+    setPaneTabs((prev) => {
+      const current = prev[paneId];
+      if (!current) return prev;
+      const newTabs = current.tabs.map((t) =>
+        t.id === tabId ? ({ id: tabId, kind: "note", noteId } as Tab) : t
+      );
+      return { ...prev, [paneId]: { tabs: newTabs, activeTabId: tabId } };
+    });
+    setState((prev) => ({ ...prev, activeId: paneId }));
+  }, []);
+
+  /* "새 파일 생성하기" / Ctrl+N — start 탭이면 그 자리에서 노트로 교체, 아니면 새 탭으로 추가 */
+  const requestNewNote = useCallback((paneId: string) => {
+    const tabsState = paneTabs[paneId];
+    const active = tabsState?.tabs.find((t) => t.id === tabsState.activeTabId);
+    if (active?.kind === "start") {
+      const newNoteId = `note-${uid()}`;
+      const newNote: MockNote = {
+        id: newNoteId,
+        title: "새 노트",
+        content: "",
+        tags: [],
+        category: "frontend",
+        folderId: selectedFolderId ?? undefined,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      setNotes((prev) => [...prev, newNote]);
+      replaceTabWithNote(paneId, active.id, newNoteId);
+    } else {
+      createNote(selectedFolderId ?? undefined, paneId);
+    }
+  }, [paneTabs, selectedFolderId, replaceTabWithNote, createNote]);
+
+  /* "파일로 이동하기" / Ctrl+O */
+  const requestQuickSwitcher = useCallback((paneId: string, tabId: string) => {
+    setQuickSwitcher({ paneId, tabId });
+  }, []);
+
+  const handleQuickSwitcherSelect = useCallback((noteId: string) => {
+    if (!quickSwitcher) return;
+    const { paneId, tabId } = quickSwitcher;
+    const tabsState = paneTabs[paneId];
+    const active = tabsState?.tabs.find((t) => t.id === tabId);
+    if (active?.kind === "start") {
+      replaceTabWithNote(paneId, tabId, noteId);
+    } else {
+      handleNoteClick(noteId);
+    }
+    setQuickSwitcher(null);
+  }, [quickSwitcher, paneTabs, replaceTabWithNote, handleNoteClick]);
 
   /* 폴더 생성 — 루트(parentFolderId=null) 또는 특정 폴더 하위에 인라인으로 추가 */
   const handleCreateFolder = useCallback((parentFolderId: string | null, name: string) => {
@@ -249,8 +347,7 @@ export default function SplitDemoClient() {
     setSelectedFolderId(folderId);
   }, []);
 
-  /* 노트 탐색기 드래그앤드랍 — 노트를 폴더/루트로 이동, 또는 같은 레벨에서 순서 변경.
-     노트는 id로만 참조되므로(탭은 noteId 참조) 이동해도 열려 있는 탭은 그대로 유지된다. */
+  /* 노트 탐색기 드래그앤드랍 — 노트를 폴더/루트로 이동, 또는 같은 레벨에서 순서 변경. */
   const handleMoveNoteToFolder = useCallback((noteId: string, targetFolderId: string | null) => {
     setNotes((prev) => moveNoteIntoFolder(prev, noteId, targetFolderId));
   }, []);
@@ -275,21 +372,102 @@ export default function SplitDemoClient() {
   }, []);
 
   const handleReset = useCallback(() => {
-    const fresh = createInitialPaneState();
+    const fresh = createInitialPaneState(initialTab);
     setState({ root: fresh.root, activeId: fresh.activeId });
     setPaneTabs(fresh.paneTabs);
     setPaneMode({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ── 세션 영속화 (persistKey 지정 시) ──────────────────────────── */
+
+  // mount 시 1회: 저장된 세션 복원 → initialTab이 note면 그 노트를 활성 패널 탭으로 연다
+  useEffect(() => {
+    if (!persistKey) {
+      hydratedRef.current = true;
+      return;
+    }
+    const saved = readSession(persistKey);
+    if (saved) {
+      // 복원된 세션 위에서, initialTab이 note를 가리키면 그 노트를 활성 패널의 탭으로 연다.
+      // (handleNoteClick은 마운트 시점의 stale state를 참조하므로 여기서 saved 값으로 직접 계산한다.)
+      let nextPaneTabs = saved.paneTabs;
+      const nextActiveId = saved.activeId;
+      if (initialTab.kind === "note") {
+        const noteId = initialTab.noteId;
+        const current = nextPaneTabs[nextActiveId];
+        const existing = current?.tabs.find((t) => t.kind === "note" && t.noteId === noteId);
+        if (existing) {
+          nextPaneTabs = { ...nextPaneTabs, [nextActiveId]: { ...current, activeTabId: existing.id } };
+        } else {
+          const newTabId = uid();
+          const newTab: Tab = { id: newTabId, kind: "note", noteId };
+          const newTabs = current ? [...current.tabs, newTab] : [newTab];
+          nextPaneTabs = { ...nextPaneTabs, [nextActiveId]: { tabs: newTabs, activeTabId: newTabId } };
+        }
+      }
+      setState({ root: saved.root, activeId: nextActiveId });
+      setPaneTabs(nextPaneTabs);
+      setNotes(saved.notes);
+      setFolders(saved.folders);
+    }
+    hydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistKey]);
+
+  // 마운트 후 initialTab이 바뀌면(클라이언트 라우팅으로 다른 노트로 이동) 해당 노트를 연다
+  useEffect(() => {
+    const key = initialTab.kind === "note" ? initialTab.noteId : "start";
+    if (prevInitialKeyRef.current === key) return;
+    prevInitialKeyRef.current = key;
+    if (initialTab.kind === "note") handleNoteClick(initialTab.noteId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab.kind === "note" ? initialTab.noteId : "start"]);
+
+  // 변경 사항을 디바운스 저장
+  useEffect(() => {
+    if (!persistKey || !hydratedRef.current) return;
+    const handle = window.setTimeout(() => {
+      writeSession(persistKey, { root: state.root, activeId: state.activeId, paneTabs, notes, folders });
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [persistKey, state, paneTabs, notes, folders]);
+
+  // 대표 활성 노트가 바뀌면 URL 갱신 콜백 호출
+  useEffect(() => {
+    if (!activeNoteId) return;
+    if (prevActiveNoteIdRef.current === activeNoteId) return;
+    prevActiveNoteIdRef.current = activeNoteId;
+    onActiveNoteChange?.(activeNoteId);
+  }, [activeNoteId, onActiveNoteChange]);
+
+  /* ── 키보드 단축키 (Ctrl/Cmd+N 새 파일, Ctrl/Cmd+O 파일로 이동) ── */
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        requestNewNote(state.activeId);
+      } else if (e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        const tabsState = paneTabs[state.activeId];
+        const tabId = tabsState?.activeTabId;
+        if (tabId) requestQuickSwitcher(state.activeId, tabId);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [state.activeId, paneTabs, requestNewNote, requestQuickSwitcher]);
 
   return (
     <SplitThemeContext.Provider value={AUTO_THEME}>
       <div className="flex h-full overflow-hidden">
 
         {/* ── 좌측: 노트 탐색기 ──────────────────────── */}
-        <NoteSidebar
+        <NotesExplorer
           notes={notes}
           folders={folders}
-          activeNoteId={activeNoteId}
+          activeNoteId={activeNoteId ?? ""}
           selectedFolderId={selectedFolderId}
           onSelectFolder={handleSelectFolder}
           onNoteClick={handleNoteClick}
@@ -343,6 +521,7 @@ export default function SplitDemoClient() {
                 dragNoteId={dragNoteId}
                 paneMode={paneMode}
                 paneTabs={paneTabs}
+                quickSwitcher={quickSwitcher}
                 onActivate={handleActivate}
                 onClose={handleClose}
                 onDrop={handleDrop}
@@ -353,12 +532,16 @@ export default function SplitDemoClient() {
                 onTabClose={handleTabClose}
                 onNewTab={handleNewTab}
                 onAiAction={handleAiAction}
+                onCreateNoteInTab={(paneId) => requestNewNote(paneId)}
+                onOpenQuickSwitcher={(paneId, tabId) => requestQuickSwitcher(paneId, tabId)}
+                onQuickSwitcherSelect={handleQuickSwitcherSelect}
+                onQuickSwitcherClose={() => setQuickSwitcher(null)}
               />
             </div>
 
             {contextOpen ? (
-              <ContextPanel
-                key={activeNoteId}
+              <RightSidebar
+                key={activeNoteId ?? "start"}
                 activeNote={activeNote}
                 allNotes={notes}
                 onCollapse={() => setContextOpen(false)}

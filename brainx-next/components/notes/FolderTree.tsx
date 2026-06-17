@@ -33,14 +33,14 @@ import {
   Inbox,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MockFolder, MockNote } from "./types";
+import { MockFolder, MockNote } from "@/lib/notes/noteTypes";
 import {
   resolveDrop,
   type DragActiveData,
   type DropTargetData,
   type ResolvedDrop,
   type DropHandlers,
-} from "./folderDnd";
+} from "@/lib/notes/folderDnd";
 
 /* ── 폴더 색상 팔레트 (기본 = 노랑) ───────────────────── */
 export const FOLDER_COLORS: { label: string; value: string }[] = [
