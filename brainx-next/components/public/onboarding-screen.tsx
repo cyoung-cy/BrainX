@@ -108,8 +108,8 @@ export function OnboardingScreen() {
 
         {step === 0 ? (
           <>
-            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">프로필을 확인해 주세요</h1>
-            <p className="mb-6 text-[14px] text-txt2">소셜 계정에서 가져온 이름과 프로필 사진을 자유롭게 수정할 수 있습니다.</p>
+            <h1 className="mb-1.5 text-[26px] font-bold tracking-tight">어떻게 불러드릴까요?</h1>
+            <p className="mb-6 text-[16px] text-txt2">프로필은 나중에 언제든 바꿀 수 있어요.</p>
             <div className="mb-5 flex items-center gap-4">
               {profileImageUrl ? (
                 <img src={profileImageUrl} alt="프로필 이미지" className="h-16 w-16 shrink-0 rounded-2xl object-cover" />
@@ -140,8 +140,8 @@ export function OnboardingScreen() {
 
         {step === 1 ? (
           <>
-            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">관심 분야를 알려주세요</h1>
-            <p className="mb-6 text-[14px] text-txt2">AI가 노트를 더 자연스럽게 연결하고 추천할 수 있게 도와줍니다.</p>
+            <h1 className="mb-1.5 text-[26px] font-bold tracking-tight">관심 분야를 알려주세요</h1>
+            <p className="mb-6 text-[16px] text-txt2">AI가 노트를 더 똑똑하게 연결하고 추천해요.</p>
             <div className="mb-6 flex flex-wrap gap-2">
               {INTERESTS.map((interest) => (
                 <button
@@ -149,7 +149,7 @@ export function OnboardingScreen() {
                   type="button"
                   onClick={() => toggle(interest)}
                   className={cx(
-                    "h-9 rounded-full border px-4 text-[13.5px] font-medium transition-all",
+                    "h-9 rounded-full border px-4 text-[15.5px] font-medium transition-all",
                     selected.includes(interest) ? "border-primary bg-primary text-white" : "border-line text-txt2 hover:border-primary/50"
                   )}
                 >
@@ -194,13 +194,13 @@ export function OnboardingScreen() {
             <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent shadow-glow">
               <Icon name="sparkle" size={26} className="text-white" />
             </div>
-            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">회원가입을 완료할 준비가 됐어요</h1>
-            <p className="mb-6 text-[14px] leading-relaxed text-txt2">
-              완료 버튼을 누르면 소셜 계정 정보, 수정한 프로필, 관심 분야가 저장되고 BrainX 계정이 최종 생성됩니다.
+            <h1 className="mb-1.5 text-[26px] font-bold tracking-tight">AI 개인화 준비 완료</h1>
+            <p className="mb-6 text-[16px] leading-relaxed text-txt2">
+              이제 노트를 쓰면 BrainX가 자동으로 정리·연결하고, 필요할 때 근거 있는 답을 찾아드릴게요. 첫 노트를 함께 시작해요.
             </p>
             <div className="mb-6 space-y-2.5 rounded-xl bg-surface2/40 p-4">
-              {["프로필 정보 저장", "관심 분야 저장", "약관 동의 기록", "BrainX 계정 생성 및 로그인"].map((item) => (
-                <div key={item} className="flex items-center gap-2.5 text-[13.5px] text-txt2">
+              {["관심 분야 기반 자동 태깅", "노트 간 AI 연결 추천", "내 자료 기반 RAG 챗봇"].map((item) => (
+                <div key={item} className="flex items-center gap-2.5 text-[15.5px] text-txt2">
                   <Icon name="check" size={16} className="text-cyan" />
                   {item}
                 </div>
