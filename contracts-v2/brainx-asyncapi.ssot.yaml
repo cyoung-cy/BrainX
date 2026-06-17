@@ -2343,6 +2343,12 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-completed.v1.dlq
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Ingestion-Service currently processes imports synchronously and does not
+        publish this event. Job result (COMPLETED/FAILED) is returned directly
+        in the HTTP 202 response. Kafka publishing is planned when async
+        processing is introduced.
     ImportJobFailed:
       name: ImportJobFailed
       title: ImportJobFailed
@@ -2370,6 +2376,10 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-failed.v1.dlq
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Failure is currently returned inline in the HTTP 202 response body
+        (status: FAILED). This event is not published to Kafka.
     ImportJobRequested:
       name: ImportJobRequested
       title: ImportJobRequested
@@ -2396,6 +2406,11 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-requested.v1.dlq
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        The import job is processed synchronously in the HTTP request thread.
+        No job-requested event is published to Kafka. This event would be
+        needed once async worker-based processing is introduced.
     InsightReportCompleted:
       name: InsightReportCompleted
       title: InsightReportCompleted
@@ -2474,6 +2489,12 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.integration-connected.v1.dlq
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Notion OAuth callback (POST /v1/imports/notion/oauth/callback) completes
+        successfully and stores the integration account, but does not publish
+        this event to Kafka. Admin-Service cannot observe new integrations until
+        this event is wired.
     InvoiceIssued:
       name: InvoiceIssued
       title: InvoiceIssued
