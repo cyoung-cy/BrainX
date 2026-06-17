@@ -8328,19 +8328,6 @@ components:
         profileImageUrl:
           type: string
           nullable: true
-        language:
-          type: string
-          enum:
-          - ko
-          - en
-          default: ko
-        theme:
-          type: string
-          enum:
-          - dark
-          - light
-          - system
-          default: system
         role:
           type: string
           example: ROLE_USER
@@ -8477,27 +8464,6 @@ components:
       - accountLinked
       - isNewUser
       additionalProperties: false
-    OnboardingCompleteRequest:
-      type: object
-      properties:
-        onboardingToken:
-          type: string
-        nickname:
-          type: string
-        profileImageUrl:
-          type: string
-          nullable: true
-        interests:
-          type: array
-          items:
-            type: string
-        consents:
-          $ref: '#/components/schemas/ConsentFlags'
-      required:
-      - onboardingToken
-      - nickname
-      - consents
-      additionalProperties: false
     UserMeData:
       type: object
       properties:
@@ -8535,8 +8501,6 @@ components:
       - userId
       - email
       - nickname
-      - language
-      - theme
       - role
       - security
       - consents
@@ -8550,17 +8514,6 @@ components:
           type: string
           description: Omit/null keeps current image; empty string removes image.
           nullable: true
-        language:
-          type: string
-          enum:
-          - ko
-          - en
-        theme:
-          type: string
-          enum:
-          - dark
-          - light
-          - system
       additionalProperties: false
     ProfileUpdateData:
       type: object
@@ -8572,22 +8525,9 @@ components:
         profileImageUrl:
           type: string
           nullable: true
-        language:
-          type: string
-          enum:
-          - ko
-          - en
-        theme:
-          type: string
-          enum:
-          - dark
-          - light
-          - system
       required:
       - userId
       - nickname
-      - language
-      - theme
       additionalProperties: false
     PasswordChangeRequest:
       type: object
