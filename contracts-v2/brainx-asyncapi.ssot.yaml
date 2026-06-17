@@ -2986,6 +2986,10 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobCompletedPayload'
       x-producer-service: Ingestion-Service
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 결과가 HTTP 200 응답의 clipboardContent/openUrl로
+        즉시 반환되므로 이 이벤트는 발행되지 않는다.
       x-consumer-services:
       - User-Service
       - Admin-Service
@@ -3013,6 +3017,10 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobFailedPayload'
       x-producer-service: Ingestion-Service
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 실패도 HTTP 200 응답의 error 필드로 반환되므로
+        이 이벤트는 발행되지 않는다.
       x-consumer-services:
       - User-Service
       - Admin-Service
@@ -3040,6 +3048,10 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobRequestedPayload'
       x-producer-service: Ingestion-Service
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 Kafka 워커를 깨울 필요가 없으므로
+        이 이벤트는 발행되지 않는다.
       x-consumer-services:
       - Ingestion-Service
       x-delivery:
@@ -4388,13 +4400,26 @@ components:
           type: string
         userId:
           type: string
+        platform:
+          type: string
+          enum:
+          - tistory
+          - notion
+          - copy
+        openUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: 완료 후 열었던 글쓰기 URL. 알림 메시지 생성에 사용.
         externalUrl:
           type: string
           format: uri
           nullable: true
+          description: 발행된 외부 포스트 URL (자동 게시가 가능한 경우).
       required:
       - publishJobId
       - userId
+      - platform
       additionalProperties: false
     PublishJobFailedPayload:
       type: object

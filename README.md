@@ -300,6 +300,10 @@ cd C:\Edu\Final\brainX_back\Ingestion-Service
 | POST | `/v1/imports/notion/jobs` | Notion 페이지 가져오기 |
 | POST | `/v1/imports/obsidian/jobs` | Obsidian vault 가져오기 |
 | GET  | `/v1/imports/{importJobId}` | 가져오기 작업 상태 조회 |
+| POST | `/v1/exports` | 내보내기 작업 요청 |
+| GET  | `/v1/exports/{exportJobId}` | 내보내기 작업 상태 조회 |
+| POST | `/v1/publish-jobs` | 블로그 발행 작업 요청 (미구현) |
+| GET  | `/v1/publish-jobs/{publishJobId}` | 블로그 발행 작업 상태 조회 (미구현) |
 
 ### Frontend: BrainX-Design (포트 3000)
 
@@ -352,6 +356,13 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
   - 노트 생성이 `bulkCreateNotesInternal` 대신 구 `knowledge-workspace-service` `/v1/notes`를 직접 호출 중. Workspace-Service 정식 구현 후 전환 필요.
   - `brainx-next` import 화면은 완전 mock. `lib/ingestion-api.ts` 미작성.
   - Notion OAuth authorize 엔드포인트가 request body 없이 동작 (redirectUri는 application.yml에 고정) → SSOT에 반영 완료.
+- **publish-jobs 1번 방식 아키텍처 결정 (2026-06-17)**:
+  - 티스토리·네이버는 공식 글쓰기 API가 폐쇄되어 완전 자동 게시 불가.
+  - 1번 방식: POST /api/v1/publish-jobs 요청 시 노트를 platform 형식으로 변환 후 `clipboardContent`(변환된 본문)와 `openUrl`(글쓰기 페이지 URL)을 HTTP 200으로 즉시 반환. 클라이언트가 클립보드 복사 + 새 탭 열기 처리.
+  - 동기 처리(`x-async-boundary: false`). 클립보드 API는 사용자 클릭 제스처 컨텍스트에서만 호출 가능하므로 응답이 즉시 와야 함.
+  - `openUrl`은 서버가 platform 기준으로 계산 (tistory → https://www.tistory.com/, notion → https://www.notion.so/, copy → null). `destinationBlogUrl` 입력 불필요.
+  - Workspace-Service 미구현 기간에는 request body의 `noteContent`(optional)를 변환에 사용.
+  - Kafka 이벤트 3종(PublishJobRequested/Completed/Failed) 미발행 예정 → SSOT에 `x-implementation-status: not-implemented` 표시 완료.
 
 ## North Star
 

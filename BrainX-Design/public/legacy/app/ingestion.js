@@ -42,5 +42,8 @@
       create: (data) => req('POST', '/v1/exports', data),
       getStatus: (exportJobId) => req('GET', '/v1/exports/' + exportJobId),
     },
+    publish: {
+      create: (data) => req('POST', '/v1/publish-jobs', data),
+    },
   };
 })();
