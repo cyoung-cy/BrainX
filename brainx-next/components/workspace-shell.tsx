@@ -10,19 +10,15 @@ import { cx } from "@/lib/utils";
 import { readAuthSession, type AuthSession } from "@/lib/auth-api";
 
 const NAV = [
-  { id: "home", label: "홈", icon: "home" as const, path: "/home" },
-  { id: "notes", label: "노트", icon: "notes" as const, path: "/notes/n1" },
-  { id: "graph", label: "마인드맵", icon: "graph" as const, path: "/graph" },
-  { id: "chat", label: "AI 챗", icon: "chat" as const, path: "/chat" },
-  { id: "import", label: "가져오기", icon: "import" as const, path: "/import" },
-  { id: "mypage", label: "내 페이지", icon: "dash" as const, path: "/mypage" }
+  { id: "home", labelKey: "nav.home" as const, icon: "home" as const, path: "/home" },
+  { id: "notes", labelKey: "nav.notes" as const, icon: "notes" as const, path: "/notes/n1" },
+  { id: "graph", labelKey: "nav.graph" as const, icon: "graph" as const, path: "/graph" },
+  { id: "chat", labelKey: "nav.chat" as const, icon: "chat" as const, path: "/chat" },
+  { id: "import", labelKey: "nav.import" as const, icon: "import" as const, path: "/import" }
 ];
 
 const NAV2 = [
-  { id: "billing", label: "플랜·결제", icon: "bill" as const, path: "/billing" },
-  { id: "settings", label: "설정", icon: "settings" as const, path: "/settings" },
-  { id: "support", label: "문의하기", icon: "chat" as const, path: "/support" },
-  { id: "admin", label: "관리자", icon: "shield" as const, path: "/admin" }
+  { id: "admin", labelKey: "nav.admin" as const, icon: "shield" as const, path: "/admin" }
 ];
 
 function isActive(pathname: string, path: string) {
@@ -35,7 +31,7 @@ function SearchBar() {
   const [filter, setFilter] = useState("최신순");
   const [semantic, setSemantic] = useState(false);
   const [open, setOpen] = useState(false);
-  const { pushToast } = useBrainX();
+  const { pushToast, t } = useBrainX();
   const options = ["최신순", "오래된순", "제목 기준", "내용 기준", "기간 검색"];
 
   return (
@@ -188,7 +184,7 @@ function SidebarItem({
 
 function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const router = useRouter();
-  const { sidebarCollapsed, setSidebarCollapsed, notes } = useBrainX();
+  const { sidebarCollapsed, setSidebarCollapsed, notes, t } = useBrainX();
 
   return (
     <aside
@@ -214,11 +210,11 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
       <nav className="scroll flex-1 space-y-1 overflow-y-auto px-3">
         {NAV.map((item) => (
-          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
+          <SidebarItem key={item.id} {...item} label={t(item.labelKey)} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
         ))}
         <div className="my-3 mx-1 h-px bg-line/50" />
         {NAV2.map((item) => (
-          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} />
+          <SidebarItem key={item.id} {...item} label={t(item.labelKey)} collapsed={sidebarCollapsed} />
         ))}
       </nav>
 
@@ -261,17 +257,16 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const { pushToast } = useBrainX();
+  const { pushToast, t } = useBrainX();
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
   const displayName = session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
   const mobileNav = [
-    { label: "홈", icon: "home" as const, path: "/home" },
-    { label: "노트", icon: "notes" as const, path: "/notes/n1" },
-    { label: "그래프", icon: "graph" as const, path: "/graph" },
-    { label: "챗", icon: "chat" as const, path: "/chat" },
-    { label: "가져오기", icon: "import" as const, path: "/import" },
-    { label: "내 페이지", icon: "dash" as const, path: "/mypage" }
+    { label: t("nav.home"), icon: "home" as const, path: "/home" },
+    { label: t("nav.notes"), icon: "notes" as const, path: "/notes/n1" },
+    { label: t("nav.graph"), icon: "graph" as const, path: "/graph" },
+    { label: t("nav.chat"), icon: "chat" as const, path: "/chat" },
+    { label: t("nav.import"), icon: "import" as const, path: "/import" }
   ];
 
   useEffect(() => {
