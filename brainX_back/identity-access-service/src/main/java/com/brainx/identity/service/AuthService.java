@@ -57,6 +57,7 @@ public class AuthService {
 
         emailVerificationRepository.save(verification);
         emailService.sendVerificationCode(request.getEmail(), code);
+        log.info("===== [DEV] 이메일 인증코드: {} / 이메일: {} =====", code, request.getEmail());
 
         return EmailVerificationResponse.builder()
                 .verificationId(verification.getVerificationId())
@@ -147,6 +148,9 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> BrainXException.notFound("사용자를 찾을 수 없습니다"));
 
+        if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
+            throw BrainXException.badRequest("PASSWORD_NOT_AVAILABLE", "소셜 로그인 계정은 비밀번호를 변경할 수 없습니다");
+        }
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
             throw BrainXException.badRequest("INVALID_CURRENT_PASSWORD", "현재 비밀번호가 올바르지 않습니다");
         }
@@ -202,10 +206,17 @@ public class AuthService {
         if (request.getNickname() != null) {
             user.setNickname(request.getNickname());
         }
+        if (request.getProfileImageAssetId() != null) {
+            String profileImageUrl = request.getProfileImageAssetId().trim();
+            user.setProfileImageUrl(profileImageUrl.isEmpty() ? null : profileImageUrl);
+        }
         userRepository.save(user);
 
         ConsentRecord consent = consentRecordRepository.findTopByUserUserIdOrderByCreatedAtDesc(userId).orElse(null);
-        return UserProfileResponse.from(user, consent, List.of());
+        List<OAuthAccount> oauthAccounts = oAuthAccountRepository.findAll().stream()
+                .filter(o -> o.getUser().getUserId().equals(userId))
+                .toList();
+        return UserProfileResponse.from(user, consent, oauthAccounts);
     }
 
     @Transactional

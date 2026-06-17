@@ -1,11 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
+import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
 import { cx } from "@/lib/utils";
+import { readAuthSession, type AuthSession } from "@/lib/auth-api";
 
 const NAV = [
   { id: "home", label: "홈", icon: "home" as const, path: "/home" },
@@ -19,7 +21,7 @@ const NAV = [
 const NAV2 = [
   { id: "billing", label: "플랜·결제", icon: "bill" as const, path: "/billing" },
   { id: "settings", label: "설정", icon: "settings" as const, path: "/settings" },
-  { id: "support", label: "문의", icon: "chat" as const, path: "/support" },
+  { id: "support", label: "문의하기", icon: "chat" as const, path: "/support" },
   { id: "admin", label: "관리자", icon: "shield" as const, path: "/admin" }
 ];
 
@@ -107,11 +109,13 @@ function SearchBar() {
 function MobileNavButton({
   icon,
   label,
-  path
+  path,
+  onMyPageClick
 }: {
   icon: Parameters<typeof Icon>[0]["name"];
   label: string;
   path: string;
+  onMyPageClick?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -120,7 +124,13 @@ function MobileNavButton({
   return (
     <button
       type="button"
-      onClick={() => router.push(path)}
+      onClick={() => {
+        if (path === "/mypage") {
+          onMyPageClick?.();
+          return;
+        }
+        router.push(path);
+      }}
       className={cx(
         "flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-medium whitespace-nowrap transition-colors",
         active ? "border-primary/40 bg-primary/10 text-txt" : "border-line/50 bg-surface2/40 text-txt2 hover:bg-surface2/70 hover:text-txt"
@@ -136,12 +146,14 @@ function SidebarItem({
   icon,
   label,
   path,
-  collapsed
+  collapsed,
+  onMyPageClick
 }: {
   icon: Parameters<typeof Icon>[0]["name"];
   label: string;
   path: string;
   collapsed: boolean;
+  onMyPageClick?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -150,7 +162,13 @@ function SidebarItem({
   return (
     <button
       type="button"
-      onClick={() => router.push(path)}
+      onClick={() => {
+        if (path === "/mypage") {
+          onMyPageClick?.();
+          return;
+        }
+        router.push(path);
+      }}
       className={cx(
         "group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 transition-all duration-200",
         active ? "bg-surface2/80 text-txt" : "text-txt2 hover:bg-surface2/50 hover:text-txt"
@@ -168,7 +186,7 @@ function SidebarItem({
   );
 }
 
-function Sidebar() {
+function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const router = useRouter();
   const { sidebarCollapsed, setSidebarCollapsed, notes } = useBrainX();
 
@@ -196,7 +214,7 @@ function Sidebar() {
 
       <nav className="scroll flex-1 space-y-1 overflow-y-auto px-3">
         {NAV.map((item) => (
-          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} />
+          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
         ))}
         <div className="my-3 mx-1 h-px bg-line/50" />
         {NAV2.map((item) => (
@@ -242,17 +260,26 @@ function Sidebar() {
   );
 }
 
-function TopBar() {
+function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { pushToast } = useBrainX();
   const router = useRouter();
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const displayName = session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
   const mobileNav = [
     { label: "홈", icon: "home" as const, path: "/home" },
     { label: "노트", icon: "notes" as const, path: "/notes/n1" },
     { label: "그래프", icon: "graph" as const, path: "/graph" },
     { label: "챗", icon: "chat" as const, path: "/chat" },
     { label: "가져오기", icon: "import" as const, path: "/import" },
-    { label: "설정", icon: "settings" as const, path: "/settings" }
+    { label: "내 페이지", icon: "dash" as const, path: "/mypage" }
   ];
+
+  useEffect(() => {
+    setSession(readAuthSession());
+    const syncSession = () => setSession(readAuthSession());
+    window.addEventListener("brainx-auth-session-changed", syncSession);
+    return () => window.removeEventListener("brainx-auth-session-changed", syncSession);
+  }, []);
 
   return (
     <header className="relative z-10 border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
@@ -269,11 +296,11 @@ function TopBar() {
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" />
           </button>
           <div className="mx-1 hidden h-6 w-px bg-line/60 md:block" />
-          <button type="button" onClick={() => router.push("/mypage")} className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60">
-            <Avatar name="연우" size={32} />
+          <button type="button" onClick={onOpenSettings} className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60">
+            <Avatar name={displayName} size={32} imageUrl={session?.profileImageUrl} />
             <div className="hidden text-left leading-tight sm:block">
-              <div className="text-[13px] font-semibold text-txt">김연우</div>
-              <div className="text-[11px] text-txt3">Free 플랜</div>
+              <div className="max-w-[120px] truncate text-[13px] font-semibold text-txt">{displayName}</div>
+              <div className="text-[11px] text-txt3">{session?.role ?? "Free 플랜"}</div>
             </div>
           </button>
         </div>
@@ -281,7 +308,7 @@ function TopBar() {
       <div className="border-t border-line/40 px-4 py-2 md:hidden">
         <div className="scroll flex gap-2 overflow-x-auto pb-1">
           {mobileNav.map((item) => (
-            <MobileNavButton key={item.path} {...item} />
+            <MobileNavButton key={item.path} {...item} onMyPageClick={onOpenSettings} />
           ))}
         </div>
       </div>
@@ -290,13 +317,25 @@ function TopBar() {
 }
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (pathname === "/mypage") {
+      setSettingsOpen(true);
+      router.replace("/home");
+    }
+  }, [pathname, router]);
+
   return (
     <div className="flex h-[100svh] w-full overflow-hidden">
-      <Sidebar />
+      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar />
+        <TopBar onOpenSettings={() => setSettingsOpen(true)} />
         <main className="scroll relative flex-1 overflow-y-auto">{children}</main>
       </div>
+      <AccountSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

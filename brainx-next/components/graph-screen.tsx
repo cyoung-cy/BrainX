@@ -23,6 +23,15 @@ type GraphControls = {
   bridges: () => void;
 };
 
+function seededUnit(seed: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
 function settleLayout(notes: BrainXNote[], iterations = 260) {
   const positions: Record<string, GraphNode> = {};
   const clusterOrder: ClusterId[] = ["ml", "read", "proj", "work", "life"];
@@ -32,9 +41,11 @@ function settleLayout(notes: BrainXNote[], iterations = 260) {
     const index = clusterIndex[note.cluster];
     const angle = (index / clusterOrder.length) * Math.PI * 2;
     const radius = 190;
+    const jitterX = (seededUnit(`${note.id}:x`) - 0.5) * 90;
+    const jitterY = (seededUnit(`${note.id}:y`) - 0.5) * 90;
     positions[note.id] = {
-      x: Math.cos(angle) * radius + (Math.random() - 0.5) * 90,
-      y: Math.sin(angle) * radius + (Math.random() - 0.5) * 90,
+      x: Math.cos(angle) * radius + jitterX,
+      y: Math.sin(angle) * radius + jitterY,
       vx: 0,
       vy: 0,
       fx: null,

@@ -12,6 +12,11 @@ build/
 # Logs
 *.log
 
+# Local application secrets
+brainX_back/User-Service/src/main/resources/application.yml
+brainX_back/User-Service/src/main/resources/application.yaml
+!brainX_back/User-Service/src/main/resources/application-example.yml
+
 # OS
 .DS_Store
 Thumbs.db

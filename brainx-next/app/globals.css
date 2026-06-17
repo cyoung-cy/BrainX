@@ -391,6 +391,185 @@ html.light .aurora b {
   height: 0;
 }
 
+/* ── TipTap Code Test Editor ────────────────────────────────── */
+
+.tiptap-code-content .ProseMirror {
+  outline: none;
+  min-height: 360px;
+}
+
+.tiptap-code-content .ProseMirror > * + * {
+  margin-top: 0.5em;
+}
+
+.tiptap-code-content .ProseMirror p {
+  line-height: 1.75;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-code-content .ProseMirror .is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--txt3));
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap-code-content--light .ProseMirror p {
+  color: #475569;
+}
+
+/* ── highlight.js token colors ──────────────────────────────── */
+/*
+ * WHY: Transparent background lets the <pre> wrapper (bg-surface2/50)
+ * control the code block color. light/dark adapts via CSS variable swaps.
+ */
+
+.hljs {
+  background: transparent;
+  color: rgb(var(--txt));
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: rgb(var(--txt3));
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #c084fc;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag .hljs-attr {
+  color: #fb923c;
+}
+
+.hljs-string,
+.hljs-doctag {
+  color: #4ade80;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-selector-id,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #f472b6;
+}
+
+.hljs-tag,
+.hljs-name,
+.hljs-attribute {
+  color: #34d399;
+}
+
+.hljs-regexp,
+.hljs-link {
+  color: #22d3ee;
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #e879f9;
+}
+
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #38bdf8;
+}
+
+.hljs-meta {
+  color: rgb(var(--txt3));
+  font-weight: 600;
+}
+
+.hljs-deletion {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+}
+
+.hljs-addition {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+
+/* Light mode hljs overrides */
+html.light .hljs {
+  color: #1e293b;
+}
+
+html.light .hljs-comment,
+html.light .hljs-quote {
+  color: #64748b;
+}
+
+html.light .hljs-keyword,
+html.light .hljs-selector-tag {
+  color: #7c3aed;
+}
+
+html.light .hljs-number,
+html.light .hljs-literal {
+  color: #c2410c;
+}
+
+html.light .hljs-string,
+html.light .hljs-doctag {
+  color: #16a34a;
+}
+
+html.light .hljs-title,
+html.light .hljs-section,
+html.light .hljs-title.class_,
+html.light .hljs-title.function_ {
+  color: #1d4ed8;
+}
+
+html.light .hljs-type,
+html.light .hljs-class .hljs-title {
+  color: #be185d;
+}
+
+html.light .hljs-tag,
+html.light .hljs-name,
+html.light .hljs-attribute {
+  color: #047857;
+}
+
+html.light .hljs-regexp,
+html.light .hljs-link {
+  color: #0891b2;
+}
+
+html.light .hljs-built_in {
+  color: #0369a1;
+}
+
+html.light .hljs-deletion {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+html.light .hljs-addition {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 /* BlockNote — light mode: clean white surface (Notion-like) */
 html.light .bn-root[data-color-scheme=light] {
   --bn-colors-editor-background: #ffffff;
