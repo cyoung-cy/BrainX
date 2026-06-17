@@ -3575,6 +3575,7 @@ components:
       additionalProperties: false
     ConsentRecordedPayload:
       type: object
+      description: Consent snapshot recorded during email signup or OAuth onboarding completion.
       properties:
         userId:
           type: string
@@ -3653,6 +3654,19 @@ components:
           nullable: true
         profileImageAssetId:
           type: string
+          nullable: true
+        language:
+          type: string
+          enum:
+          - ko
+          - en
+          nullable: true
+        theme:
+          type: string
+          enum:
+          - dark
+          - light
+          - system
           nullable: true
       required:
       - userId

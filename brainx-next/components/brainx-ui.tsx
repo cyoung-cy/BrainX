@@ -341,15 +341,15 @@ export function Toggle({
 }
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useBrainX();
+  const { effectiveTheme, setTheme } = useBrainX();
   return (
     <button
-      onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+      onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")}
       className="h-9 w-9 grid place-items-center rounded-xl border border-line/60 text-txt2 hover:text-txt hover:bg-surface2/60 transition-colors"
-      title={theme === "dark" ? "라이트 모드" : "다크 모드"}
+      title={effectiveTheme === "dark" ? "Light mode" : "Dark mode"}
       type="button"
     >
-      <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+      <Icon name={effectiveTheme === "dark" ? "sun" : "moon"} size={17} />
     </button>
   );
 }

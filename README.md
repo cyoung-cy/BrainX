@@ -76,7 +76,7 @@ BrainX/
 | Route | Screen | 역할 |
 | --- | --- | --- |
 | `/` | Landing | BrainX 소개 및 진입 |
-| `/login`, `/signup`, `/onboarding` | Auth | 이메일 인증, 로그인, OAuth, 온보딩 UI |
+| `/login`, `/signup`, `/onboarding` | Auth | 이메일 인증, 로그인, OAuth, 온보딩 UI. 이메일 가입은 `/signup`, OAuth 신규 가입은 `/onboarding`에서 필수/선택 동의를 수집 |
 | `/home` | Home | 지식 통계, 즐겨찾기, 최근 노트, AI 추천 연결 |
 | `/notes/[id]` | Note Editor | 마크다운 노트 작성, `[[wiki link]]`, 목차, 백링크, 업로드/내보내기 mock |
 | `/graph` | Graph | 노트 링크 기반 인터랙티브 지식 그래프, 클러스터/시간 필터 |
@@ -93,7 +93,8 @@ BrainX/
 현재 핵심 클라이언트 상태는 `components/brainx-provider.tsx`에서 관리합니다.
 
 - `brainx_notes_v1`: 노트 목록, 제목, 마크다운, 링크, 태그, 클러스터, 버전
-- `brainx_theme_v1`: 다크/라이트 테마
+- `brainx_theme_v1`: 다크/라이트/시스템 설정 테마
+- `brainx_language_v1`: 한국어/영어 UI 언어
 - `brainx_sidebar_collapsed_v1`: 사이드바 접힘 상태
 - `brainx_auth_session_v1`: 로그인 세션 mock/API 연동 상태
 
@@ -111,9 +112,9 @@ BrainX/
 
 현재 구현된 API 클라이언트 파일:
 
-- `lib/auth-api.ts`: 이메일 인증, 회원가입, 로그인, 로그아웃, 토큰 갱신, OAuth, 온보딩
+- `lib/auth-api.ts`: 이메일 인증, 회원가입, 로그인, 로그아웃, 토큰 갱신, OAuth, 온보딩. 동의 플래그는 `termsRequired`, `privacyRequired`, `marketingOptional`, `behaviorAnalyticsOptional`을 사용한다.
 - `lib/support-api.ts`: 문의 목록/생성
-- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API
+- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API, 언어/테마 사용자 설정
 
 새 프론트 API 코드는 화면 컴포넌트에 직접 fetch를 흩뿌리지 말고 `lib/*-api.ts` 계층에 먼저 둡니다.
 
@@ -134,7 +135,7 @@ BrainX/
 
 | Service | 담당 | 책임 |
 | --- | --- | --- |
-| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계 |
+| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의 원장, 마이페이지, 노트 사용 통계. 이메일 가입 동의는 `/signup`, OAuth 신규 가입 동의는 `/onboarding` 완료 시 기록 |
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 |
 | AI-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 |
