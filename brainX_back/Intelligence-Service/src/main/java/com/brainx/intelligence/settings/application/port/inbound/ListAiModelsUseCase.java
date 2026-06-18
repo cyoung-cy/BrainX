@@ -9,12 +9,17 @@ import java.util.Map;
  */
 public interface ListAiModelsUseCase {
 
-    AiModelsResult listAiModels();
+    AiModelsResult listAiModels(ListAiModelsQuery query);
+
+    record ListAiModelsQuery(
+        String userId
+    ) {
+    }
 
     record AiModelsResult(
         List<AiModelView> models,
         List<String> enabledModels,
-        Map<String, Object> costInfo
+        AiPricingPolicyView costInfo
     ) {
     }
 
@@ -22,7 +27,15 @@ public interface ListAiModelsUseCase {
         String modelId,
         String name,
         String provider,
-        BigDecimal costPer1kTokens
+        BigDecimal vendorInputCostPer1kTokens,
+        BigDecimal vendorOutputCostPer1kTokens
+    ) {
+    }
+
+    record AiPricingPolicyView(
+        String billingUnit,
+        String summary,
+        Map<String, Object> details
     ) {
     }
 }

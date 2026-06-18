@@ -1,0 +1,1859 @@
+asyncapi: 3.0.0
+info:
+  title: BrainX Async Event SSOT - Knowledge Intelligence
+  version: 1.0.0-revised
+  description: AsyncAPI slice for events produced or consumed by Intelligence Service. The upstream AsyncAPI SSOT identifies
+    this service as AI-Service.
+servers:
+  localKafka:
+    host: localhost:9092
+    protocol: kafka
+    description: Local Kafka broker
+  prodBroker:
+    host: broker.brainx.internal:9092
+    protocol: kafka
+    description: Production internal event broker
+defaultContentType: application/json
+channels:
+  aiModelSettingsChanged:
+    address: brainx.knowledge.intelligence.ai-model-settings-changed.v1
+    messages:
+      AiModelSettingsChanged:
+        $ref: '#/components/messages/AiModelSettingsChanged'
+    description: 'Channel for AiModelSettingsChanged. Producer: AI-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  aiSuggestionCreated:
+    address: brainx.knowledge.intelligence.ai-suggestion-created.v1
+    messages:
+      AiSuggestionCreated:
+        $ref: '#/components/messages/AiSuggestionCreated'
+    description: 'Channel for AiSuggestionCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  aiSuggestionDecisionRecorded:
+    address: brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1
+    messages:
+      AiSuggestionDecisionRecorded:
+        $ref: '#/components/messages/AiSuggestionDecisionRecorded'
+    description: 'Channel for AiSuggestionDecisionRecorded. Producer: AI-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  captureReceived:
+    address: brainx.content.ingestion.publishing.capture-received.v1
+    messages:
+      CaptureReceived:
+        $ref: '#/components/messages/CaptureReceived'
+    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service, AI-Service, Admin-Service.'
+    x-producer-service: Ingestion-Service
+    x-consumer-services:
+    - Ingestion-Service
+    - AI-Service
+    - Admin-Service
+  chatMessageCreated:
+    address: brainx.knowledge.intelligence.chat-message-created.v1
+    messages:
+      ChatMessageCreated:
+        $ref: '#/components/messages/ChatMessageCreated'
+    description: 'Channel for ChatMessageCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  chatThreadCreated:
+    address: brainx.knowledge.intelligence.chat-thread-created.v1
+    messages:
+      ChatThreadCreated:
+        $ref: '#/components/messages/ChatThreadCreated'
+    description: 'Channel for ChatThreadCreated. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  clusterJobCompleted:
+    address: brainx.knowledge.intelligence.cluster-job-completed.v1
+    messages:
+      ClusterJobCompleted:
+        $ref: '#/components/messages/ClusterJobCompleted'
+    description: 'Channel for ClusterJobCompleted. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  clusterJobRequested:
+    address: brainx.knowledge.intelligence.cluster-job-requested.v1
+    messages:
+      ClusterJobRequested:
+        $ref: '#/components/messages/ClusterJobRequested'
+    description: 'Channel for ClusterJobRequested. Producer: AI-Service. Consumers: AI-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+  folderChanged:
+    address: brainx.knowledge.workspace.folder-changed.v1
+    messages:
+      FolderChanged:
+        $ref: '#/components/messages/FolderChanged'
+    description: 'Channel for FolderChanged. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  folderCreated:
+    address: brainx.knowledge.workspace.folder-created.v1
+    messages:
+      FolderCreated:
+        $ref: '#/components/messages/FolderCreated'
+    description: 'Channel for FolderCreated. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  folderDeleted:
+    address: brainx.knowledge.workspace.folder-deleted.v1
+    messages:
+      FolderDeleted:
+        $ref: '#/components/messages/FolderDeleted'
+    description: 'Channel for FolderDeleted. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  insightReportCompleted:
+    address: brainx.knowledge.intelligence.insight-report-completed.v1
+    messages:
+      InsightReportCompleted:
+        $ref: '#/components/messages/InsightReportCompleted'
+    description: 'Channel for InsightReportCompleted. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  insightReportRequested:
+    address: brainx.knowledge.intelligence.insight-report-requested.v1
+    messages:
+      InsightReportRequested:
+        $ref: '#/components/messages/InsightReportRequested'
+    description: 'Channel for InsightReportRequested. Producer: AI-Service. Consumers: AI-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+  noteContentSaved:
+    address: brainx.knowledge.workspace.note-content-saved.v1
+    messages:
+      NoteContentSaved:
+        $ref: '#/components/messages/NoteContentSaved'
+    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+      Commerce-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
+  noteCreated:
+    address: brainx.knowledge.workspace.note-created.v1
+    messages:
+      NoteCreated:
+        $ref: '#/components/messages/NoteCreated'
+    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+      Commerce-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
+  noteDeleted:
+    address: brainx.knowledge.workspace.note-deleted.v1
+    messages:
+      NoteDeleted:
+        $ref: '#/components/messages/NoteDeleted'
+    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+      User-Service, Ingestion-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+    - Ingestion-Service
+  noteLinkCreated:
+    address: brainx.knowledge.workspace.note-link-created.v1
+    messages:
+      NoteLinkCreated:
+        $ref: '#/components/messages/NoteLinkCreated'
+    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  noteLinkDeleted:
+    address: brainx.knowledge.workspace.note-link-deleted.v1
+    messages:
+      NoteLinkDeleted:
+        $ref: '#/components/messages/NoteLinkDeleted'
+    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  noteMetadataChanged:
+    address: brainx.knowledge.workspace.note-metadata-changed.v1
+    messages:
+      NoteMetadataChanged:
+        $ref: '#/components/messages/NoteMetadataChanged'
+    description: 'Channel for NoteMetadataChanged. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+      Admin-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  noteTagsChanged:
+    address: brainx.knowledge.workspace.note-tags-changed.v1
+    messages:
+      NoteTagsChanged:
+        $ref: '#/components/messages/NoteTagsChanged'
+    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service, Workspace-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
+  noteTrashed:
+    address: brainx.knowledge.workspace.note-trashed.v1
+    messages:
+      NoteTrashed:
+        $ref: '#/components/messages/NoteTrashed'
+    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+      User-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+  notesMoved:
+    address: brainx.knowledge.workspace.notes-moved.v1
+    messages:
+      NotesMoved:
+        $ref: '#/components/messages/NotesMoved'
+    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service, Workspace-Service.'
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
+  semanticSearchPerformed:
+    address: brainx.knowledge.intelligence.semantic-search-performed.v1
+    messages:
+      SemanticSearchPerformed:
+        $ref: '#/components/messages/SemanticSearchPerformed'
+    description: 'Channel for SemanticSearchPerformed. Producer: AI-Service. Consumers: Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  tokenUsageRecordedRequested:
+    address: brainx.knowledge.intelligence.token-usage-recorded-requested.v1
+    messages:
+      TokenUsageRecordedRequested:
+        $ref: '#/components/messages/TokenUsageRecordedRequested'
+    description: 'Channel for TokenUsageRecordedRequested. Producer: AI-Service. Consumers: Commerce-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Commerce-Service
+  userDeletionRequested:
+    address: brainx.identity.access.user-deletion-requested.v1
+    messages:
+      UserDeletionRequested:
+        $ref: '#/components/messages/UserDeletionRequested'
+    description: 'Channel for UserDeletionRequested. Producer: User-Service. Consumers: User-Service, User-Service, Commerce-Service,
+      Workspace-Service, Ingestion-Service, AI-Service.'
+    x-producer-service: User-Service
+    x-consumer-services:
+    - User-Service
+    - Commerce-Service
+    - Workspace-Service
+    - Ingestion-Service
+    - AI-Service
+  userStyleProfileChanged:
+    address: brainx.knowledge.intelligence.user-style-profile-changed.v1
+    messages:
+      UserStyleProfileChanged:
+        $ref: '#/components/messages/UserStyleProfileChanged'
+    description: 'Channel for UserStyleProfileChanged. Producer: AI-Service. Consumers: AI-Service, Admin-Service.'
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+operations:
+  sendAiModelSettingsChanged:
+    action: send
+    channel:
+      $ref: '#/channels/aiModelSettingsChanged'
+    messages:
+    - $ref: '#/channels/aiModelSettingsChanged/messages/AiModelSettingsChanged'
+    summary: AI-Service publishes AiModelSettingsChanged
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  sendAiSuggestionCreated:
+    action: send
+    channel:
+      $ref: '#/channels/aiSuggestionCreated'
+    messages:
+    - $ref: '#/channels/aiSuggestionCreated/messages/AiSuggestionCreated'
+    summary: AI-Service publishes AiSuggestionCreated
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendAiSuggestionDecisionRecorded:
+    action: send
+    channel:
+      $ref: '#/channels/aiSuggestionDecisionRecorded'
+    messages:
+    - $ref: '#/channels/aiSuggestionDecisionRecorded/messages/AiSuggestionDecisionRecorded'
+    summary: AI-Service publishes AiSuggestionDecisionRecorded
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  sendCaptureReceived:
+    action: send
+    channel:
+      $ref: '#/channels/captureReceived'
+    messages:
+    - $ref: '#/channels/captureReceived/messages/CaptureReceived'
+    summary: Ingestion-Service publishes CaptureReceived
+    x-producer-service: Ingestion-Service
+    x-consumer-services:
+    - Ingestion-Service
+    - AI-Service
+    - Admin-Service
+  sendChatMessageCreated:
+    action: send
+    channel:
+      $ref: '#/channels/chatMessageCreated'
+    messages:
+    - $ref: '#/channels/chatMessageCreated/messages/ChatMessageCreated'
+    summary: AI-Service publishes ChatMessageCreated
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendChatThreadCreated:
+    action: send
+    channel:
+      $ref: '#/channels/chatThreadCreated'
+    messages:
+    - $ref: '#/channels/chatThreadCreated/messages/ChatThreadCreated'
+    summary: AI-Service publishes ChatThreadCreated
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendClusterJobCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/clusterJobCompleted'
+    messages:
+    - $ref: '#/channels/clusterJobCompleted/messages/ClusterJobCompleted'
+    summary: AI-Service publishes ClusterJobCompleted
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendClusterJobRequested:
+    action: send
+    channel:
+      $ref: '#/channels/clusterJobRequested'
+    messages:
+    - $ref: '#/channels/clusterJobRequested/messages/ClusterJobRequested'
+    summary: AI-Service publishes ClusterJobRequested
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+  sendFolderChanged:
+    action: send
+    channel:
+      $ref: '#/channels/folderChanged'
+    messages:
+    - $ref: '#/channels/folderChanged/messages/FolderChanged'
+    summary: Workspace-Service publishes FolderChanged
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  sendFolderCreated:
+    action: send
+    channel:
+      $ref: '#/channels/folderCreated'
+    messages:
+    - $ref: '#/channels/folderCreated/messages/FolderCreated'
+    summary: Workspace-Service publishes FolderCreated
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  sendFolderDeleted:
+    action: send
+    channel:
+      $ref: '#/channels/folderDeleted'
+    messages:
+    - $ref: '#/channels/folderDeleted/messages/FolderDeleted'
+    summary: Workspace-Service publishes FolderDeleted
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - Admin-Service
+    - AI-Service
+  sendInsightReportCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/insightReportCompleted'
+    messages:
+    - $ref: '#/channels/insightReportCompleted/messages/InsightReportCompleted'
+    summary: AI-Service publishes InsightReportCompleted
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendInsightReportRequested:
+    action: send
+    channel:
+      $ref: '#/channels/insightReportRequested'
+    messages:
+    - $ref: '#/channels/insightReportRequested/messages/InsightReportRequested'
+    summary: AI-Service publishes InsightReportRequested
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+  sendNoteContentSaved:
+    action: send
+    channel:
+      $ref: '#/channels/noteContentSaved'
+    messages:
+    - $ref: '#/channels/noteContentSaved/messages/NoteContentSaved'
+    summary: Workspace-Service publishes NoteContentSaved
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
+  sendNoteCreated:
+    action: send
+    channel:
+      $ref: '#/channels/noteCreated'
+    messages:
+    - $ref: '#/channels/noteCreated/messages/NoteCreated'
+    summary: Workspace-Service publishes NoteCreated
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - Commerce-Service
+  sendNoteDeleted:
+    action: send
+    channel:
+      $ref: '#/channels/noteDeleted'
+    messages:
+    - $ref: '#/channels/noteDeleted/messages/NoteDeleted'
+    summary: Workspace-Service publishes NoteDeleted
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+    - Ingestion-Service
+  sendNoteLinkCreated:
+    action: send
+    channel:
+      $ref: '#/channels/noteLinkCreated'
+    messages:
+    - $ref: '#/channels/noteLinkCreated/messages/NoteLinkCreated'
+    summary: Workspace-Service publishes NoteLinkCreated
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  sendNoteLinkDeleted:
+    action: send
+    channel:
+      $ref: '#/channels/noteLinkDeleted'
+    messages:
+    - $ref: '#/channels/noteLinkDeleted/messages/NoteLinkDeleted'
+    summary: Workspace-Service publishes NoteLinkDeleted
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  sendNoteMetadataChanged:
+    action: send
+    channel:
+      $ref: '#/channels/noteMetadataChanged'
+    messages:
+    - $ref: '#/channels/noteMetadataChanged/messages/NoteMetadataChanged'
+    summary: Workspace-Service publishes NoteMetadataChanged
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+  sendNoteTagsChanged:
+    action: send
+    channel:
+      $ref: '#/channels/noteTagsChanged'
+    messages:
+    - $ref: '#/channels/noteTagsChanged/messages/NoteTagsChanged'
+    summary: Workspace-Service publishes NoteTagsChanged
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
+  sendNoteTrashed:
+    action: send
+    channel:
+      $ref: '#/channels/noteTrashed'
+    messages:
+    - $ref: '#/channels/noteTrashed/messages/NoteTrashed'
+    summary: Workspace-Service publishes NoteTrashed
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Workspace-Service
+    - Admin-Service
+    - User-Service
+  sendNotesMoved:
+    action: send
+    channel:
+      $ref: '#/channels/notesMoved'
+    messages:
+    - $ref: '#/channels/notesMoved/messages/NotesMoved'
+    summary: Workspace-Service publishes NotesMoved
+    x-producer-service: Workspace-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+    - Workspace-Service
+  sendSemanticSearchPerformed:
+    action: send
+    channel:
+      $ref: '#/channels/semanticSearchPerformed'
+    messages:
+    - $ref: '#/channels/semanticSearchPerformed/messages/SemanticSearchPerformed'
+    summary: AI-Service publishes SemanticSearchPerformed
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Admin-Service
+  sendTokenUsageRecordedRequested:
+    action: send
+    channel:
+      $ref: '#/channels/tokenUsageRecordedRequested'
+    messages:
+    - $ref: '#/channels/tokenUsageRecordedRequested/messages/TokenUsageRecordedRequested'
+    summary: AI-Service publishes TokenUsageRecordedRequested
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - Commerce-Service
+  sendUserDeletionRequested:
+    action: send
+    channel:
+      $ref: '#/channels/userDeletionRequested'
+    messages:
+    - $ref: '#/channels/userDeletionRequested/messages/UserDeletionRequested'
+    summary: User-Service publishes UserDeletionRequested
+    x-producer-service: User-Service
+    x-consumer-services:
+    - User-Service
+    - Commerce-Service
+    - Workspace-Service
+    - Ingestion-Service
+    - AI-Service
+  sendUserStyleProfileChanged:
+    action: send
+    channel:
+      $ref: '#/channels/userStyleProfileChanged'
+    messages:
+    - $ref: '#/channels/userStyleProfileChanged/messages/UserStyleProfileChanged'
+    summary: AI-Service publishes UserStyleProfileChanged
+    x-producer-service: AI-Service
+    x-consumer-services:
+    - AI-Service
+    - Admin-Service
+components:
+  messages:
+    AiModelSettingsChanged:
+      name: AiModelSettingsChanged
+      title: AiModelSettingsChanged
+      summary: AiModelSettingsChanged domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: AiModelSettingsChanged
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/AiModelSettingsChangedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.ai-model-settings-changed.v1.dlq
+    AiSuggestionCreated:
+      name: AiSuggestionCreated
+      title: AiSuggestionCreated
+      summary: AiSuggestionCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: AiSuggestionCreated
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/AiSuggestionCreatedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.ai-suggestion-created.v1.dlq
+    AiSuggestionDecisionRecorded:
+      name: AiSuggestionDecisionRecorded
+      title: AiSuggestionDecisionRecorded
+      summary: AiSuggestionDecisionRecorded domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: AiSuggestionDecisionRecorded
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/AiSuggestionDecisionRecordedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1.dlq
+    CaptureReceived:
+      name: CaptureReceived
+      title: CaptureReceived
+      summary: CaptureReceived domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: CaptureReceived
+            producer:
+              type: string
+              const: Ingestion-Service
+            payload:
+              $ref: '#/components/schemas/CaptureReceivedPayload'
+      x-producer-service: Ingestion-Service
+      x-consumer-services:
+      - Ingestion-Service
+      - AI-Service
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.content.ingestion.publishing.capture-received.v1.dlq
+    ChatMessageCreated:
+      name: ChatMessageCreated
+      title: ChatMessageCreated
+      summary: ChatMessageCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ChatMessageCreated
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/ChatMessageCreatedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.chat-message-created.v1.dlq
+    ChatThreadCreated:
+      name: ChatThreadCreated
+      title: ChatThreadCreated
+      summary: ChatThreadCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ChatThreadCreated
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/ChatThreadCreatedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.chat-thread-created.v1.dlq
+    ClusterJobCompleted:
+      name: ClusterJobCompleted
+      title: ClusterJobCompleted
+      summary: ClusterJobCompleted domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ClusterJobCompleted
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/ClusterJobCompletedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.cluster-job-completed.v1.dlq
+    ClusterJobRequested:
+      name: ClusterJobRequested
+      title: ClusterJobRequested
+      summary: ClusterJobRequested domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ClusterJobRequested
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/ClusterJobRequestedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.cluster-job-requested.v1.dlq
+    FolderChanged:
+      name: FolderChanged
+      title: FolderChanged
+      summary: FolderChanged domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: FolderChanged
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/FolderChangedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - Admin-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.folder-changed.v1.dlq
+    FolderCreated:
+      name: FolderCreated
+      title: FolderCreated
+      summary: FolderCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: FolderCreated
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/FolderCreatedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - Admin-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.folder-created.v1.dlq
+    FolderDeleted:
+      name: FolderDeleted
+      title: FolderDeleted
+      summary: FolderDeleted domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: FolderDeleted
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/FolderDeletedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - Admin-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.folder-deleted.v1.dlq
+    InsightReportCompleted:
+      name: InsightReportCompleted
+      title: InsightReportCompleted
+      summary: InsightReportCompleted domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: InsightReportCompleted
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/InsightReportCompletedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.insight-report-completed.v1.dlq
+    InsightReportRequested:
+      name: InsightReportRequested
+      title: InsightReportRequested
+      summary: InsightReportRequested domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: InsightReportRequested
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/InsightReportRequestedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.insight-report-requested.v1.dlq
+    NoteContentSaved:
+      name: NoteContentSaved
+      title: NoteContentSaved
+      summary: NoteContentSaved domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteContentSaved
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteContentSavedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - Commerce-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-content-saved.v1.dlq
+    NoteCreated:
+      name: NoteCreated
+      title: NoteCreated
+      summary: NoteCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteCreated
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteCreatedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - Commerce-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-created.v1.dlq
+    NoteDeleted:
+      name: NoteDeleted
+      title: NoteDeleted
+      summary: NoteDeleted domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteDeleted
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteDeletedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - User-Service
+      - Ingestion-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-deleted.v1.dlq
+    NoteLinkCreated:
+      name: NoteLinkCreated
+      title: NoteLinkCreated
+      summary: NoteLinkCreated domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteLinkCreated
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteLinkCreatedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-link-created.v1.dlq
+    NoteLinkDeleted:
+      name: NoteLinkDeleted
+      title: NoteLinkDeleted
+      summary: NoteLinkDeleted domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteLinkDeleted
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteLinkDeletedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-link-deleted.v1.dlq
+    NoteMetadataChanged:
+      name: NoteMetadataChanged
+      title: NoteMetadataChanged
+      summary: NoteMetadataChanged domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteMetadataChanged
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteMetadataChangedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-metadata-changed.v1.dlq
+    NoteTagsChanged:
+      name: NoteTagsChanged
+      title: NoteTagsChanged
+      summary: NoteTagsChanged domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteTagsChanged
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteTagsChangedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Admin-Service
+      - Workspace-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-tags-changed.v1.dlq
+    NoteTrashed:
+      name: NoteTrashed
+      title: NoteTrashed
+      summary: NoteTrashed domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NoteTrashed
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NoteTrashedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Workspace-Service
+      - Admin-Service
+      - User-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.note-trashed.v1.dlq
+    NotesMoved:
+      name: NotesMoved
+      title: NotesMoved
+      summary: NotesMoved domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: NotesMoved
+            producer:
+              type: string
+              const: Workspace-Service
+            payload:
+              $ref: '#/components/schemas/NotesMovedPayload'
+      x-producer-service: Workspace-Service
+      x-consumer-services:
+      - AI-Service
+      - Admin-Service
+      - Workspace-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.workspace.notes-moved.v1.dlq
+    SemanticSearchPerformed:
+      name: SemanticSearchPerformed
+      title: SemanticSearchPerformed
+      summary: SemanticSearchPerformed domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: SemanticSearchPerformed
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/SemanticSearchPerformedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.semantic-search-performed.v1.dlq
+    TokenUsageRecordedRequested:
+      name: TokenUsageRecordedRequested
+      title: TokenUsageRecordedRequested
+      summary: TokenUsageRecordedRequested domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: TokenUsageRecordedRequested
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/TokenUsageRecordedRequestedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - Commerce-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.token-usage-recorded-requested.v1.dlq
+    UserDeletionRequested:
+      name: UserDeletionRequested
+      title: UserDeletionRequested
+      summary: UserDeletionRequested domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: UserDeletionRequested
+            producer:
+              type: string
+              const: User-Service
+            payload:
+              $ref: '#/components/schemas/UserDeletionRequestedPayload'
+      x-producer-service: User-Service
+      x-consumer-services:
+      - User-Service
+      - Commerce-Service
+      - Workspace-Service
+      - Ingestion-Service
+      - AI-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.identity.access.user-deletion-requested.v1.dlq
+    UserStyleProfileChanged:
+      name: UserStyleProfileChanged
+      title: UserStyleProfileChanged
+      summary: UserStyleProfileChanged domain/integration event
+      contentType: application/json
+      payload:
+        allOf:
+        - $ref: '#/components/schemas/EventEnvelope'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: UserStyleProfileChanged
+            producer:
+              type: string
+              const: AI-Service
+            payload:
+              $ref: '#/components/schemas/UserStyleProfileChangedPayload'
+      x-producer-service: AI-Service
+      x-consumer-services:
+      - AI-Service
+      - Admin-Service
+      x-delivery:
+        semantic: at-least-once
+        orderingKey: userId or aggregate id
+        requiresIdempotentConsumer: true
+        deadLetter: brainx.knowledge.intelligence.user-style-profile-changed.v1.dlq
+  schemas:
+    EventEnvelope:
+      type: object
+      description: Common BrainX event envelope
+      properties:
+        eventId:
+          type: string
+          example: evt_01J...
+        eventType:
+          type: string
+        eventVersion:
+          type: integer
+          example: 1
+        occurredAt:
+          type: string
+          format: date-time
+        producer:
+          type: string
+        tenantId:
+          type: string
+          nullable: true
+        userId:
+          type: string
+          nullable: true
+        correlationId:
+          type: string
+          example: req_01J...
+        causationId:
+          type: string
+          nullable: true
+        idempotencyKey:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+      required:
+      - eventId
+      - eventType
+      - eventVersion
+      - occurredAt
+      - producer
+      - correlationId
+      - payload
+      additionalProperties: false
+    UserDeletionRequestedPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        deletionScheduledAt:
+          type: string
+          format: date-time
+      required:
+      - userId
+      - deletionScheduledAt
+      additionalProperties: false
+    NoteCreatedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        folderId:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+      required:
+      - noteId
+      - userId
+      - title
+      - version
+      additionalProperties: false
+    NoteContentSavedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        version:
+          type: integer
+        markdownHash:
+          type: string
+        savedAt:
+          type: string
+          format: date-time
+      required:
+      - noteId
+      - userId
+      - version
+      - markdownHash
+      - savedAt
+      additionalProperties: false
+    NoteMetadataChangedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        folderId:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        archived:
+          type: boolean
+          nullable: true
+        version:
+          type: integer
+      required:
+      - noteId
+      - userId
+      - version
+      additionalProperties: false
+    NoteTrashedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+        purgeAt:
+          type: string
+          format: date-time
+      required:
+      - noteId
+      - userId
+      - deletedAt
+      - purgeAt
+      additionalProperties: false
+    NoteDeletedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+        permanent:
+          type: boolean
+      required:
+      - noteId
+      - userId
+      - deletedAt
+      - permanent
+      additionalProperties: false
+    FolderCreatedPayload:
+      type: object
+      properties:
+        folderId:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        parentFolderId:
+          type: string
+          nullable: true
+      required:
+      - folderId
+      - userId
+      - name
+      additionalProperties: false
+    FolderChangedPayload:
+      type: object
+      properties:
+        folderId:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        parentFolderId:
+          type: string
+          nullable: true
+      required:
+      - folderId
+      - userId
+      additionalProperties: false
+    FolderDeletedPayload:
+      type: object
+      properties:
+        folderId:
+          type: string
+        userId:
+          type: string
+        childNoteAction:
+          type: string
+          enum:
+          - MOVE
+          - TRASH
+        targetFolderId:
+          type: string
+          nullable: true
+      required:
+      - folderId
+      - userId
+      - childNoteAction
+      additionalProperties: false
+    NotesMovedPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+        noteIds:
+          type: array
+          items:
+            type: string
+        sourceFolderId:
+          type: string
+          nullable: true
+        targetFolderId:
+          type: string
+          nullable: true
+      required:
+      - userId
+      - noteIds
+      additionalProperties: false
+    NoteTagsChangedPayload:
+      type: object
+      properties:
+        noteId:
+          type: string
+        userId:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+      - noteId
+      - userId
+      - tags
+      additionalProperties: false
+    NoteLinkCreatedPayload:
+      type: object
+      properties:
+        linkId:
+          type: string
+        userId:
+          type: string
+        sourceNoteId:
+          type: string
+        targetNoteId:
+          type: string
+        linkType:
+          type: string
+          enum:
+          - MANUAL
+          - AI_SUGGESTED
+      required:
+      - linkId
+      - userId
+      - sourceNoteId
+      - targetNoteId
+      additionalProperties: false
+    NoteLinkDeletedPayload:
+      type: object
+      properties:
+        linkId:
+          type: string
+        userId:
+          type: string
+        sourceNoteId:
+          type: string
+        targetNoteId:
+          type: string
+      required:
+      - linkId
+      - userId
+      - sourceNoteId
+      - targetNoteId
+      additionalProperties: false
+    CaptureReceivedPayload:
+      type: object
+      properties:
+        captureId:
+          type: string
+        userId:
+          type: string
+        url:
+          type: string
+          format: uri
+        title:
+          type: string
+        noteId:
+          type: string
+          nullable: true
+      required:
+      - captureId
+      - userId
+      - url
+      - title
+      additionalProperties: false
+    SemanticSearchPerformedPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+        queryHash:
+          type: string
+        resultCount:
+          type: integer
+        charged:
+          type: boolean
+      required:
+      - userId
+      - queryHash
+      - resultCount
+      - charged
+      additionalProperties: false
+    AiSuggestionCreatedPayload:
+      type: object
+      properties:
+        suggestionId:
+          type: string
+        userId:
+          type: string
+        featureId:
+          type: string
+        noteId:
+          type: string
+          nullable: true
+        modelId:
+          type: string
+          nullable: true
+      required:
+      - suggestionId
+      - userId
+      - featureId
+      additionalProperties: false
+    AiSuggestionDecisionRecordedPayload:
+      type: object
+      properties:
+        suggestionId:
+          type: string
+        userId:
+          type: string
+        decision:
+          type: string
+          enum:
+          - ACCEPTED
+          - REJECTED
+          - REGENERATED
+        appliedNoteId:
+          type: string
+          nullable: true
+      required:
+      - suggestionId
+      - userId
+      - decision
+      additionalProperties: false
+    ChatThreadCreatedPayload:
+      type: object
+      properties:
+        threadId:
+          type: string
+        userId:
+          type: string
+        modelId:
+          type: string
+        title:
+          type: string
+      required:
+      - threadId
+      - userId
+      - modelId
+      additionalProperties: false
+    ChatMessageCreatedPayload:
+      type: object
+      properties:
+        threadId:
+          type: string
+        messageId:
+          type: string
+        userId:
+          type: string
+        modelId:
+          type: string
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        citationNoteIds:
+          type: array
+          items:
+            type: string
+      required:
+      - threadId
+      - messageId
+      - userId
+      - modelId
+      additionalProperties: false
+    AiModelSettingsChangedPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+        defaultModelId:
+          type: string
+        registeredProviders:
+          type: array
+          items:
+            type: string
+      required:
+      - userId
+      - defaultModelId
+      additionalProperties: false
+    ClusterJobRequestedPayload:
+      type: object
+      properties:
+        clusterJobId:
+          type: string
+        userId:
+          type: string
+        scope:
+          type: object
+          additionalProperties: true
+        algorithmOptions:
+          type: object
+          additionalProperties: true
+      required:
+      - clusterJobId
+      - userId
+      - scope
+      additionalProperties: false
+    ClusterJobCompletedPayload:
+      type: object
+      properties:
+        clusterJobId:
+          type: string
+        userId:
+          type: string
+        clusterCount:
+          type: integer
+      required:
+      - clusterJobId
+      - userId
+      - clusterCount
+      additionalProperties: false
+    InsightReportRequestedPayload:
+      type: object
+      properties:
+        reportJobId:
+          type: string
+        userId:
+          type: string
+        scope:
+          type: object
+          additionalProperties: true
+        includeLearningRecommendations:
+          type: boolean
+      required:
+      - reportJobId
+      - userId
+      - scope
+      additionalProperties: false
+    InsightReportCompletedPayload:
+      type: object
+      properties:
+        reportId:
+          type: string
+        userId:
+          type: string
+        knowledgeGapCount:
+          type: integer
+      required:
+      - reportId
+      - userId
+      additionalProperties: false
+    UserStyleProfileChangedPayload:
+      type: object
+      properties:
+        userId:
+          type: string
+        style:
+          type: object
+          additionalProperties: true
+      required:
+      - userId
+      - style
+      additionalProperties: false
+    TokenUsageRecordedRequestedPayload:
+      type: object
+      properties:
+        usageRequestId:
+          type: string
+        userId:
+          type: string
+        sourceService:
+          type: string
+        featureId:
+          type: string
+        modelId:
+          type: string
+          nullable: true
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        estimatedCost:
+          type: number
+          nullable: true
+        causationId:
+          type: string
+      required:
+      - usageRequestId
+      - userId
+      - sourceService
+      - featureId
+      - inputTokens
+      - outputTokens
+      - causationId
+      additionalProperties: false
+x-ssot:
+  owner: BrainX architecture
+  revisionDate: '2026-06-16'
+  openapi: brainx-openapi.ssot.yaml
+  rules:
+  - All event consumers must be idempotent by eventId.
+  - Use correlationId from the originating HTTP request when available.
+  - Use causationId for event-to-event chains and job lifecycle events.
+  - Long-running work is represented as *JobRequested then *JobCompleted/*JobFailed.
+  - 'Token usage is event-first: TokenUsageRecordedRequested is consumed by Commerce; TokenUsageRecorded is emitted after
+    ledger write.'
+  - Note read models, search indexes, graph projections, dashboards and wordclouds are eventually consistent.
+x-extracted-from:
+  source: contracts-v2/brainx-asyncapi.ssot.yaml
+  serviceId: AI-Service
+  serviceAliasForThisProject: knowledge-intelligence
+  criteria:
+  - channel.x-producer-service == AI-Service
+  - channel.x-consumer-services contains AI-Service
+  conflictSide: right

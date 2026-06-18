@@ -2,7 +2,7 @@
 
 ## Project
 
-`intelligence-service`는 BrainX Knowledge Intelligence API를 담당하는 Java 21 / Spring Boot 3.5 서비스입니다. 서비스 사양의 기준은 `src/main/resources/contracts/knowledge-intelligence.openapi.yaml`입니다.
+`intelligence-service`는 BrainX Knowledge Intelligence API를 담당하는 Java 21 / Spring Boot 3.5 서비스입니다. 서비스 사양의 최상위 기준은 `../../contracts-v2/brainx-openapi.ssot.yaml`이고, 로컬 `src/main/resources/contracts/knowledge-intelligence.openapi.yaml`은 추출본입니다.
 
 ## Context Vault
 
@@ -19,6 +19,7 @@
 ## Always Follow
 
 - API 동작, endpoint, schema, 이벤트 coupling은 OpenAPI 계약을 먼저 확인합니다.
+- 공개 API 계약 변경은 `../../contracts-v2/brainx-openapi.ssot.yaml`을 먼저 수정한 뒤 `scripts/extract_intelligence_openapi.py`로 로컬 추출본을 재생성합니다.
 - OpenAPI 계약과 구현이 충돌하면 계약을 기준으로 불일치를 명시하고, 임의로 계약을 바꾸지 않습니다.
 - 문서와 agent-facing guide는 기본적으로 한국어로 작성하되 code identifier, command, file path, API path, package name은 원문을 유지합니다.
 - 기존 사용자 변경이나 생성된 파일은 되돌리지 않습니다.

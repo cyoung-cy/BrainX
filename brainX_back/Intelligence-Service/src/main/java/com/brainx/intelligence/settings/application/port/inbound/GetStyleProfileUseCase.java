@@ -16,7 +16,9 @@ public interface GetStyleProfileUseCase {
     }
 
     record StyleProfileResult(
-        Map<String, Object> style,
+        Map<String, Object> conversationTone,
+        Map<String, Object> writingStyle,
+        Map<String, Object> assistanceStyle,
         Instant detectedFromNotesAt
     ) {
     }

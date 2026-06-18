@@ -1,8 +1,6 @@
 package com.brainx.intelligence.settings.domain;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -10,23 +8,32 @@ import java.util.Map;
  */
 public record StyleProfile(
     String userId,
-    Map<String, Object> style,
+    ConversationTone conversationTone,
+    WritingStyle writingStyle,
+    AssistanceStyle assistanceStyle,
     Instant detectedFromNotesAt
 ) {
 
     public StyleProfile {
         userId = SettingsValidation.requireText(userId, "userId");
-        style = immutableMap(style);
+        conversationTone = conversationTone == null ? ConversationTone.empty() : conversationTone;
+        writingStyle = writingStyle == null ? WritingStyle.empty() : writingStyle;
+        assistanceStyle = assistanceStyle == null ? AssistanceStyle.empty() : assistanceStyle;
     }
 
     public static StyleProfile empty(String userId) {
-        return new StyleProfile(userId, Map.of(), null);
+        return new StyleProfile(userId, ConversationTone.empty(), WritingStyle.empty(), AssistanceStyle.empty(), null);
     }
 
-    private static Map<String, Object> immutableMap(Map<String, Object> values) {
-        if (values == null || values.isEmpty()) {
-            return Map.of();
-        }
-        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
+    public Map<String, Object> conversationToneValues() {
+        return conversationTone.values();
+    }
+
+    public Map<String, Object> writingStyleValues() {
+        return writingStyle.values();
+    }
+
+    public Map<String, Object> assistanceStyleValues() {
+        return assistanceStyle.values();
     }
 }

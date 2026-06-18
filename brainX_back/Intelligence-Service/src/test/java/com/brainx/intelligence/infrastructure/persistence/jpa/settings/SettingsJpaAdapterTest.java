@@ -15,7 +15,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.brainx.intelligence.settings.domain.AiModelSettings;
+import com.brainx.intelligence.settings.domain.AssistanceStyle;
+import com.brainx.intelligence.settings.domain.ConversationTone;
 import com.brainx.intelligence.settings.domain.StyleProfile;
+import com.brainx.intelligence.settings.domain.WritingStyle;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -37,7 +40,8 @@ class SettingsJpaAdapterTest {
             "gpt-4o-mini",
             "GPT-4o mini",
             "openai",
-            new BigDecimal("0.150000")
+            new BigDecimal("0.150000"),
+            new BigDecimal("0.600000")
         ));
         entityManager.flush();
         entityManager.clear();
@@ -46,6 +50,8 @@ class SettingsJpaAdapterTest {
 
         assertThat(models).hasSize(1);
         assertThat(models.getFirst().modelId()).isEqualTo("gpt-4o-mini");
+        assertThat(models.getFirst().vendorTokenCost().inputCostPer1kTokens()).isEqualByComparingTo("0.150000");
+        assertThat(models.getFirst().vendorTokenCost().outputCostPer1kTokens()).isEqualByComparingTo("0.600000");
         assertThat(settingsJpaAdapter.existsByModelId("gpt-4o-mini")).isTrue();
     }
 
@@ -73,14 +79,13 @@ class SettingsJpaAdapterTest {
     }
 
     @Test
-    void saveAndFindStyleProfilePreservesJsonMap() {
+    void saveAndFindStyleProfilePreservesSeparatedStyleMaps() {
         Instant detectedAt = Instant.parse("2026-06-18T03:00:00Z");
         settingsJpaAdapter.save(new StyleProfile(
             "user-1",
-            Map.of(
-                "tone", "concise",
-                "rules", List.of("ko", "technical")
-            ),
+            new ConversationTone(Map.of("speechLevel", "haeyo", "directness", "high")),
+            new WritingStyle(Map.of("formality", "business", "rules", List.of("ko", "technical"))),
+            new AssistanceStyle(Map.of("clarificationPolicy", "only_when_blocking")),
             detectedAt
         ));
         entityManager.flush();
@@ -88,8 +93,10 @@ class SettingsJpaAdapterTest {
 
         var found = settingsJpaAdapter.findStyleProfileByUserId("user-1").orElseThrow();
 
-        assertThat(found.style()).containsEntry("tone", "concise");
-        assertThat(found.style()).containsEntry("rules", List.of("ko", "technical"));
+        assertThat(found.conversationToneValues()).containsEntry("directness", "high");
+        assertThat(found.writingStyleValues()).containsEntry("formality", "business");
+        assertThat(found.writingStyleValues()).containsEntry("rules", List.of("ko", "technical"));
+        assertThat(found.assistanceStyleValues()).containsEntry("clarificationPolicy", "only_when_blocking");
         assertThat(found.detectedFromNotesAt()).isEqualTo(detectedAt);
     }
 }

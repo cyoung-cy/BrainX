@@ -2,79 +2,56 @@
 
 ## Source Of Truth
 
-서비스 사양의 기준은 `src/main/resources/contracts/knowledge-intelligence.openapi.yaml`입니다. 이 계약은 BrainX OpenAPI SSOT에서 `Knowledge Intelligence` tag와 `knowledge-intelligence` producer service를 추출한 것입니다.
+서비스 사양의 최상위 기준은 상위 repository의 `contracts-v2/brainx-openapi.ssot.yaml`입니다. 이 서비스 안의 `src/main/resources/contracts/knowledge-intelligence.openapi.yaml`은 해당 SSOT에서 Knowledge Intelligence producer API만 추출한 로컬 슬라이스입니다.
+
+API path, method, status code, request/response schema, security, SSE event shape를 바꾸는 작업은 반드시 `../../contracts-v2/brainx-openapi.ssot.yaml`을 먼저 수정한 뒤 `scripts/extract_intelligence_openapi.py`로 로컬 슬라이스를 재생성합니다. 로컬 슬라이스만 직접 고치고 SSOT를 남겨 두면 안 됩니다.
 
 계약을 다시 추출해야 할 때는 `scripts/extract_intelligence_openapi.py`를 사용합니다. 기본 source 경로는 상위 repository의 `contracts-v2/brainx-openapi.ssot.yaml`로 계산됩니다.
 
-## Service Responsibility
+이 서비스가 consumer인 동기 내부 REST API는 `src/main/resources/contracts/knowledge-intelligence.consumed.openapi.yaml`, producer 또는 consumer로 참여하는 이벤트는 `src/main/resources/contracts/knowledge-intelligence.asyncapi.yaml`에서 확인합니다. 두 파일은 `scripts/extract_intelligence_related_contracts.py`로 상위 `contracts-v2`의 OpenAPI/AsyncAPI SSOT에서 재생성합니다.
 
-Intelligence Service는 원본 노트를 직접 소유하지 않고 Workspace 이벤트 기반 read model 또는 vector index를 조회하는 Knowledge Intelligence API를 담당합니다.
+## Service Boundary
 
-주요 기능은 다음과 같습니다.
+Intelligence Service는 BrainX의 지식 탐색, AI 보조, AI 대화, 연결 추천, 정리 제안, 클러스터링, 인사이트 기능을 담당합니다.
 
-- Semantic search
-- AI inline assist
-- AI suggestion decision
-- RAG chat thread and message streaming
-- AI model list and user model settings
-- Note summary read
-- Folder organization proposal
-- Link suggestion
-- AI clustering job
-- Bridge concept recommendation
-- Insight report job
-- User style profile
+이 서비스는 원본 노트, 워크스페이스 권한, 상품/플랜/과금 정책, 외부 AI provider의 실제 상태를 직접 소유하지 않습니다. 그런 정보는 내부 DB로 복제해 권한의 원천처럼 다루지 않고, 필요한 시점에 application outbound port를 통해 외부 도메인 또는 외부 provider adapter에 질의합니다.
 
-## Contract Defaults
+## Architecture Rules
 
-- Public/client API는 `/api/v1` 아래에 있습니다.
-- 모든 공개 API는 `bearerAuth` JWT security를 사용합니다.
-- 성공 응답은 `ApiSuccessBase`를 확장하고 `success: true`, `message`, `data`를 포함합니다.
-- 오류 응답은 `ApiErrorResponse`이며 `success: false`, `message`, `error.code`, `error.message`, 선택적 `traceId`, `details`를 포함합니다.
-- SSE operation은 `text/event-stream`으로 `delta`와 terminal event를 보냅니다.
-- `Idempotency-Key` header는 command와 job request retry에 권장됩니다.
+- 기능 단위 package를 우선합니다. 현재 기능 경계는 `settings`, `exploration`, `assist`, `chat`, `connection`, `organization`, `clustering`, `insight`입니다.
+- 각 기능은 `domain`과 `application`을 먼저 채웁니다. `domain`은 순수 도메인 모델과 규칙을 담고, Spring/JPA/OpenAPI DTO에 의존하지 않습니다.
+- `application/usecase`는 사용자 의도를 처리하고, 외부 입력/출력은 `application/port/inbound`, `application/port/outbound`로 표현합니다.
+- `infrastructure`는 port 구현체가 들어가는 곳입니다. JPA entity/repository, Spring AI adapter, 외부 HTTP client adapter는 여기에서만 다룹니다.
+- controller, REST DTO, persistence adapter, messaging adapter는 도메인 규칙과 usecase 경계가 테스트로 드러난 뒤 추가합니다.
 
-## Endpoint Inventory
+## External Dependency Rules
 
-| Method | Path | Operation | Summary | Success | Events | Internal sync |
-| --- | --- | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/intelligence/semantic-search` | `semanticSearch` | 시맨틱 검색 | `200` | `SemanticSearchPerformed`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `POST` | `/api/v1/ai/inline-assists` | `createInlineAssist` | AI 인라인 어시스트 | `200` SSE | `AiSuggestionCreated`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required; `knowledge-workspace.getNoteSnapshotInternal` conditional |
-| `POST` | `/api/v1/ai/suggestions/{suggestionId}/decision` | `decideAiSuggestion` | AI 제안 수락/거절/재생성 결정 | `200` | `AiSuggestionDecisionRecorded` | `knowledge-workspace.patchNoteContentInternal` conditional |
-| `POST` | `/api/v1/ai/chat-threads` | `createChatThread` | AI 채팅 스레드 생성 | `201` | `ChatThreadCreated` | none |
-| `POST` | `/api/v1/ai/chat-threads/{threadId}/messages` | `sendChatMessage` | AI 채팅 메시지 전송 | `200` SSE | `ChatMessageCreated`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `GET` | `/api/v1/ai/chat-threads/{threadId}` | `getChatThread` | 채팅 스레드 조회 | `200` | none | none |
-| `GET` | `/api/v1/ai/models` | `listAiModels` | 사용 가능한 AI 모델 목록 | `200` | none | none |
-| `PUT` | `/api/v1/ai/model-settings` | `putAiModelSettings` | AI 모델 설정 변경 | `200` | `AiModelSettingsChanged` | none |
-| `GET` | `/api/v1/notes/{noteId}/summary` | `getNoteSummary` | 노트 요약 조회 | `200` | none | none |
-| `POST` | `/api/v1/ai/folder-organization-proposals` | `createFolderOrganizationProposal` | AI 폴더 정리 제안 요청 | `200` | `AiSuggestionCreated`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `POST` | `/api/v1/ai/link-suggestions` | `createLinkSuggestions` | AI 링크 추천 | `200` | `AiSuggestionCreated`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `POST` | `/api/v1/ai/clusters` | `requestAiClusterJob` | AI 클러스터링 요청 | `202` | `ClusterJobRequested`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `GET` | `/api/v1/ai/clusters/{clusterJobId}` | `getAiClusterJob` | AI 클러스터링 결과 조회 | `200` | none | none |
-| `POST` | `/api/v1/ai/bridge-concepts` | `createBridgeConcepts` | 징검다리 개념 추천 | `200` | `AiSuggestionCreated`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `POST` | `/api/v1/ai/insight-reports` | `requestInsightReport` | AI 인사이트 리포트 요청 | `202` | `InsightReportRequested`, `TokenUsageRecordedRequested` | `commerce-operations.checkEntitlementsInternal` required |
-| `GET` | `/api/v1/ai/insight-reports/{reportId}` | `getInsightReport` | AI 인사이트 리포트 조회 | `200` | none | none |
-| `GET` | `/api/v1/users/me/style-profile` | `getStyleProfile` | 문체 프로필 조회 | `200` | none | none |
-| `PUT` | `/api/v1/users/me/style-profile` | `putStyleProfile` | 문체 프로필 설정 | `200` | `UserStyleProfileChanged` | none |
+- 외부 서비스나 외부 도메인에 의존하는 기능은 application outbound port를 먼저 정의합니다.
+- port의 요청/응답은 외부 API DTO가 아니라 이 서비스의 도메인 언어로 만든 query/result/policy 모델을 사용합니다.
+- 실제 외부 API 스펙이 아직 없으면, 지금 모델 사용 가능 여부 처리 방식처럼 port와 Spring bean adapter 골격을 먼저 둡니다. adapter는 context load를 깨지 않는 neutral result를 반환하거나, 호출 지점에서 아직 미구현임을 명시할 수 있게 최소 구현만 둡니다.
+- 외부 도메인이 source of truth인 정책은 이 서비스 DB에 임의 테이블로 만들지 않습니다. 예를 들어 권한, quota, 플랜, 외부 provider 상태, 워크스페이스 노트 원문은 각각 적절한 outbound port를 통해 조회하거나 요청합니다.
+- application/domain layer에서 `WebClient`, `RestTemplate`, Spring AI client, JPA repository를 직접 사용하지 않습니다.
 
-## Request And Response Schemas
+## Persistence And AI Rules
 
-OpenAPI components에 정의된 핵심 schema는 다음과 같습니다.
+- 이 서비스가 소유하는 상태만 PostgreSQL/JPA로 저장합니다. 테스트 profile은 H2를 사용합니다.
+- JPA entity와 repository는 `infrastructure.persistence.jpa` 아래에 두고, domain 모델로 변환하는 adapter를 통해 application port를 구현합니다.
+- arbitrary object 형태의 설정 값은 domain/application에서는 `Map<String, Object>`로 다루고, persistence에서는 converter 등 infrastructure 책임으로 직렬화합니다.
+- AI provider 호출은 Spring AI에 직접 의존하지 않고 `AiChatPort`, `AiEmbeddingPort` 같은 outbound port를 통해 수행합니다.
+- vendor 비용, BrainX 과금 안내, 사용자별 사용 가능 모델처럼 의미가 다른 값은 하나의 raw map이나 단일 숫자로 합치지 않고 별도 도메인 모델로 분리합니다.
 
-- Request: `SemanticSearchRequest`, `InlineAssistRequest`, `AiSuggestionDecisionRequest`, `ChatThreadCreateRequest`, `ChatMessageCreateRequest`, `AiModelSettingsPutRequest`, `FolderOrganizationProposalRequest`, `LinkSuggestionsRequest`, `ClusterJobCreateRequest`, `BridgeConceptsRequest`, `InsightReportCreateRequest`, `StyleProfilePutRequest`
-- Data response: `SemanticSearchData`, `AiSuggestionDecisionData`, `ChatThreadData`, `ChatThreadDetailData`, `AiModelsData`, `AiModelSettingsData`, `NoteSummaryData`, `FolderOrganizationProposalData`, `LinkSuggestionsData`, `ClusterJobData`, `BridgeConceptsData`, `InsightReportData`, `StyleProfileData`
-- Shared: `ApiSuccessBase`, `ApiErrorResponse`, `JobStatus`
+## API Contract Rules
 
-Schema의 required field, enum, nullable 여부는 요약하지 말고 OpenAPI 파일에서 직접 확인합니다.
+- 공개 API는 OpenAPI 계약의 `/api/v1` operation을 기준으로 구현합니다.
+- 공개 API 계약을 변경할 때는 `../../contracts-v2/brainx-openapi.ssot.yaml`을 source of truth로 수정하고, 로컬 `src/main/resources/contracts/knowledge-intelligence.openapi.yaml`은 추출 결과로 갱신합니다.
+- 성공/오류 wrapper, nullable 여부, enum 값, SSE content type, terminal event, idempotency header는 계약에서 확인합니다.
+- 계약과 구현이 충돌하면 계약을 기준으로 불일치를 기록하고, 별도 요청 없이 계약을 임의 수정하지 않습니다.
+- 이 guide에는 endpoint와 schema 목록을 길게 복제하지 않습니다. 세부 필드와 required 여부는 OpenAPI 파일에서 직접 확인합니다.
 
-## Implementation State
+## Testing Rules
 
-현재 저장소의 Java 구현은 Spring Boot application entrypoint와 기본 context load test 중심입니다. Controller, application service, persistence adapter, Kafka adapter를 추가할 때는 OpenAPI operation 단위로 package와 test를 함께 구성합니다.
-
-## Implementation Notes
-
-- Entitlement 또는 quota 확인이 필요한 operation은 모델 호출 또는 job accept 전에 `commerce-operations.checkEntitlementsInternal` 동기 호출이 필요합니다.
-- Accepted AI suggestion이 note content를 바꾸는 경우 Workspace command API인 `knowledge-workspace.patchNoteContentInternal`을 통해 적용합니다.
-- Inline assist에서 최신 authoritative markdown이 필요한 경우에만 `knowledge-workspace.getNoteSnapshotInternal`을 조건부로 호출합니다.
-- Token usage recording은 public REST command를 만들지 말고 event-first 흐름을 유지합니다.
-- `requestAiClusterJob`와 `requestInsightReport`는 `PENDING` job을 반환할 때 `202 Accepted`를 사용합니다.
+- 기능 개발은 domain test에서 시작하고, 도메인 규칙이 안정되면 application usecase test로 확장합니다.
+- application test에서는 outbound port를 fake로 구현해 외부 서비스, AI provider, DB 없이 흐름을 검증합니다.
+- persistence adapter test는 이 서비스가 소유하는 저장 구조와 domain 변환만 검증합니다.
+- Spring context test는 `test` profile과 H2 기반으로 유지하고, 외부 연동 adapter skeleton 때문에 context load가 깨지지 않게 합니다.
+- code, configuration, dependency, OpenAPI contract를 변경하면 `vaults/workflows/verification.md` 기준으로 Gradle 검증을 실행합니다.

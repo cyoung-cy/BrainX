@@ -1,10 +1,14 @@
 package com.brainx.intelligence.infrastructure.persistence.jpa.settings;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.brainx.intelligence.infrastructure.persistence.jpa.JsonMapAttributeConverter;
+import com.brainx.intelligence.settings.domain.AssistanceStyle;
+import com.brainx.intelligence.settings.domain.ConversationTone;
 import com.brainx.intelligence.settings.domain.StyleProfile;
+import com.brainx.intelligence.settings.domain.WritingStyle;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -45,12 +49,44 @@ public class StyleProfileJpaEntity {
     static StyleProfileJpaEntity fromDomain(StyleProfile styleProfile) {
         return new StyleProfileJpaEntity(
             styleProfile.userId(),
-            styleProfile.style(),
+            toJsonMap(styleProfile),
             styleProfile.detectedFromNotesAt()
         );
     }
 
     StyleProfile toDomain() {
-        return new StyleProfile(userId, style, detectedFromNotesAt);
+        return new StyleProfile(
+            userId,
+            new ConversationTone(nestedMap(style, "conversationTone")),
+            new WritingStyle(nestedMap(style, "writingStyle")),
+            new AssistanceStyle(nestedMap(style, "assistanceStyle")),
+            detectedFromNotesAt
+        );
+    }
+
+    private static Map<String, Object> toJsonMap(StyleProfile styleProfile) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("conversationTone", styleProfile.conversationToneValues());
+        values.put("writingStyle", styleProfile.writingStyleValues());
+        values.put("assistanceStyle", styleProfile.assistanceStyleValues());
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, Object> nestedMap(Map<String, Object> source, String key) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Object value = source.get(key);
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+
+        Map<String, Object> nested = new LinkedHashMap<>();
+        rawMap.forEach((nestedKey, nestedValue) -> {
+            if (nestedKey instanceof String stringKey) {
+                nested.put(stringKey, nestedValue);
+            }
+        });
+        return nested;
     }
 }

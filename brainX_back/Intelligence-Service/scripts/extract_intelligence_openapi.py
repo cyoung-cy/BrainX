@@ -367,7 +367,7 @@ def main() -> None:
         return
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(output, encoding="utf-8")
+    args.output.write_text(output, encoding="utf-8", newline="\n")
     written_openapi = yaml.safe_load(args.output.read_text(encoding="utf-8"))
     if not isinstance(written_openapi, dict):
         raise ValueError(f"Expected an OpenAPI object in {args.output}")

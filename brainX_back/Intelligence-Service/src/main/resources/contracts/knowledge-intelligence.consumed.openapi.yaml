@@ -1,0 +1,440 @@
+openapi: 3.0.3
+info:
+  title: BrainX API SSOT - Knowledge Intelligence Consumed APIs
+  version: 1.0.0-revised
+  description: OpenAPI slice for synchronous internal APIs consumed by Intelligence Service. Provider-owned API behavior remains
+    governed by the source SSOT.
+servers:
+- url: http://localhost:8080
+  description: Local API Gateway
+- url: https://api.brainx.com
+  description: Production API Gateway
+tags:
+- name: Internal Service APIs
+  description: Service-to-service synchronous APIs. Not exposed to browsers or external clients.
+paths:
+  /internal/v1/entitlements/check:
+    post:
+      operationId: checkEntitlementsInternal
+      summary: '[Internal] 권한/쿼터 확인'
+      tags:
+      - Internal Service APIs
+      x-producer-service: commerce-operations
+      x-visibility: internal
+      x-consumers:
+      - id: internal.knowledge-intelligence
+        type: internal-service
+        description: Knowledge Intelligence synchronous caller
+      - id: internal.knowledge-workspace
+        type: internal-service
+        description: Knowledge Workspace synchronous caller
+      - id: internal.content-ingestion-publishing
+        type: internal-service
+        description: Content ingestion job worker synchronous caller
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 서비스 간 동기 preflight. 이벤트로 대체하지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntitlementsCheckRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/EntitlementsCheckData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+  /internal/v1/workspace/notes/{noteId}/snapshot:
+    get:
+      operationId: getNoteSnapshotInternal
+      summary: '[Internal] 노트 최신 스냅샷 조회'
+      tags:
+      - Internal Service APIs
+      x-producer-service: knowledge-workspace
+      x-visibility: internal
+      x-consumers:
+      - id: internal.knowledge-intelligence
+        type: internal-service
+        description: Knowledge Intelligence synchronous caller
+      - id: internal.content-ingestion-publishing
+        type: internal-service
+        description: Content ingestion job worker synchronous caller
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 기본은 이벤트 기반 read model 사용. 반드시 최신 원문이 필요한 작업에서만 호출한다.
+      parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/InternalNoteSnapshotData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+  /internal/v1/workspace/notes/{noteId}/content-patches:
+    post:
+      operationId: patchNoteContentInternal
+      summary: '[Internal] 노트 본문 패치 command'
+      tags:
+      - Internal Service APIs
+      x-producer-service: knowledge-workspace
+      x-visibility: internal
+      x-consumers:
+      - id: internal.knowledge-intelligence
+        type: internal-service
+        description: Knowledge Intelligence synchronous caller
+      x-produces-events:
+      - NoteContentSaved
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: AI 제안 수락 등 외부 서비스의 노트 변경을 Workspace 원장으로 강제한다.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: noteId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InternalNoteContentPatchRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteContentSaveData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+components:
+  securitySchemes:
+    serviceTokenAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: service-jwt
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Recommended for commands and job requests. Same key must return the same result for retries.
+  schemas:
+    ApiSuccessBase:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+      required:
+      - success
+      - message
+      additionalProperties: false
+    ApiErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum:
+          - false
+        data:
+          nullable: true
+        message:
+          type: string
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            traceId:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+              description: Machine-readable error details
+          required:
+          - code
+          - message
+          additionalProperties: true
+      required:
+      - success
+      - message
+      additionalProperties: false
+    NoteContentSaveData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        version:
+          type: integer
+        savedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - SAVED
+        conflict:
+          type: object
+          additionalProperties: true
+      required:
+      - noteId
+      - version
+      - savedAt
+      - status
+      additionalProperties: false
+    EntitlementsCheckRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+        capability:
+          type: string
+          enum:
+          - SEMANTIC_SEARCH
+          - RAG_CHAT
+          - AI_INLINE_ASSIST
+          - AI_CLUSTERING
+          - AI_INSIGHT_REPORT
+          - EXPORT
+          - SHARE_LINK
+          - PUBLISH
+          - IMPORT
+        quantity:
+          type: integer
+          minimum: 1
+        context:
+          type: object
+          additionalProperties: true
+      required:
+      - userId
+      - capability
+      - quantity
+      additionalProperties: false
+    EntitlementsCheckData:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        remaining:
+          type: integer
+          nullable: true
+        entitlementSnapshotVersion:
+          type: integer
+      required:
+      - allowed
+      - entitlementSnapshotVersion
+      additionalProperties: false
+    InternalNoteSnapshotData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        title:
+          type: string
+        markdown:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        folderId:
+          type: string
+          nullable: true
+        version:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+      - noteId
+      - title
+      - markdown
+      - version
+      - updatedAt
+      additionalProperties: false
+    InternalNoteContentPatchRequest:
+      type: object
+      properties:
+        sourceService:
+          type: string
+        baseVersion:
+          type: integer
+        patchType:
+          type: string
+          enum:
+          - REPLACE_RANGE
+          - APPEND
+          - REPLACE_ALL
+          - APPLY_AI_SUGGESTION
+        patch:
+          type: object
+          additionalProperties: true
+        causationId:
+          type: string
+      required:
+      - sourceService
+      - baseVersion
+      - patchType
+      - patch
+      - causationId
+      additionalProperties: false
+x-extracted-from:
+  source: contracts-v2/brainx-openapi.ssot.yaml
+  consumerId: internal.knowledge-intelligence
+  conflictSide: right

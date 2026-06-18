@@ -3,6 +3,7 @@ package com.brainx.intelligence.infrastructure.persistence.jpa.settings;
 import java.math.BigDecimal;
 
 import com.brainx.intelligence.settings.domain.AiModel;
+import com.brainx.intelligence.settings.domain.VendorTokenCost;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -23,8 +24,11 @@ public class AiModelJpaEntity {
     @Column(name = "provider", nullable = false, length = 100)
     private String provider;
 
-    @Column(name = "cost_per_1k_tokens", precision = 12, scale = 6)
-    private BigDecimal costPer1kTokens;
+    @Column(name = "vendor_input_cost_per_1k_tokens", precision = 12, scale = 6)
+    private BigDecimal vendorInputCostPer1kTokens;
+
+    @Column(name = "vendor_output_cost_per_1k_tokens", precision = 12, scale = 6)
+    private BigDecimal vendorOutputCostPer1kTokens;
 
     protected AiModelJpaEntity() {
     }
@@ -33,12 +37,14 @@ public class AiModelJpaEntity {
         String modelId,
         String name,
         String provider,
-        BigDecimal costPer1kTokens
+        BigDecimal vendorInputCostPer1kTokens,
+        BigDecimal vendorOutputCostPer1kTokens
     ) {
         this.modelId = modelId;
         this.name = name;
         this.provider = provider;
-        this.costPer1kTokens = costPer1kTokens;
+        this.vendorInputCostPer1kTokens = vendorInputCostPer1kTokens;
+        this.vendorOutputCostPer1kTokens = vendorOutputCostPer1kTokens;
     }
 
     static AiModelJpaEntity fromDomain(AiModel model) {
@@ -46,12 +52,18 @@ public class AiModelJpaEntity {
             model.modelId(),
             model.name(),
             model.provider(),
-            model.costPer1kTokens()
+            model.vendorTokenCost().inputCostPer1kTokens(),
+            model.vendorTokenCost().outputCostPer1kTokens()
         );
     }
 
     AiModel toDomain() {
-        return new AiModel(modelId, name, provider, costPer1kTokens);
+        return new AiModel(
+            modelId,
+            name,
+            provider,
+            new VendorTokenCost(vendorInputCostPer1kTokens, vendorOutputCostPer1kTokens)
+        );
     }
 
     public String getModelId() {

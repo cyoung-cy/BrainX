@@ -11,14 +11,21 @@ import com.brainx.intelligence.settings.application.port.inbound.GetStyleProfile
 import com.brainx.intelligence.settings.application.port.inbound.ListAiModelsUseCase;
 import com.brainx.intelligence.settings.application.port.inbound.PutAiModelSettingsUseCase;
 import com.brainx.intelligence.settings.application.port.inbound.PutStyleProfileUseCase;
+import com.brainx.intelligence.settings.application.port.outbound.AiModelAvailabilityPort;
+import com.brainx.intelligence.settings.application.port.outbound.AiModelAvailabilityPort.AiModelAvailabilityQuery;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelSettingsPort;
 import com.brainx.intelligence.settings.application.port.outbound.StyleProfilePort;
+import com.brainx.intelligence.settings.domain.AiPricingPolicy;
 import com.brainx.intelligence.settings.domain.AiModel;
+import com.brainx.intelligence.settings.domain.AiModelAvailabilityPolicy;
 import com.brainx.intelligence.settings.domain.AiModelSettings;
+import com.brainx.intelligence.settings.domain.AssistanceStyle;
+import com.brainx.intelligence.settings.domain.ConversationTone;
 import com.brainx.intelligence.settings.domain.SettingsValidation;
 import com.brainx.intelligence.settings.domain.StyleProfile;
 import com.brainx.intelligence.settings.domain.UnknownAiModelException;
+import com.brainx.intelligence.settings.domain.WritingStyle;
 
 /**
  * AI 사용 준비 기능의 application service입니다.
@@ -32,36 +39,47 @@ public class AiSettingsService implements
     PutStyleProfileUseCase {
 
     private final AiModelCatalogPort aiModelCatalogPort;
+    private final AiModelAvailabilityPort aiModelAvailabilityPort;
     private final AiModelSettingsPort aiModelSettingsPort;
     private final StyleProfilePort styleProfilePort;
 
     public AiSettingsService(
         AiModelCatalogPort aiModelCatalogPort,
+        AiModelAvailabilityPort aiModelAvailabilityPort,
         AiModelSettingsPort aiModelSettingsPort,
         StyleProfilePort styleProfilePort
     ) {
         this.aiModelCatalogPort = aiModelCatalogPort;
+        this.aiModelAvailabilityPort = aiModelAvailabilityPort;
         this.aiModelSettingsPort = aiModelSettingsPort;
         this.styleProfilePort = styleProfilePort;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AiModelsResult listAiModels() {
+    public AiModelsResult listAiModels(ListAiModelsQuery query) {
+        String userId = SettingsValidation.requireText(query.userId(), "userId");
         List<AiModel> models = aiModelCatalogPort.findAll();
         List<AiModelView> modelViews = models.stream()
             .map(model -> new AiModelView(
                 model.modelId(),
                 model.name(),
                 model.provider(),
-                model.costPer1kTokens()
+                model.vendorTokenCost().inputCostPer1kTokens(),
+                model.vendorTokenCost().outputCostPer1kTokens()
             ))
             .toList();
-        List<String> enabledModels = models.stream()
+        List<String> catalogModelIds = models.stream()
             .map(AiModel::modelId)
             .toList();
+        AiModelAvailabilityPolicy availabilityPolicy = aiModelAvailabilityPort.resolveAvailability(
+            new AiModelAvailabilityQuery(userId, catalogModelIds)
+        );
+        List<String> enabledModels = availabilityPolicy.enabledModelIds().stream()
+            .filter(catalogModelIds::contains)
+            .toList();
 
-        return new AiModelsResult(modelViews, enabledModels, Map.of());
+        return new AiModelsResult(modelViews, enabledModels, pricingPolicyView(AiPricingPolicy.defaultTokenPolicy()));
     }
 
     @Override
@@ -87,7 +105,9 @@ public class AiSettingsService implements
             .orElseGet(() -> StyleProfile.empty(userId));
 
         return new GetStyleProfileUseCase.StyleProfileResult(
-            styleProfile.style(),
+            styleProfile.conversationToneValues(),
+            styleProfile.writingStyleValues(),
+            styleProfile.assistanceStyleValues(),
             styleProfile.detectedFromNotesAt()
         );
     }
@@ -95,10 +115,18 @@ public class AiSettingsService implements
     @Override
     public PutStyleProfileUseCase.StyleProfileResult putStyleProfile(PutStyleProfileCommand command) {
         String userId = SettingsValidation.requireText(command.userId(), "userId");
-        StyleProfile savedProfile = styleProfilePort.save(new StyleProfile(userId, command.style(), null));
+        StyleProfile savedProfile = styleProfilePort.save(new StyleProfile(
+            userId,
+            new ConversationTone(command.conversationTone()),
+            new WritingStyle(command.writingStyle()),
+            new AssistanceStyle(command.assistanceStyle()),
+            null
+        ));
 
         return new PutStyleProfileUseCase.StyleProfileResult(
-            savedProfile.style(),
+            savedProfile.conversationToneValues(),
+            savedProfile.writingStyleValues(),
+            savedProfile.assistanceStyleValues(),
             savedProfile.detectedFromNotesAt()
         );
     }
@@ -108,5 +136,9 @@ public class AiSettingsService implements
         values.put("defaultModelId", settings.defaultModelId());
         values.put("userApiKeys", settings.userApiKeys());
         return Map.copyOf(values);
+    }
+
+    private static AiPricingPolicyView pricingPolicyView(AiPricingPolicy policy) {
+        return new AiPricingPolicyView(policy.billingUnit(), policy.summary(), policy.details());
     }
 }

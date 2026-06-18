@@ -12,12 +12,16 @@ public interface PutStyleProfileUseCase {
 
     record PutStyleProfileCommand(
         String userId,
-        Map<String, Object> style
+        Map<String, Object> conversationTone,
+        Map<String, Object> writingStyle,
+        Map<String, Object> assistanceStyle
     ) {
     }
 
     record StyleProfileResult(
-        Map<String, Object> style,
+        Map<String, Object> conversationTone,
+        Map<String, Object> writingStyle,
+        Map<String, Object> assistanceStyle,
         Instant detectedFromNotesAt
     ) {
     }
