@@ -5,15 +5,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useBrainX } from "@/components/brainx-provider";
 import { Badge, Btn, EmptyState, Icon } from "@/components/brainx-ui";
 import { SectionCard } from "@/components/utility/utility-shared";
-import { createSupportInquiry, getMySupportInquiries, type SupportInquiry } from "@/lib/support-api";
+import { createSupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketPayload } from "@/lib/support-api";
 import { cx } from "@/lib/utils";
 
-const CATEGORIES = ["기능 문의", "버그 신고", "결제/환불", "계정", "기타"] as const;
+const CATEGORIES: Array<{ value: SupportTicketPayload["category"]; label: string }> = [
+  { value: "FEATURE_REQUEST", label: "기능 문의" },
+  { value: "BUG", label: "버그 신고" },
+  { value: "BILLING", label: "결제/환불" },
+  { value: "ACCOUNT", label: "계정" },
+  { value: "OTHER", label: "기타" }
+];
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  RECEIVED: { label: "접수", color: "99 102 241" },
+  OPEN: { label: "접수", color: "99 102 241" },
   IN_PROGRESS: { label: "처리 중", color: "234 179 8" },
-  ANSWERED: { label: "답변 완료", color: "34 197 94" },
+  RESOLVED: { label: "답변 완료", color: "34 197 94" },
   CLOSED: { label: "종료", color: "148 163 184" }
 };
 
@@ -26,10 +32,10 @@ function formatDate(value?: string | null) {
 
 export function SupportScreen() {
   const { pushToast } = useBrainX();
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("기능 문의");
+  const [category, setCategory] = useState<SupportTicketPayload["category"]>("FEATURE_REQUEST");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [inquiries, setInquiries] = useState<SupportInquiry[]>([]);
+  const [inquiries, setInquiries] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState("");
@@ -37,13 +43,13 @@ export function SupportScreen() {
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) return inquiries;
-    return inquiries.filter((item) => `${item.category} ${item.title} ${item.content}`.toLowerCase().includes(keyword));
+    return inquiries.filter((item) => `${item.category} ${item.subject}`.toLowerCase().includes(keyword));
   }, [inquiries, query]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    getMySupportInquiries()
+    getMySupportTickets()
       .then((data) => {
         if (active) setInquiries(data);
       })
@@ -66,7 +72,7 @@ export function SupportScreen() {
 
     setSubmitting(true);
     try {
-      const created = await createSupportInquiry({ category, title: nextTitle, content: nextContent });
+      const created = await createSupportTicket({ category, subject: nextTitle, body: nextContent });
       setInquiries((current) => [created, ...current]);
       setTitle("");
       setContent("");
@@ -98,15 +104,15 @@ export function SupportScreen() {
               <div className="flex flex-wrap gap-2">
                 {CATEGORIES.map((item) => (
                   <button
-                    key={item}
+                    key={item.value}
                     type="button"
-                    onClick={() => setCategory(item)}
+                    onClick={() => setCategory(item.value)}
                     className={cx(
                       "h-9 rounded-full border px-4 text-[13px] font-medium transition-colors",
-                      category === item ? "border-primary bg-primary text-white" : "border-line/60 bg-surface2/40 text-txt2 hover:text-txt"
+                      category === item.value ? "border-primary bg-primary text-white" : "border-line/60 bg-surface2/40 text-txt2 hover:text-txt"
                     )}
                   >
-                    {item}
+                    {item.label}
                   </button>
                 ))}
               </div>
@@ -161,20 +167,22 @@ export function SupportScreen() {
           ) : filtered.length ? (
             <div className="space-y-3">
               {filtered.map((item) => {
-                const status = STATUS_LABEL[item.status] ?? STATUS_LABEL.RECEIVED;
+                const status = STATUS_LABEL[item.status] ?? STATUS_LABEL.OPEN;
                 return (
-                  <article key={item.inquiryId} className="rounded-xl border border-line/60 bg-surface2/35 p-4">
+                  <article key={item.ticketId} className="rounded-xl border border-line/60 bg-surface2/35 p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="mb-1 flex flex-wrap items-center gap-2">
                           <Badge>{item.category}</Badge>
                           <span className="text-[11.5px] text-txt3">{formatDate(item.createdAt)}</span>
                         </div>
-                        <h2 className="truncate text-[15px] font-semibold text-txt">{item.title}</h2>
+                        <h2 className="truncate text-[15px] font-semibold text-txt">{item.subject}</h2>
                       </div>
                       <Badge color={status.color} dot>{status.label}</Badge>
                     </div>
-                    <p className="line-clamp-3 whitespace-pre-wrap text-[13px] leading-relaxed text-txt2">{item.content}</p>
+                    <p className="line-clamp-3 whitespace-pre-wrap text-[13px] leading-relaxed text-txt2">
+                      {item.hasNewReply ? "새 답변이 도착했습니다." : "문의가 정상적으로 접수되었습니다."}
+                    </p>
                   </article>
                 );
               })}

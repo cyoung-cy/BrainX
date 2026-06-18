@@ -1,23 +1,40 @@
 "use client";
 
-import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
-export type SupportInquiry = {
-  inquiryId: string;
+export type SupportTicket = {
+  ticketId: string;
   category: string;
-  title: string;
-  content: string;
-  status: "RECEIVED" | "IN_PROGRESS" | "ANSWERED" | "CLOSED" | string;
+  subject: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | string;
   createdAt: string;
   updatedAt: string | null;
+  hasNewReply?: boolean | null;
 };
 
-export type SupportInquiryPayload = {
-  category: string;
-  title: string;
+export type SupportMessage = {
+  messageId: string;
+  senderType: "USER" | "ADMIN" | string;
   content: string;
+  attachments: Array<{ assetId: string; fileName: string; fileUrl: string }>;
+  createdAt: string;
+};
+
+export type SupportTicketDetail = SupportTicket & {
+  messages: SupportMessage[];
+};
+
+export type SupportTicketPayload = {
+  category: "ACCOUNT" | "BILLING" | "PAYMENT" | "BUG" | "FEATURE_REQUEST" | "DATA" | "OTHER";
+  subject: string;
+  body: string;
+  attachments?: string[];
+};
+
+type SupportTicketListData = {
+  tickets: SupportTicket[];
 };
 
 function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
@@ -28,6 +45,10 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
   const session = readAuthSession();
   if (!session?.accessToken) {
     throw new Error("로그인이 필요합니다.");
+  }
+
+  if (isDemoSession(session)) {
+    return demoSupportResponse<T>(path, init);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -53,13 +74,83 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
   return payload.data as T;
 }
 
-export function getMySupportInquiries() {
-  return authedRequest<SupportInquiry[]>("/api/v1/support/inquiries");
+function parseBody<T>(init?: RequestInit): Partial<T> {
+  if (!init?.body || typeof init.body !== "string") return {};
+  try {
+    return JSON.parse(init.body) as Partial<T>;
+  } catch {
+    return {};
+  }
 }
 
-export function createSupportInquiry(payload: SupportInquiryPayload) {
-  return authedRequest<SupportInquiry>("/api/v1/support/inquiries", {
+function demoSupportResponse<T>(path: string, init?: RequestInit): T {
+  const method = init?.method?.toUpperCase() ?? "GET";
+
+  if (path === "/api/v1/support/tickets" && method === "GET") {
+    return {
+      tickets: [
+        {
+          ticketId: "tkt_demo_001",
+          category: "OTHER",
+          subject: "데모 문의",
+          status: "OPEN",
+          createdAt: new Date().toISOString(),
+          updatedAt: null,
+          hasNewReply: false
+        }
+      ]
+    } as T;
+  }
+
+  if (path === "/api/v1/support/tickets" && method === "POST") {
+    const payload = parseBody<SupportTicketPayload>(init);
+    return {
+      ticketId: `tkt_demo_${Date.now()}`,
+      category: payload.category ?? "OTHER",
+      subject: payload.subject ?? "데모 문의",
+      status: "OPEN",
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+      hasNewReply: false
+    } as T;
+  }
+
+  if (path.startsWith("/api/v1/support/tickets/") && method === "GET") {
+    return {
+      ticketId: path.split("/").pop() ?? "tkt_demo_001",
+      category: "OTHER",
+      subject: "데모 문의",
+      status: "OPEN",
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+      hasNewReply: false,
+      messages: [
+        {
+          messageId: "msg_demo_001",
+          senderType: "USER",
+          content: "개발용 데모 세션에서 확인할 수 있는 예시 문의입니다.",
+          attachments: [],
+          createdAt: new Date().toISOString()
+        }
+      ]
+    } as T;
+  }
+
+  throw new Error("데모 모드에서 지원하지 않는 고객지원 API입니다.");
+}
+
+export async function getMySupportTickets() {
+  const data = await authedRequest<SupportTicketListData>("/api/v1/support/tickets");
+  return data.tickets;
+}
+
+export function createSupportTicket(payload: SupportTicketPayload) {
+  return authedRequest<SupportTicket>("/api/v1/support/tickets", {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function getMySupportTicket(ticketId: string) {
+  return authedRequest<SupportTicketDetail>(`/api/v1/support/tickets/${ticketId}`);
 }

@@ -27,8 +27,10 @@ import {
   type ConsentPayload,
   type MyProfile
 } from "@/lib/user-api";
-import { createSupportInquiry, getMySupportInquiries, type SupportInquiry } from "@/lib/support-api";
+import { createSupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketPayload } from "@/lib/support-api";
 import { cx } from "@/lib/utils";
+import type { ThemeMode } from "@/components/brainx-provider";
+import type { LanguageCode } from "@/lib/i18n";
 
 type TabId = "profile" | "general" | "notifications" | "usage" | "stats" | "support" | "upgrade";
 type SocialProvider = "google" | "kakao" | "naver";
@@ -108,6 +110,8 @@ function profileFromSession(): MyProfile | null {
     email: session.email ?? "",
     nickname: session.nickname?.trim() || session.email?.split("@")[0] || "",
     profileImageUrl: session.profileImageUrl ?? null,
+    language: "ko",
+    theme: "system",
     role: session.role ?? "ROLE_USER",
     security: {
       twoFactorEnabled: false,
@@ -125,13 +129,15 @@ function profileFromSession(): MyProfile | null {
 
 function mergeProfileUpdate(
   current: MyProfile | null,
-  data: { userId: string; nickname: string; profileImageUrl: string | null }
+  data: { userId: string; nickname: string; profileImageUrl: string | null; language?: LanguageCode; theme?: ThemeMode }
 ): MyProfile {
   const base = current ?? profileFromSession() ?? {
     userId: data.userId,
     email: readAuthSession()?.email ?? "",
     nickname: data.nickname,
     profileImageUrl: data.profileImageUrl,
+    language: data.language ?? "ko",
+    theme: data.theme ?? "system",
     role: readAuthSession()?.role ?? "ROLE_USER",
     security: {
       twoFactorEnabled: false,
@@ -150,7 +156,9 @@ function mergeProfileUpdate(
     ...base,
     userId: data.userId || base.userId,
     nickname: data.nickname,
-    profileImageUrl: data.profileImageUrl
+    profileImageUrl: data.profileImageUrl,
+    language: data.language ?? base.language,
+    theme: data.theme ?? base.theme
   };
 }
 
@@ -294,7 +302,7 @@ function MiniBars({
 export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { pushToast, sidebarCollapsed } = useBrainX();
+  const { pushToast, sidebarCollapsed, language, setLanguage, theme, setTheme, t } = useBrainX();
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<TabId>("profile");
   const [profile, setProfile] = useState<MyProfile | null>(() => profileFromSession());
@@ -334,6 +342,8 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
           marketingOptional: data.consents.marketingOptional,
           behaviorAnalyticsOptional: data.consents.behaviorAnalyticsOptional
         });
+        setLanguage(data.language);
+        setTheme(data.theme);
       })
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "프로필을 불러오지 못했습니다.", "err");
@@ -525,6 +535,28 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
     }
   };
 
+  const saveLanguage = async (nextLanguage: LanguageCode) => {
+    setLanguage(nextLanguage);
+    try {
+      const data = await updateMyProfile({ nickname: nickname.trim() || name, language: nextLanguage, theme });
+      setProfile((current) => mergeProfileUpdate(current, data));
+      pushToast(t("toast.languageSaved"), "ok");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : t("toast.languageSaved"), "err");
+    }
+  };
+
+  const saveTheme = async (nextTheme: ThemeMode) => {
+    setTheme(nextTheme);
+    try {
+      const data = await updateMyProfile({ nickname: nickname.trim() || name, language, theme: nextTheme });
+      setProfile((current) => mergeProfileUpdate(current, data));
+      pushToast(t("toast.themeSaved"), "ok");
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : t("toast.themeSaved"), "err");
+    }
+  };
+
   if (!mounted || !open) return null;
 
   return createPortal(
@@ -620,7 +652,16 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
                 />
               ) : null}
               {tab === "general" ? (
-                <GeneralPanel consents={consents} savingConsent={savingConsent} onConsentChange={saveConsent} onLogout={handleLogout} />
+                <GeneralSettingsPanel
+                  language={language}
+                  theme={theme}
+                  consents={consents}
+                  savingConsent={savingConsent}
+                  onLanguageChange={saveLanguage}
+                  onThemeChange={saveTheme}
+                  onConsentChange={saveConsent}
+                  onLogout={handleLogout}
+                />
               ) : null}
               {tab === "notifications" ? <NotificationsPanel /> : null}
               {tab === "usage" ? <UsagePanel /> : null}
@@ -838,6 +879,91 @@ function ConsentButton({
   );
 }
 
+function GeneralSettingsPanel({
+  language,
+  theme,
+  consents,
+  savingConsent,
+  onLanguageChange,
+  onThemeChange,
+  onConsentChange,
+  onLogout
+}: {
+  language: LanguageCode;
+  theme: ThemeMode;
+  consents: ConsentPayload;
+  savingConsent: keyof ConsentPayload | null;
+  onLanguageChange: (value: LanguageCode) => void;
+  onThemeChange: (value: ThemeMode) => void;
+  onConsentChange: (key: keyof ConsentPayload, value: boolean) => void;
+  onLogout: () => void;
+}) {
+  const { t } = useBrainX();
+  const languageOptions: { value: LanguageCode; label: string }[] = [
+    { value: "ko", label: t("general.ko") },
+    { value: "en", label: t("general.en") }
+  ];
+  const themeOptions: { value: ThemeMode; label: string }[] = [
+    { value: "dark", label: t("general.dark") },
+    { value: "light", label: t("general.light") },
+    { value: "system", label: t("general.system") }
+  ];
+
+  return (
+    <>
+      <header className="mb-8">
+        <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">{t("general.title")}</h1>
+        <p className="mt-3 text-[13px] text-[#6d6861]">{t("general.desc")}</p>
+      </header>
+      <section className="rounded-[12px] border border-[#e5e0d8]">
+        <AccountRow className="px-4" title={t("general.language")} desc={t("general.languageDesc")} action={<SegmentedControl options={languageOptions} value={language} onChange={onLanguageChange} />} />
+        <AccountRow className="px-4" title={t("general.theme")} desc={t("general.themeDesc")} action={<SegmentedControl options={themeOptions} value={theme} onChange={onThemeChange} />} />
+        <AccountRow
+          className="px-4"
+          title={t("general.marketing")}
+          desc={t("general.marketingDesc")}
+          action={<ConsentButton checked={consents.marketingOptional} disabled={savingConsent === "marketingOptional"} onChange={(value) => onConsentChange("marketingOptional", value)} />}
+        />
+        <AccountRow
+          className="px-4"
+          title={t("general.analytics")}
+          desc={t("general.analyticsDesc")}
+          action={<ConsentButton checked={consents.behaviorAnalyticsOptional} disabled={savingConsent === "behaviorAnalyticsOptional"} onChange={(value) => onConsentChange("behaviorAnalyticsOptional", value)} />}
+        />
+        <AccountRow className="px-4" title={t("general.session")} desc={t("general.sessionDesc")} action={<ModalButton danger onClick={onLogout}>{t("general.logout")}</ModalButton>} />
+      </section>
+    </>
+  );
+}
+
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex rounded-[8px] border border-[#ded8cf] bg-[#fbfaf8] p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cx(
+            "h-7 whitespace-nowrap rounded-[6px] px-2.5 text-[12px] font-semibold transition",
+            option.value === value ? "bg-[#6c55f6] text-white shadow-sm" : "text-[#6d6861] hover:bg-white hover:text-[#36332f]"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function GeneralPanel({
   consents,
   savingConsent,
@@ -1003,25 +1129,31 @@ function StatsPanel() {
 
 function SupportPanel() {
   const { pushToast } = useBrainX();
-  const categories = ["기능 문의", "버그 신고", "결제/환불", "계정", "기타"] as const;
+  const categories: Array<{ value: SupportTicketPayload["category"]; label: string }> = [
+    { value: "FEATURE_REQUEST", label: "기능 문의" },
+    { value: "BUG", label: "버그 신고" },
+    { value: "BILLING", label: "결제/환불" },
+    { value: "ACCOUNT", label: "계정" },
+    { value: "OTHER", label: "기타" }
+  ];
   const statusLabel: Record<string, { label: string; color: string }> = {
-    RECEIVED: { label: "접수", color: "#6c55f6" },
+    OPEN: { label: "접수", color: "#6c55f6" },
     IN_PROGRESS: { label: "처리 중", color: "#b7791f" },
-    ANSWERED: { label: "답변 완료", color: "#168a4f" },
+    RESOLVED: { label: "답변 완료", color: "#168a4f" },
     CLOSED: { label: "종료", color: "#8c877f" }
   };
-  const [category, setCategory] = useState<(typeof categories)[number]>("기능 문의");
+  const [category, setCategory] = useState<SupportTicketPayload["category"]>("FEATURE_REQUEST");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [inquiries, setInquiries] = useState<SupportInquiry[]>([]);
-  const [selectedInquiry, setSelectedInquiry] = useState<SupportInquiry | null>(null);
+  const [inquiries, setInquiries] = useState<SupportTicket[]>([]);
+  const [selectedInquiry, setSelectedInquiry] = useState<SupportTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    getMySupportInquiries()
+    getMySupportTickets()
       .then((data) => {
         if (active) setInquiries(data);
       })
@@ -1044,7 +1176,7 @@ function SupportPanel() {
 
     setSubmitting(true);
     try {
-      const created = await createSupportInquiry({ category, title: nextTitle, content: nextContent });
+      const created = await createSupportTicket({ category, subject: nextTitle, body: nextContent });
       setInquiries((current) => [created, ...current]);
       setSelectedInquiry(created);
       setTitle("");
@@ -1065,7 +1197,7 @@ function SupportPanel() {
   };
 
   if (selectedInquiry) {
-    const status = statusLabel[selectedInquiry.status] ?? statusLabel.RECEIVED;
+    const status = statusLabel[selectedInquiry.status] ?? statusLabel.OPEN;
     return (
       <>
         <header className="mb-7">
@@ -1084,13 +1216,13 @@ function SupportPanel() {
               {status.label}
             </span>
           </div>
-          <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">{selectedInquiry.title}</h1>
+          <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">{selectedInquiry.subject}</h1>
           <p className="mt-3 text-[13px] text-[#6d6861]">문의 상세보기</p>
         </header>
 
         <section className="mb-7 rounded-[12px] border border-[#e5e0d8] px-5 py-5">
           <SectionLabel>문의 내용</SectionLabel>
-          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">{selectedInquiry.content}</p>
+          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">문의가 정상적으로 접수되었습니다.</p>
         </section>
 
         <section className="rounded-[12px] border border-[#e5e0d8] px-5 py-5">
@@ -1119,15 +1251,15 @@ function SupportPanel() {
         <div className="mb-4 flex flex-wrap gap-2">
           {categories.map((item) => (
             <button
-              key={item}
+              key={item.value}
               type="button"
-              onClick={() => setCategory(item)}
+              onClick={() => setCategory(item.value)}
               className={cx(
                 "h-8 rounded-full border px-3 text-[12px] font-semibold transition",
-                category === item ? "border-[#6c55f6] bg-[#6c55f6] text-white" : "border-[#ded8cf] bg-white text-[#6d6861] hover:bg-[#f2efea]"
+                category === item.value ? "border-[#6c55f6] bg-[#6c55f6] text-white" : "border-[#ded8cf] bg-white text-[#6d6861] hover:bg-[#f2efea]"
               )}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>
@@ -1165,10 +1297,10 @@ function SupportPanel() {
         ) : inquiries.length ? (
           <div className="space-y-3">
             {inquiries.map((item) => {
-              const status = statusLabel[item.status] ?? statusLabel.RECEIVED;
+              const status = statusLabel[item.status] ?? statusLabel.OPEN;
               return (
                 <button
-                  key={item.inquiryId}
+                  key={item.ticketId}
                   type="button"
                   onClick={() => setSelectedInquiry(item)}
                   className="block w-full rounded-[12px] border border-[#e5e0d8] px-4 py-4 text-left transition hover:border-[#cfc7bb] hover:bg-[#fbfaf8]"
@@ -1179,13 +1311,15 @@ function SupportPanel() {
                         <span className="rounded-md bg-[#eeeafe] px-2 py-0.5 text-[10px] font-bold text-[#6c55f6]">{item.category}</span>
                         <span className="text-[11px] text-[#8c877f]">{formatDate(item.createdAt)}</span>
                       </div>
-                      <h2 className="truncate text-[14px] font-bold text-[#36332f]">{item.title}</h2>
+                      <h2 className="truncate text-[14px] font-bold text-[#36332f]">{item.subject}</h2>
                     </div>
                     <span className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: `${status.color}18`, color: status.color }}>
                       {status.label}
                     </span>
                   </div>
-                  <p className="line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[#6d6861]">{item.content}</p>
+                  <p className="line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[#6d6861]">
+                    {item.hasNewReply ? "새 답변이 도착했습니다." : "문의가 정상적으로 접수되었습니다."}
+                  </p>
                   <div className="mt-3 text-[11px] font-semibold text-[#6c55f6]">상세보기</div>
                 </button>
               );
