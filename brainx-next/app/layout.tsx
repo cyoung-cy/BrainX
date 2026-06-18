@@ -41,8 +41,8 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="ko" suppressHydrationWarning className={`${display.variable} ${mono.variable} dark`}>
-      <body className="min-h-screen overflow-x-hidden bg-bg text-txt antialiased">
+    <html lang="ko" suppressHydrationWarning className={`${display.variable} ${mono.variable}`}>
+      <body suppressHydrationWarning className="min-h-screen overflow-x-hidden bg-bg text-txt antialiased">
         <Script id="brainx-theme-init" strategy="beforeInteractive">
           {themeScript}
         </Script>
