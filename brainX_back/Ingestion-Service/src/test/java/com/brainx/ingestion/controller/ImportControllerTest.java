@@ -61,7 +61,7 @@ class ImportControllerTest {
 
         given(importService.generateNotionOAuthUrl(USER_ID)).willReturn(response);
 
-        mockMvc.perform(post("/v1/imports/notion/oauth/authorize")
+        mockMvc.perform(post("/api/v1/imports/notion/oauth/authorize")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf()))
                 .andDo(print())
@@ -89,7 +89,7 @@ class ImportControllerTest {
                 "state", "st_abc123456789"
         );
 
-        mockMvc.perform(post("/v1/imports/notion/oauth/callback")
+        mockMvc.perform(post("/api/v1/imports/notion/oauth/callback")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -104,7 +104,7 @@ class ImportControllerTest {
     void notionCallback_missingCode_returns400() throws Exception {
         Map<String, String> body = Map.of("state", "st_abc123456789"); // code 없음
 
-        mockMvc.perform(post("/v1/imports/notion/oauth/callback")
+        mockMvc.perform(post("/api/v1/imports/notion/oauth/callback")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -119,7 +119,7 @@ class ImportControllerTest {
     void notionCallback_missingState_returns400() throws Exception {
         Map<String, String> body = Map.of("code", "notion-auth-code-xyz"); // state 없음
 
-        mockMvc.perform(post("/v1/imports/notion/oauth/callback")
+        mockMvc.perform(post("/api/v1/imports/notion/oauth/callback")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -143,7 +143,7 @@ class ImportControllerTest {
 
         given(importService.getNotionPages(USER_ID, "account-abc-123")).willReturn(pages);
 
-        mockMvc.perform(get("/v1/imports/notion/pages")
+        mockMvc.perform(get("/api/v1/imports/notion/pages")
                         .with(user(USER_ID).roles("USER"))
                         .param("integrationAccountId", "account-abc-123"))
                 .andDo(print())
@@ -162,7 +162,7 @@ class ImportControllerTest {
     void getNotionPages_empty() throws Exception {
         given(importService.getNotionPages(USER_ID, "account-abc-123")).willReturn(List.of());
 
-        mockMvc.perform(get("/v1/imports/notion/pages")
+        mockMvc.perform(get("/api/v1/imports/notion/pages")
                         .with(user(USER_ID).roles("USER"))
                         .param("integrationAccountId", "account-abc-123"))
                 .andExpect(status().isOk())
@@ -190,7 +190,7 @@ class ImportControllerTest {
                 "mode", "IMPORT"
         );
 
-        mockMvc.perform(post("/v1/imports/notion/jobs")
+        mockMvc.perform(post("/api/v1/imports/notion/jobs")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -218,7 +218,7 @@ class ImportControllerTest {
                 "mode", "IMPORT"
         );
 
-        mockMvc.perform(post("/v1/imports/notion/jobs")
+        mockMvc.perform(post("/api/v1/imports/notion/jobs")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -234,7 +234,7 @@ class ImportControllerTest {
     void createNotionJob_missingAccountId_returns400() throws Exception {
         Map<String, String> body = Map.of("sourceId", "page-id-1"); // integrationAccountId 없음
 
-        mockMvc.perform(post("/v1/imports/notion/jobs")
+        mockMvc.perform(post("/api/v1/imports/notion/jobs")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -248,7 +248,7 @@ class ImportControllerTest {
     void createNotionJob_missingSourceId_returns400() throws Exception {
         Map<String, String> body = Map.of("integrationAccountId", "account-abc-123"); // sourceId 없음
 
-        mockMvc.perform(post("/v1/imports/notion/jobs")
+        mockMvc.perform(post("/api/v1/imports/notion/jobs")
                         .with(user(USER_ID).roles("USER"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -274,7 +274,7 @@ class ImportControllerTest {
 
         given(importService.getImportJobStatus(USER_ID, "job-001")).willReturn(response);
 
-        mockMvc.perform(get("/v1/imports/job-001")
+        mockMvc.perform(get("/api/v1/imports/job-001")
                         .with(user(USER_ID).roles("USER")))
                 .andDo(print())
                 .andExpect(status().isOk())
@@ -297,7 +297,7 @@ class ImportControllerTest {
 
         given(importService.getImportJobStatus(USER_ID, "job-002")).willReturn(response);
 
-        mockMvc.perform(get("/v1/imports/job-002")
+        mockMvc.perform(get("/api/v1/imports/job-002")
                         .with(user(USER_ID).roles("USER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("FAILED"))
@@ -311,7 +311,7 @@ class ImportControllerTest {
     @Test
     @DisplayName("인증 없이 요청하면 401")
     void unauthenticated_returns401() throws Exception {
-        mockMvc.perform(get("/v1/imports/notion/pages")
+        mockMvc.perform(get("/api/v1/imports/notion/pages")
                         .param("integrationAccountId", "account-abc-123"))
                 .andExpect(status().isUnauthorized());
     }

@@ -7,7 +7,8 @@ import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
 import { cx } from "@/lib/utils";
-import { readAuthSession, type AuthSession } from "@/lib/auth-api";
+import { isDemoSession, readAuthSession, type AuthSession } from "@/lib/auth-api";
+import { getMyProfile } from "@/lib/user-api";
 
 const NAV = [
   { id: "home", labelKey: "nav.home" as const, icon: "home" as const, path: "/home" },
@@ -260,7 +261,10 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { pushToast, t } = useBrainX();
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
-  const displayName = session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
+  const [profileName, setProfileName] = useState("");
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const displayName = profileName || session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
+  const displayImageUrl = profileImageUrl ?? session?.profileImageUrl;
   const mobileNav = [
     { label: t("nav.home"), icon: "home" as const, path: "/home" },
     { label: t("nav.notes"), icon: "notes" as const, path: "/notes/n1" },
@@ -275,6 +279,42 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener("brainx-auth-session-changed", syncSession);
     return () => window.removeEventListener("brainx-auth-session-changed", syncSession);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!session?.accessToken) {
+      setProfileName("");
+      setProfileImageUrl(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    if (isDemoSession(session)) {
+      setProfileName(session.nickname?.trim() || "BrainX Demo");
+      setProfileImageUrl(session.profileImageUrl ?? null);
+      return () => {
+        active = false;
+      };
+    }
+
+    getMyProfile()
+      .then((profile) => {
+        if (!active) return;
+        setProfileName(profile.nickname?.trim() || profile.email.split("@")[0] || "");
+        setProfileImageUrl(profile.profileImageUrl);
+      })
+      .catch(() => {
+        if (!active) return;
+        setProfileName("");
+        setProfileImageUrl(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, session?.userId, session?.nickname, session?.profileImageUrl]);
 
   return (
     <header className="relative z-10 border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
@@ -292,9 +332,9 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <div className="mx-1 hidden h-6 w-px bg-line/60 md:block" />
           <button type="button" onClick={onOpenSettings} className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60">
-            <Avatar name={displayName} size={32} imageUrl={session?.profileImageUrl} />
+            <Avatar name={displayName} size={32} imageUrl={displayImageUrl} />
             <div className="hidden text-left leading-tight sm:block">
-              <div className="text-[13px] font-semibold text-txt">김연우</div>
+              <div className="text-[13px] font-semibold text-txt">{displayName}</div>
               <div className="text-[11px] text-txt3">Free 플랜</div>
             </div>
           </button>

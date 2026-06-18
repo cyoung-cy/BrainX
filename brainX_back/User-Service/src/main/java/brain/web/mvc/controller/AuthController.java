@@ -19,6 +19,7 @@ import brain.web.mvc.dto.response.AuthResponses.OAuthCallbackResponse;
 import brain.web.mvc.dto.response.AuthResponses.TemporaryPasswordIssueResponse;
 import brain.web.mvc.dto.response.AuthResponses.TokenRefreshResponse;
 import brain.web.mvc.entity.EmailVerification;
+import brain.web.mvc.exception.ApiException;
 import brain.web.mvc.service.AuthService;
 import brain.web.mvc.service.EmailVerificationService;
 import jakarta.validation.Valid;
@@ -72,9 +73,7 @@ public class AuthController {
                 request.purpose()
         );
         if (!verified) {
-            return ResponseEntity
-                    .badRequest()
-                    .body(ApiResponse.failure("인증 코드가 올바르지 않습니다."));
+            throw new ApiException(HttpStatus.BAD_REQUEST, "인증 코드가 올바르지 않습니다.");
         }
 
         EmailVerificationCheckResponse response = EmailVerificationCheckResponse.builder()

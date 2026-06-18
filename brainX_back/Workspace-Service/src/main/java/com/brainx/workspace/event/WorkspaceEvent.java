@@ -12,6 +12,8 @@ public record WorkspaceEvent(
         String tenantId,
         String userId,
         String correlationId,
+        String causationId,
+        String idempotencyKey,
         String channel,
         Map<String, Object> payload
 ) {

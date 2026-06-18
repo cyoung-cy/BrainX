@@ -27,7 +27,7 @@ import {
   type ConsentPayload,
   type MyProfile
 } from "@/lib/user-api";
-import { createSupportInquiry, getMySupportInquiries, type SupportInquiry } from "@/lib/support-api";
+import { createSupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketPayload } from "@/lib/support-api";
 import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
@@ -1129,25 +1129,31 @@ function StatsPanel() {
 
 function SupportPanel() {
   const { pushToast } = useBrainX();
-  const categories = ["기능 문의", "버그 신고", "결제/환불", "계정", "기타"] as const;
+  const categories: Array<{ value: SupportTicketPayload["category"]; label: string }> = [
+    { value: "FEATURE_REQUEST", label: "기능 문의" },
+    { value: "BUG", label: "버그 신고" },
+    { value: "BILLING", label: "결제/환불" },
+    { value: "ACCOUNT", label: "계정" },
+    { value: "OTHER", label: "기타" }
+  ];
   const statusLabel: Record<string, { label: string; color: string }> = {
-    RECEIVED: { label: "접수", color: "#6c55f6" },
+    OPEN: { label: "접수", color: "#6c55f6" },
     IN_PROGRESS: { label: "처리 중", color: "#b7791f" },
-    ANSWERED: { label: "답변 완료", color: "#168a4f" },
+    RESOLVED: { label: "답변 완료", color: "#168a4f" },
     CLOSED: { label: "종료", color: "#8c877f" }
   };
-  const [category, setCategory] = useState<(typeof categories)[number]>("기능 문의");
+  const [category, setCategory] = useState<SupportTicketPayload["category"]>("FEATURE_REQUEST");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [inquiries, setInquiries] = useState<SupportInquiry[]>([]);
-  const [selectedInquiry, setSelectedInquiry] = useState<SupportInquiry | null>(null);
+  const [inquiries, setInquiries] = useState<SupportTicket[]>([]);
+  const [selectedInquiry, setSelectedInquiry] = useState<SupportTicket | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    getMySupportInquiries()
+    getMySupportTickets()
       .then((data) => {
         if (active) setInquiries(data);
       })
@@ -1170,7 +1176,7 @@ function SupportPanel() {
 
     setSubmitting(true);
     try {
-      const created = await createSupportInquiry({ category, title: nextTitle, content: nextContent });
+      const created = await createSupportTicket({ category, subject: nextTitle, body: nextContent });
       setInquiries((current) => [created, ...current]);
       setSelectedInquiry(created);
       setTitle("");
@@ -1191,7 +1197,7 @@ function SupportPanel() {
   };
 
   if (selectedInquiry) {
-    const status = statusLabel[selectedInquiry.status] ?? statusLabel.RECEIVED;
+    const status = statusLabel[selectedInquiry.status] ?? statusLabel.OPEN;
     return (
       <>
         <header className="mb-7">
@@ -1210,13 +1216,13 @@ function SupportPanel() {
               {status.label}
             </span>
           </div>
-          <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">{selectedInquiry.title}</h1>
+          <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">{selectedInquiry.subject}</h1>
           <p className="mt-3 text-[13px] text-[#6d6861]">문의 상세보기</p>
         </header>
 
         <section className="mb-7 rounded-[12px] border border-[#e5e0d8] px-5 py-5">
           <SectionLabel>문의 내용</SectionLabel>
-          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">{selectedInquiry.content}</p>
+          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">문의가 정상적으로 접수되었습니다.</p>
         </section>
 
         <section className="rounded-[12px] border border-[#e5e0d8] px-5 py-5">
@@ -1245,15 +1251,15 @@ function SupportPanel() {
         <div className="mb-4 flex flex-wrap gap-2">
           {categories.map((item) => (
             <button
-              key={item}
+              key={item.value}
               type="button"
-              onClick={() => setCategory(item)}
+              onClick={() => setCategory(item.value)}
               className={cx(
                 "h-8 rounded-full border px-3 text-[12px] font-semibold transition",
-                category === item ? "border-[#6c55f6] bg-[#6c55f6] text-white" : "border-[#ded8cf] bg-white text-[#6d6861] hover:bg-[#f2efea]"
+                category === item.value ? "border-[#6c55f6] bg-[#6c55f6] text-white" : "border-[#ded8cf] bg-white text-[#6d6861] hover:bg-[#f2efea]"
               )}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </div>
@@ -1291,10 +1297,10 @@ function SupportPanel() {
         ) : inquiries.length ? (
           <div className="space-y-3">
             {inquiries.map((item) => {
-              const status = statusLabel[item.status] ?? statusLabel.RECEIVED;
+              const status = statusLabel[item.status] ?? statusLabel.OPEN;
               return (
                 <button
-                  key={item.inquiryId}
+                  key={item.ticketId}
                   type="button"
                   onClick={() => setSelectedInquiry(item)}
                   className="block w-full rounded-[12px] border border-[#e5e0d8] px-4 py-4 text-left transition hover:border-[#cfc7bb] hover:bg-[#fbfaf8]"
@@ -1305,13 +1311,15 @@ function SupportPanel() {
                         <span className="rounded-md bg-[#eeeafe] px-2 py-0.5 text-[10px] font-bold text-[#6c55f6]">{item.category}</span>
                         <span className="text-[11px] text-[#8c877f]">{formatDate(item.createdAt)}</span>
                       </div>
-                      <h2 className="truncate text-[14px] font-bold text-[#36332f]">{item.title}</h2>
+                      <h2 className="truncate text-[14px] font-bold text-[#36332f]">{item.subject}</h2>
                     </div>
                     <span className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold" style={{ backgroundColor: `${status.color}18`, color: status.color }}>
                       {status.label}
                     </span>
                   </div>
-                  <p className="line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[#6d6861]">{item.content}</p>
+                  <p className="line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[#6d6861]">
+                    {item.hasNewReply ? "새 답변이 도착했습니다." : "문의가 정상적으로 접수되었습니다."}
+                  </p>
                   <div className="mt-3 text-[11px] font-semibold text-[#6c55f6]">상세보기</div>
                 </button>
               );

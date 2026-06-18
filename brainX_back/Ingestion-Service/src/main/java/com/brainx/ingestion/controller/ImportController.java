@@ -13,20 +13,20 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/v1/imports")
+@RequestMapping("/api/v1/imports")
 @RequiredArgsConstructor
 public class ImportController {
 
     private final ImportService importService;
 
-    // POST /v1/imports/notion/oauth/authorize
+    // POST /api/v1/imports/notion/oauth/authorize
     @PostMapping("/notion/oauth/authorize")
     public ResponseEntity<ApiResponse<NotionAuthorizeResponse>> authorizeNotion(Authentication auth) {
         NotionAuthorizeResponse data = importService.generateNotionOAuthUrl(auth.getName());
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 연결 URL이 생성되었습니다."));
     }
 
-    // POST /v1/imports/notion/oauth/callback
+    // POST /api/v1/imports/notion/oauth/callback
     @PostMapping("/notion/oauth/callback")
     public ResponseEntity<ApiResponse<IntegrationConnectedResponse>> notionCallback(
             Authentication auth,
@@ -35,7 +35,7 @@ public class ImportController {
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 연동이 완료되었습니다."));
     }
 
-    // GET /v1/imports/notion/pages?integrationAccountId=xxx
+    // GET /api/v1/imports/notion/pages?integrationAccountId=xxx
     @GetMapping("/notion/pages")
     public ResponseEntity<ApiResponse<NotionPageListResponse>> getNotionPages(
             Authentication auth,
@@ -45,7 +45,7 @@ public class ImportController {
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 페이지 목록 조회 성공"));
     }
 
-    // POST /v1/imports/notion/jobs
+    // POST /api/v1/imports/notion/jobs
     @PostMapping("/notion/jobs")
     public ResponseEntity<ApiResponse<ImportJobCreatedResponse>> createNotionJob(
             Authentication auth,
@@ -62,7 +62,7 @@ public class ImportController {
                 .body(ApiResponse.success(data, message));
     }
 
-    // POST /v1/imports/obsidian/jobs
+    // POST /api/v1/imports/obsidian/jobs
     @PostMapping("/obsidian/jobs")
     public ResponseEntity<ApiResponse<ImportJobCreatedResponse>> createObsidianJob(
             Authentication auth,
@@ -72,7 +72,7 @@ public class ImportController {
                 .body(ApiResponse.success(data, "Obsidian Vault 가져오기를 시작합니다."));
     }
 
-    // GET /v1/imports/{importJobId}
+    // GET /api/v1/imports/{importJobId}
     @GetMapping("/{importJobId}")
     public ResponseEntity<ApiResponse<ImportJobStatusResponse>> getImportJobStatus(
             Authentication auth,
