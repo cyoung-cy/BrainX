@@ -29,8 +29,11 @@ import {
 } from "@/lib/user-api";
 import { createSupportInquiry, getMySupportInquiries, type SupportInquiry } from "@/lib/support-api";
 import { cx } from "@/lib/utils";
+<<<<<<< HEAD
+=======
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
+>>>>>>> main
 
 type TabId = "profile" | "general" | "notifications" | "usage" | "stats" | "support" | "upgrade";
 type SocialProvider = "google" | "kakao" | "naver";
@@ -110,8 +113,11 @@ function profileFromSession(): MyProfile | null {
     email: session.email ?? "",
     nickname: session.nickname?.trim() || session.email?.split("@")[0] || "",
     profileImageUrl: session.profileImageUrl ?? null,
+<<<<<<< HEAD
+=======
     language: "ko",
     theme: "system",
+>>>>>>> main
     role: session.role ?? "ROLE_USER",
     security: {
       twoFactorEnabled: false,
@@ -129,15 +135,22 @@ function profileFromSession(): MyProfile | null {
 
 function mergeProfileUpdate(
   current: MyProfile | null,
+<<<<<<< HEAD
+  data: { userId: string; nickname: string; profileImageUrl: string | null }
+=======
   data: { userId: string; nickname: string; profileImageUrl: string | null; language?: LanguageCode; theme?: ThemeMode }
+>>>>>>> main
 ): MyProfile {
   const base = current ?? profileFromSession() ?? {
     userId: data.userId,
     email: readAuthSession()?.email ?? "",
     nickname: data.nickname,
     profileImageUrl: data.profileImageUrl,
+<<<<<<< HEAD
+=======
     language: data.language ?? "ko",
     theme: data.theme ?? "system",
+>>>>>>> main
     role: readAuthSession()?.role ?? "ROLE_USER",
     security: {
       twoFactorEnabled: false,
@@ -156,9 +169,13 @@ function mergeProfileUpdate(
     ...base,
     userId: data.userId || base.userId,
     nickname: data.nickname,
+<<<<<<< HEAD
+    profileImageUrl: data.profileImageUrl
+=======
     profileImageUrl: data.profileImageUrl,
     language: data.language ?? base.language,
     theme: data.theme ?? base.theme
+>>>>>>> main
   };
 }
 
@@ -302,7 +319,11 @@ function MiniBars({
 export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
+<<<<<<< HEAD
+  const { pushToast, sidebarCollapsed } = useBrainX();
+=======
   const { pushToast, sidebarCollapsed, language, setLanguage, theme, setTheme, t } = useBrainX();
+>>>>>>> main
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<TabId>("profile");
   const [profile, setProfile] = useState<MyProfile | null>(() => profileFromSession());
@@ -342,8 +363,11 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
           marketingOptional: data.consents.marketingOptional,
           behaviorAnalyticsOptional: data.consents.behaviorAnalyticsOptional
         });
+<<<<<<< HEAD
+=======
         setLanguage(data.language);
         setTheme(data.theme);
+>>>>>>> main
       })
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "프로필을 불러오지 못했습니다.", "err");
@@ -535,6 +559,8 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
     }
   };
 
+<<<<<<< HEAD
+=======
   const saveLanguage = async (nextLanguage: LanguageCode) => {
     setLanguage(nextLanguage);
     try {
@@ -557,6 +583,7 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
     }
   };
 
+>>>>>>> main
   if (!mounted || !open) return null;
 
   return createPortal(
@@ -652,6 +679,9 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
                 />
               ) : null}
               {tab === "general" ? (
+<<<<<<< HEAD
+                <GeneralPanel consents={consents} savingConsent={savingConsent} onConsentChange={saveConsent} onLogout={handleLogout} />
+=======
                 <GeneralSettingsPanel
                   language={language}
                   theme={theme}
@@ -662,6 +692,7 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
                   onConsentChange={saveConsent}
                   onLogout={handleLogout}
                 />
+>>>>>>> main
               ) : null}
               {tab === "notifications" ? <NotificationsPanel /> : null}
               {tab === "usage" ? <UsagePanel /> : null}
@@ -879,6 +910,8 @@ function ConsentButton({
   );
 }
 
+<<<<<<< HEAD
+=======
 function GeneralSettingsPanel({
   language,
   theme,
@@ -964,6 +997,7 @@ function SegmentedControl<T extends string>({
   );
 }
 
+>>>>>>> main
 function GeneralPanel({
   consents,
   savingConsent,

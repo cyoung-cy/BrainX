@@ -3,18 +3,30 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+<<<<<<< HEAD
+import { loginLocal } from "@/lib/auth-api";
+=======
 import { issueTemporaryPassword, loginLocal, requestEmailVerification, verifyEmailCode } from "@/lib/auth-api";
+>>>>>>> main
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn } from "@/components/brainx-ui";
 import { AuthShell, Field, SocialButtons } from "@/components/public/auth-shared";
 
+<<<<<<< HEAD
+=======
 type ResetStep = "idle" | "sent" | "verified";
 
+>>>>>>> main
 export function LoginScreen() {
   const router = useRouter();
   const { pushToast } = useBrainX();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+<<<<<<< HEAD
+  const [submitting, setSubmitting] = useState(false);
+
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting;
+=======
   const [resetEmail, setResetEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
@@ -26,6 +38,7 @@ export function LoginScreen() {
   const canRequestResetCode = resetEmail.trim().length > 0 && !resetSubmitting;
   const canVerifyResetCode = resetEmail.trim().length > 0 && verificationCode.trim().length > 0 && !resetSubmitting;
   const canIssueTemporaryPassword = resetStep === "verified" && canVerifyResetCode;
+>>>>>>> main
 
   const handleLogin = async () => {
     if (!canSubmit) return;
@@ -45,6 +58,12 @@ export function LoginScreen() {
     }
   };
 
+<<<<<<< HEAD
+  return (
+    <AuthShell>
+      <h1 className="mb-1.5 text-[26px] font-bold tracking-tight">다시 만나서 반가워요</h1>
+      <p className="mb-7 text-[14px] text-txt2">BrainX 계정으로 로그인하세요.</p>
+=======
   const openReset = () => {
     setResetOpen(true);
     setResetEmail(email);
@@ -102,6 +121,7 @@ export function LoginScreen() {
     <AuthShell>
       <h1 className="mb-1.5 text-[28px] font-bold tracking-tight">다시 오신 걸 환영해요</h1>
       <p className="mb-7 text-[16px] text-txt2">BrainX 계정으로 로그인하세요.</p>
+>>>>>>> main
       <Field
         label="이메일"
         type="email"
@@ -114,17 +134,31 @@ export function LoginScreen() {
       <Field
         label="비밀번호"
         type="password"
+<<<<<<< HEAD
+        placeholder="비밀번호"
+=======
         placeholder="비밀번호 입력"
+>>>>>>> main
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         autoComplete="current-password"
         disabled={submitting}
         right={
+<<<<<<< HEAD
+          <button type="button" className="text-[12px] font-normal text-primary">
+=======
           <button type="button" onClick={openReset} className="text-[14px] font-normal text-primary">
+>>>>>>> main
             비밀번호 찾기
           </button>
         }
       />
+<<<<<<< HEAD
+      <Btn variant="primary" size="lg" className="mt-2 w-full" disabled={!canSubmit} onClick={handleLogin}>
+        {submitting ? "로그인 중..." : "로그인"}
+      </Btn>
+      <div className="my-6 flex items-center gap-3 text-[12px] text-txt3">
+=======
       {resetOpen ? (
         <div className="mb-4 rounded-xl border border-line/60 bg-surface2/40 p-3">
           <div className="mb-3 flex items-start justify-between gap-3">
@@ -176,12 +210,17 @@ export function LoginScreen() {
         {submitting ? "로그인 중..." : "로그인"}
       </Btn>
       <div className="my-6 flex items-center gap-3 text-[14px] text-txt3">
+>>>>>>> main
         <div className="h-px flex-1 bg-line/60" />
         또는
         <div className="h-px flex-1 bg-line/60" />
       </div>
       <SocialButtons />
+<<<<<<< HEAD
+      <p className="mt-7 text-center text-[13px] text-txt2">
+=======
       <p className="mt-7 text-center text-[15px] text-txt2">
+>>>>>>> main
         계정이 없으신가요?{" "}
         <button type="button" onClick={() => router.push("/signup")} className="font-medium text-primary">
           회원가입

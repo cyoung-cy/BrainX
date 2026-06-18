@@ -77,12 +77,20 @@ function EditorSkeleton() {
 }
 
 export default function EditorLabPage() {
+<<<<<<< HEAD
+  const { theme, setTheme } = useBrainX();
+=======
   const { effectiveTheme, setTheme } = useBrainX();
+>>>>>>> main
   const [tab, setTab] = useState<Tab>("tiptap");
   const [fontSize, setFontSize] = useState<EditorFontSize>("base");
 
   const activeLabel = tab === "tiptap" ? "TipTap" : "BlockNote";
+<<<<<<< HEAD
+  const isLight = theme === "light";
+=======
   const isLight = effectiveTheme === "light";
+>>>>>>> main
 
   return (
     <div className="min-h-screen" data-route>

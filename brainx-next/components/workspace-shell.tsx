@@ -18,7 +18,14 @@ const NAV = [
 ];
 
 const NAV2 = [
+<<<<<<< HEAD
+  { id: "billing", label: "플랜·결제", icon: "bill" as const, path: "/billing" },
+  { id: "settings", label: "설정", icon: "settings" as const, path: "/settings" },
+  { id: "support", label: "문의하기", icon: "chat" as const, path: "/support" },
+  { id: "admin", label: "관리자", icon: "shield" as const, path: "/admin" }
+=======
   { id: "admin", labelKey: "nav.admin" as const, icon: "shield" as const, path: "/admin" }
+>>>>>>> main
 ];
 
 function isActive(pathname: string, path: string) {
@@ -210,7 +217,11 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
       <nav className="scroll flex-1 space-y-1 overflow-y-auto px-3">
         {NAV.map((item) => (
+<<<<<<< HEAD
+          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
+=======
           <SidebarItem key={item.id} {...item} label={t(item.labelKey)} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
+>>>>>>> main
         ))}
         <div className="my-3 mx-1 h-px bg-line/50" />
         {NAV2.map((item) => (
@@ -257,16 +268,29 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
+<<<<<<< HEAD
+  const { pushToast } = useBrainX();
+=======
   const { pushToast, t } = useBrainX();
+>>>>>>> main
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
   const displayName = session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
   const mobileNav = [
+<<<<<<< HEAD
+    { label: "홈", icon: "home" as const, path: "/home" },
+    { label: "노트", icon: "notes" as const, path: "/notes/n1" },
+    { label: "그래프", icon: "graph" as const, path: "/graph" },
+    { label: "챗", icon: "chat" as const, path: "/chat" },
+    { label: "가져오기", icon: "import" as const, path: "/import" },
+    { label: "내 페이지", icon: "dash" as const, path: "/mypage" }
+=======
     { label: t("nav.home"), icon: "home" as const, path: "/home" },
     { label: t("nav.notes"), icon: "notes" as const, path: "/notes/n1" },
     { label: t("nav.graph"), icon: "graph" as const, path: "/graph" },
     { label: t("nav.chat"), icon: "chat" as const, path: "/chat" },
     { label: t("nav.import"), icon: "import" as const, path: "/import" }
+>>>>>>> main
   ];
 
   useEffect(() => {
@@ -294,8 +318,8 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button type="button" onClick={onOpenSettings} className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60">
             <Avatar name={displayName} size={32} imageUrl={session?.profileImageUrl} />
             <div className="hidden text-left leading-tight sm:block">
-              <div className="text-[13px] font-semibold text-txt">김연우</div>
-              <div className="text-[11px] text-txt3">Free 플랜</div>
+              <div className="max-w-[120px] truncate text-[13px] font-semibold text-txt">{displayName}</div>
+              <div className="text-[11px] text-txt3">{session?.role ?? "Free 플랜"}</div>
             </div>
           </button>
         </div>

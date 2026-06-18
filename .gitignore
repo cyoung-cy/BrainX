@@ -16,7 +16,21 @@ build/
 brainX_back/User-Service/src/main/resources/application.yml
 brainX_back/User-Service/src/main/resources/application.yaml
 !brainX_back/User-Service/src/main/resources/application-example.yml
+<<<<<<< HEAD
+brainX_back/Ingestion-Service/src/main/resources/application.yml
+brainX_back/Ingestion-Service/src/main/resources/application-local.yml
+!brainX_back/Ingestion-Service/src/main/resources/application-example.yml
+=======
+>>>>>>> main
 
 # OS
 .DS_Store
 Thumbs.db
+<<<<<<< HEAD
+
+# Secrets (로컬 전용, git에 올리지 않음)
+.env
+application-local.yml
+**/application-local.yml
+=======
+>>>>>>> main

@@ -43,6 +43,8 @@ type GraphControls = {
   bridges: () => void;
 };
 
+<<<<<<< HEAD
+=======
 type PlanetFlowNode = Node<{
   label: string;
   color: string;
@@ -61,6 +63,7 @@ type OrbitFlowEdge = Edge<{
   theme: "2d" | "universe";
 }>;
 
+>>>>>>> main
 function seededUnit(seed: string) {
   let hash = 2166136261;
   for (let index = 0; index < seed.length; index += 1) {

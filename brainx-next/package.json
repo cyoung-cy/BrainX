@@ -19,14 +19,20 @@
     "@tiptap/pm": "^3.26.0",
     "@tiptap/react": "^3.26.0",
     "@tiptap/starter-kit": "^3.26.0",
+<<<<<<< HEAD
+=======
     "@xyflow/react": "^12.11.0",
     "framer-motion": "^12.40.0",
+>>>>>>> main
     "lowlight": "^3.3.0",
     "lucide-react": "^1.17.0",
     "next": "16.2.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+<<<<<<< HEAD
+=======
     "react-parallax-tilt": "^1.7.331",
+>>>>>>> main
     "shiki": "^4.2.0"
   },
   "devDependencies": {

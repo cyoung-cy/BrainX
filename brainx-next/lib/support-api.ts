@@ -1,6 +1,10 @@
 "use client";
 
+<<<<<<< HEAD
+import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+=======
 import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+>>>>>>> main
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
@@ -30,10 +34,13 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
     throw new Error("로그인이 필요합니다.");
   }
 
+<<<<<<< HEAD
+=======
   if (isDemoSession(session)) {
     return demoSupportResponse<T>(path, init);
   }
 
+>>>>>>> main
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -57,6 +64,8 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
   return payload.data as T;
 }
 
+<<<<<<< HEAD
+=======
 function parseBody<T>(init?: RequestInit): Partial<T> {
   if (!init?.body || typeof init.body !== "string") return {};
   try {
@@ -99,6 +108,7 @@ function demoSupportResponse<T>(path: string, init?: RequestInit): T {
   throw new Error("데모 모드에서 지원하지 않는 고객지원 API입니다.");
 }
 
+>>>>>>> main
 export function getMySupportInquiries() {
   return authedRequest<SupportInquiry[]>("/api/v1/support/inquiries");
 }

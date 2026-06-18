@@ -2343,6 +2343,15 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-completed.v1.dlq
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Ingestion-Service currently processes imports synchronously and does not
+        publish this event. Job result (COMPLETED/FAILED) is returned directly
+        in the HTTP 202 response. Kafka publishing is planned when async
+        processing is introduced.
+=======
+>>>>>>> main
     ImportJobFailed:
       name: ImportJobFailed
       title: ImportJobFailed
@@ -2370,6 +2379,13 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-failed.v1.dlq
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Failure is currently returned inline in the HTTP 202 response body
+        (status: FAILED). This event is not published to Kafka.
+=======
+>>>>>>> main
     ImportJobRequested:
       name: ImportJobRequested
       title: ImportJobRequested
@@ -2396,6 +2412,14 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.import-job-requested.v1.dlq
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        The import job is processed synchronously in the HTTP request thread.
+        No job-requested event is published to Kafka. This event would be
+        needed once async worker-based processing is introduced.
+=======
+>>>>>>> main
     InsightReportCompleted:
       name: InsightReportCompleted
       title: InsightReportCompleted
@@ -2474,6 +2498,15 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.content.ingestion.publishing.integration-connected.v1.dlq
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Notion OAuth callback (POST /v1/imports/notion/oauth/callback) completes
+        successfully and stores the integration account, but does not publish
+        this event to Kafka. Admin-Service cannot observe new integrations until
+        this event is wired.
+=======
+>>>>>>> main
     InvoiceIssued:
       name: InvoiceIssued
       title: InvoiceIssued
@@ -2965,6 +2998,13 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobCompletedPayload'
       x-producer-service: Ingestion-Service
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 결과가 HTTP 200 응답의 clipboardContent/openUrl로
+        즉시 반환되므로 이 이벤트는 발행되지 않는다.
+=======
+>>>>>>> main
       x-consumer-services:
       - User-Service
       - Admin-Service
@@ -2992,6 +3032,13 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobFailedPayload'
       x-producer-service: Ingestion-Service
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 실패도 HTTP 200 응답의 error 필드로 반환되므로
+        이 이벤트는 발행되지 않는다.
+=======
+>>>>>>> main
       x-consumer-services:
       - User-Service
       - Admin-Service
@@ -3019,6 +3066,13 @@ components:
             payload:
               $ref: '#/components/schemas/PublishJobRequestedPayload'
       x-producer-service: Ingestion-Service
+<<<<<<< HEAD
+      x-implementation-status: not-implemented
+      x-implementation-note: >
+        1번 방식(동기 처리)에서는 Kafka 워커를 깨울 필요가 없으므로
+        이 이벤트는 발행되지 않는다.
+=======
+>>>>>>> main
       x-consumer-services:
       - Ingestion-Service
       x-delivery:
@@ -3575,7 +3629,10 @@ components:
       additionalProperties: false
     ConsentRecordedPayload:
       type: object
+<<<<<<< HEAD
+=======
       description: Consent snapshot recorded during email signup or OAuth onboarding completion.
+>>>>>>> main
       properties:
         userId:
           type: string
@@ -3655,6 +3712,8 @@ components:
         profileImageAssetId:
           type: string
           nullable: true
+<<<<<<< HEAD
+=======
         language:
           type: string
           enum:
@@ -3668,6 +3727,7 @@ components:
           - light
           - system
           nullable: true
+>>>>>>> main
       required:
       - userId
       additionalProperties: false
@@ -3679,6 +3739,11 @@ components:
         changedAt:
           type: string
           format: date-time
+<<<<<<< HEAD
+      required:
+      - userId
+      - changedAt
+=======
         changeReason:
           type: string
           enum:
@@ -3688,6 +3753,7 @@ components:
       - userId
       - changedAt
       - changeReason
+>>>>>>> main
       additionalProperties: false
     TwoFactorConfiguredPayload:
       type: object
@@ -4387,13 +4453,35 @@ components:
           type: string
         userId:
           type: string
+<<<<<<< HEAD
+        platform:
+          type: string
+          enum:
+          - tistory
+          - notion
+          - copy
+        openUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: 완료 후 열었던 글쓰기 URL. 알림 메시지 생성에 사용.
+=======
+>>>>>>> main
         externalUrl:
           type: string
           format: uri
           nullable: true
+<<<<<<< HEAD
+          description: 발행된 외부 포스트 URL (자동 게시가 가능한 경우).
       required:
       - publishJobId
       - userId
+      - platform
+=======
+      required:
+      - publishJobId
+      - userId
+>>>>>>> main
       additionalProperties: false
     PublishJobFailedPayload:
       type: object
@@ -4879,4 +4967,8 @@ x-service-catalog:
 - id: Commerce-Service
   description: Payment APIs, plans, subscriptions, billing and commerce entitlement workflows
 - id: Workspace-Service
+<<<<<<< HEAD
   description: Authoritative notes, folders, links, graph and workspace ledger
+=======
+  description: Authoritative notes, folders, links, graph and workspace ledger
+>>>>>>> main
