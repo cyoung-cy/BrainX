@@ -13,13 +13,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/v1/exports")
+@RequestMapping("/api/v1/exports")
 @RequiredArgsConstructor
 public class ExportController {
 
     private final ExportService exportService;
 
-    // POST /v1/exports
+    // POST /api/v1/exports
     @PostMapping
     public ResponseEntity<ApiResponse<ExportJobCreatedResponse>> createExportJob(
             Authentication auth,
@@ -29,7 +29,7 @@ public class ExportController {
                 .body(ApiResponse.success(data, "문서 내보내기 요청이 접수되었습니다."));
     }
 
-    // GET /v1/exports/{exportJobId}
+    // GET /api/v1/exports/{exportJobId}
     @GetMapping("/{exportJobId}")
     public ResponseEntity<ApiResponse<ExportJobStatusResponse>> getExportJobStatus(
             Authentication auth,
