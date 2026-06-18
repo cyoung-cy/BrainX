@@ -73,8 +73,13 @@ export function SectionCard({
     <Card className="p-5">
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
+<<<<<<< HEAD
           <h2 className="text-[16px] font-semibold text-txt">{title}</h2>
           {sub ? <p className="mt-1 text-[12px] text-txt3">{sub}</p> : null}
+=======
+          <h2 className="text-[18px] font-semibold text-txt">{title}</h2>
+          {sub ? <p className="mt-1 text-[14px] text-txt3">{sub}</p> : null}
+>>>>>>> main
         </div>
         {action}
       </div>
@@ -102,9 +107,15 @@ export function Stat({
         <Icon name={icon} size={20} />
       </div>
       <div>
+<<<<<<< HEAD
         <div className="text-[21px] font-bold leading-none tracking-tight text-txt">{value}</div>
         <div className="mt-1 text-[12px] font-medium text-txt2">{label}</div>
         <div className="mt-1 text-[11px] text-txt3">{desc}</div>
+=======
+        <div className="text-[23px] font-bold leading-none tracking-tight text-txt">{value}</div>
+        <div className="mt-1 text-[14px] font-medium text-txt2">{label}</div>
+        <div className="mt-1 text-[13px] text-txt3">{desc}</div>
+>>>>>>> main
       </div>
     </Card>
   );

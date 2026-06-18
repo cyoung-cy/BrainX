@@ -22,12 +22,20 @@ interface TipTapEditorProps {
 }
 
 export default function TipTapEditor({ fontSize, onFontSizeChange }: TipTapEditorProps) {
+<<<<<<< HEAD
   const { theme } = useBrainX();
+=======
+  const { effectiveTheme } = useBrainX();
+>>>>>>> main
   const [title, setTitle] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+<<<<<<< HEAD
   const isLight = theme === "light";
+=======
+  const isLight = effectiveTheme === "light";
+>>>>>>> main
 
   const editor = useEditor({
     extensions: [

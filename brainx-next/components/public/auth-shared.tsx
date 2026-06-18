@@ -1,6 +1,10 @@
 "use client";
 
+<<<<<<< HEAD
 import { type ChangeEvent, type ReactNode } from "react";
+=======
+import { useId, type ChangeEvent, type ReactNode } from "react";
+>>>>>>> main
 import { useRouter } from "next/navigation";
 
 import { getOAuthAuthorization, type OAuthProvider } from "@/lib/auth-api";
@@ -29,6 +33,7 @@ export function Field({
   disabled?: boolean;
   autoComplete?: string;
 }) {
+<<<<<<< HEAD
   return (
     <label className="mb-4 block">
       <div className="mb-1.5 flex items-center justify-between text-[12.5px] font-medium text-txt2">
@@ -36,15 +41,33 @@ export function Field({
         {right}
       </div>
       <input
+=======
+  const inputId = useId();
+
+  return (
+    <div className="mb-4">
+      <div className="mb-1.5 flex items-center justify-between text-[14.5px] font-medium text-txt2">
+        <label htmlFor={inputId}>{label}</label>
+        {right}
+      </div>
+      <input
+        id={inputId}
+>>>>>>> main
         type={type}
         placeholder={placeholder}
         value={value}
         onChange={onChange}
         disabled={disabled}
+<<<<<<< HEAD
         autoComplete={autoComplete}
         className="h-11 w-full rounded-xl border border-line/60 bg-surface/60 px-3.5 text-[14px] text-txt outline-none transition-colors placeholder:text-txt3 focus:border-primary/60 focus:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
       />
     </label>
+=======
+        className="h-11 w-full rounded-xl border border-line/60 bg-surface/60 px-3.5 text-[16px] text-txt outline-none transition-colors placeholder:text-txt3 focus:border-primary/60 focus:bg-surface"
+      />
+    </div>
+>>>>>>> main
   );
 }
 
@@ -95,7 +118,11 @@ export function SocialButtons() {
           type="button"
           onClick={() => handleOAuth(provider.provider, provider.name)}
           style={{ background: provider.background, color: provider.color }}
+<<<<<<< HEAD
           className="h-11 rounded-xl border border-line/30 text-[13px] font-semibold transition hover:brightness-95"
+=======
+          className="h-11 rounded-xl border border-line/30 text-[15px] font-semibold transition hover:brightness-95"
+>>>>>>> main
         >
           {provider.name}
         </button>
@@ -121,6 +148,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-accent to-cyan shadow-glow">
             <Icon name="brain" size={20} className="text-white" />
           </div>
+<<<<<<< HEAD
           <span className="font-display text-[20px] font-bold tracking-tight">
             BrainX
           </span>
@@ -136,6 +164,15 @@ export function AuthShell({ children }: { children: ReactNode }) {
           </p>
         </div>
         <div className="relative z-10 text-[12px] text-txt3">© 2026 BrainX</div>
+=======
+          <span className="text-[22px] font-bold tracking-tight font-display">BrainX</span>
+        </button>
+        <div className="relative z-10 max-w-sm">
+          <h2 className="mb-3 text-[32px] font-bold leading-tight tracking-tight">내 지식의 우주를<br />탐험하는 AI 두뇌</h2>
+          <p className="leading-relaxed text-txt2">적기만 하세요. 연결과 정리는 AI가 합니다. 흩어진 노트가 하나의 살아있는 그래프가 됩니다.</p>
+        </div>
+        <div className="relative z-10 text-[14px] text-txt3">© 2026 BrainX 개발팀</div>
+>>>>>>> main
       </div>
 
       <div className="scroll relative flex items-center justify-center overflow-y-auto p-6">

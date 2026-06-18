@@ -1,12 +1,23 @@
 "use client";
 
+<<<<<<< HEAD
 import { clearAuthSession, readAuthSession, saveAuthSession, type ApiResponse } from "@/lib/auth-api";
+=======
+import { clearAuthSession, isDemoSession, readAuthSession, saveAuthSession, type ApiResponse } from "@/lib/auth-api";
+import type { ThemeMode } from "@/components/brainx-provider";
+import type { LanguageCode } from "@/lib/i18n";
+>>>>>>> main
 
 export type MyProfile = {
   userId: string;
   email: string;
   nickname: string;
   profileImageUrl: string | null;
+<<<<<<< HEAD
+=======
+  language: LanguageCode;
+  theme: ThemeMode;
+>>>>>>> main
   role: string;
   security: {
     twoFactorEnabled: boolean;
@@ -30,6 +41,11 @@ export type ConsentPayload = {
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+<<<<<<< HEAD
+=======
+const LANGUAGE_KEY = "brainx_language_v1";
+const THEME_KEY = "brainx_theme_v1";
+>>>>>>> main
 
 export class AuthRequiredError extends Error {
   constructor(message = "로그인이 만료되었습니다. 다시 로그인해 주세요.") {
@@ -42,12 +58,33 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
   return response.message ?? response.error?.message ?? fallback;
 }
 
+<<<<<<< HEAD
+=======
+function readStoredLanguage(): LanguageCode {
+  if (typeof window === "undefined") return "ko";
+  return window.localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
+}
+
+function readStoredTheme(): ThemeMode {
+  if (typeof window === "undefined") return "system";
+  const stored = window.localStorage.getItem(THEME_KEY);
+  return stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+}
+
+>>>>>>> main
 async function authedRequest<T>(path: string, init?: RequestInit) {
   const session = readAuthSession();
   if (!session?.accessToken) {
     throw new AuthRequiredError("로그인이 필요합니다.");
   }
 
+<<<<<<< HEAD
+=======
+  if (isDemoSession(session)) {
+    return demoUserResponse<T>(path, init);
+  }
+
+>>>>>>> main
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -71,14 +108,116 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
   return payload.data as T;
 }
 
+<<<<<<< HEAD
+=======
+function parseBody<T>(init?: RequestInit): Partial<T> {
+  if (!init?.body || typeof init.body !== "string") return {};
+  try {
+    return JSON.parse(init.body) as Partial<T>;
+  } catch {
+    return {};
+  }
+}
+
+function demoProfile(): MyProfile {
+  const session = readAuthSession();
+  return {
+    userId: session?.userId ?? "usr_demo",
+    email: session?.email ?? "demo@brainx.local",
+    nickname: session?.nickname ?? "BrainX Demo",
+    profileImageUrl: session?.profileImageUrl ?? null,
+    language: readStoredLanguage(),
+    theme: readStoredTheme(),
+    role: session?.role ?? "ROLE_USER",
+    security: {
+      twoFactorEnabled: false,
+      linkedProviders: ["google"],
+      hasPassword: true
+    },
+    consents: {
+      termsRequired: true,
+      privacyRequired: true,
+      marketingOptional: true,
+      behaviorAnalyticsOptional: true,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
+function demoUserResponse<T>(path: string, init?: RequestInit): T {
+  const method = init?.method?.toUpperCase() ?? "GET";
+
+  if (path === "/api/v1/users/me" && method === "GET") {
+    return demoProfile() as T;
+  }
+
+  if (path === "/api/v1/users/me/profile" && method === "PATCH") {
+    const payload = parseBody<{ nickname?: string; language?: LanguageCode; theme?: ThemeMode }>(init);
+    const current = demoProfile();
+    const updated = {
+      userId: current.userId,
+      nickname: payload.nickname ?? current.nickname,
+      profileImageUrl: current.profileImageUrl,
+      language: payload.language ?? current.language,
+      theme: payload.theme ?? current.theme
+    };
+    saveAuthSession({ ...(readAuthSession() ?? {}), nickname: updated.nickname, profileImageUrl: updated.profileImageUrl });
+    return updated as T;
+  }
+
+  if (path === "/api/v1/users/me/password" && method === "PATCH") {
+    return null as T;
+  }
+
+  if (path === "/api/v1/users/me/2fa/email" && method === "POST") {
+    return { verificationId: "demo-verification" } as T;
+  }
+
+  if (path === "/api/v1/users/me/social-accounts" && method === "POST") {
+    const payload = parseBody<{ provider?: string }>(init);
+    return { provider: payload.provider ?? "google", linked: true } as T;
+  }
+
+  if (path.startsWith("/api/v1/users/me/social-accounts/") && method === "DELETE") {
+    return { provider: path.split("/").pop() ?? "google", linked: false } as T;
+  }
+
+  if (path === "/api/v1/users/me/consents" && method === "PUT") {
+    return { ...parseBody<ConsentPayload>(init), updatedAt: new Date().toISOString() } as T;
+  }
+
+  if (path === "/api/v1/users/me/deletion-request" && method === "POST") {
+    const deletionScheduledAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    return { deletionScheduledAt } as T;
+  }
+
+  if (path === "/api/v1/users/me/deletion-request" && method === "DELETE") {
+    return null as T;
+  }
+
+  throw new Error("데모 모드에서 지원하지 않는 사용자 API입니다.");
+}
+
+>>>>>>> main
 export async function getMyProfile() {
   const data = await authedRequest<MyProfile | IdentityProfileResponse>("/api/v1/users/me");
   return normalizeProfile(data);
 }
 
+<<<<<<< HEAD
 type ProfileUpdateResult = { userId: string; nickname: string; profileImageUrl: string | null };
 
 export async function updateMyProfile(payload: { nickname: string; profileImageAssetId?: string | null }): Promise<ProfileUpdateResult> {
+=======
+type ProfileUpdateResult = { userId: string; nickname: string; profileImageUrl: string | null; language?: LanguageCode; theme?: ThemeMode };
+
+export async function updateMyProfile(payload: {
+  nickname?: string;
+  profileImageAssetId?: string | null;
+  language?: LanguageCode;
+  theme?: ThemeMode;
+}): Promise<ProfileUpdateResult> {
+>>>>>>> main
   const data = await authedRequest<
     | ProfileUpdateResult
     | IdentityProfileResponse
@@ -160,6 +299,11 @@ type IdentityProfileResponse = {
   } | null;
   nickname?: string | null;
   profileImageUrl?: string | null;
+<<<<<<< HEAD
+=======
+  language?: LanguageCode | null;
+  theme?: ThemeMode | null;
+>>>>>>> main
   role?: string;
   security?: {
     twoFactorEnabled?: boolean;
@@ -182,6 +326,11 @@ function normalizeProfile(data: MyProfile | IdentityProfileResponse): MyProfile 
       email: data.email,
       nickname: data.profile?.nickname ?? data.nickname ?? "",
       profileImageUrl: data.profile?.profileImageUrl ?? data.profileImageUrl ?? null,
+<<<<<<< HEAD
+=======
+      language: data.language ?? readStoredLanguage(),
+      theme: data.theme ?? readStoredTheme(),
+>>>>>>> main
       role: data.role ?? "ROLE_USER",
       security: {
         twoFactorEnabled: data.security?.twoFactorEnabled ?? false,
@@ -197,7 +346,15 @@ function normalizeProfile(data: MyProfile | IdentityProfileResponse): MyProfile 
       }
     };
   }
+<<<<<<< HEAD
   return data as MyProfile;
+=======
+  return {
+    ...(data as MyProfile),
+    language: (data as MyProfile).language ?? readStoredLanguage(),
+    theme: (data as MyProfile).theme ?? readStoredTheme()
+  };
+>>>>>>> main
 }
 
 function normalizeProfileUpdate(
@@ -207,13 +364,25 @@ function normalizeProfileUpdate(
     return {
       userId: data.userId,
       nickname: data.profile?.nickname ?? data.nickname ?? "",
+<<<<<<< HEAD
       profileImageUrl: data.profile?.profileImageUrl ?? data.profileImageUrl ?? null
+=======
+      profileImageUrl: data.profile?.profileImageUrl ?? data.profileImageUrl ?? null,
+      language: data.language ?? undefined,
+      theme: data.theme ?? undefined
+>>>>>>> main
     };
   }
   return {
     userId: data.userId,
     nickname: data.nickname,
+<<<<<<< HEAD
     profileImageUrl: data.profileImageUrl
+=======
+    profileImageUrl: data.profileImageUrl,
+    language: data.language,
+    theme: data.theme
+>>>>>>> main
   };
 }
 
