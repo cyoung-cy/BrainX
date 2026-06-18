@@ -14,6 +14,7 @@ import {
   Copy,
   CreditCard,
   Eye,
+  EyeOff,
   FileText,
   FileUp,
   Filter,
@@ -25,6 +26,7 @@ import {
   Languages,
   Link2,
   LockKeyhole,
+  LogOut,
   LayoutDashboard,
   Maximize2,
   MessageSquare,
@@ -88,7 +90,9 @@ export type IconName =
   | "rewrite"
   | "summarize"
   | "eye"
+  | "eyeOff"
   | "lock"
+  | "logout"
   | "copy"
   | "arrowL"
   | "brain"
@@ -136,7 +140,9 @@ const ICONS: Record<IconName, ComponentType<{ size?: number; className?: string;
   rewrite: PencilLine,
   summarize: FileText,
   eye: Eye,
+  eyeOff: EyeOff,
   lock: LockKeyhole,
+  logout: LogOut,
   copy: Copy,
   arrowL: ArrowLeft,
   brain: Brain,
@@ -185,9 +191,9 @@ export function Btn({
   onClick?: MouseEventHandler<HTMLButtonElement>;
 }) {
   const sizeClasses = {
-    sm: "h-8 px-3 text-[13px] gap-1.5",
-    md: "h-10 px-4 text-sm gap-2",
-    lg: "h-12 px-6 text-[15px] gap-2 rounded-2xl"
+    sm: "h-8 px-3 text-[15px] gap-1.5",
+    md: "h-10 px-4 text-[16px] gap-2",
+    lg: "h-12 px-6 text-[17px] gap-2 rounded-2xl"
   } as const;
 
   const variantClasses = {
@@ -239,7 +245,7 @@ export function Badge({
     <span
       style={style}
       className={cx(
-        "inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full text-[11.5px] font-medium whitespace-nowrap border border-line/60 bg-surface2/60 text-txt2",
+        "inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full text-[13.5px] font-medium whitespace-nowrap border border-line/60 bg-surface2/60 text-txt2",
         className
       )}
     >
@@ -277,16 +283,30 @@ export function Card({
   );
 }
 
-export function Avatar({ name = "연우", size = 36, ring }: { name?: string; size?: number; ring?: boolean }) {
+export function Avatar({
+  name = "연우",
+  size = 36,
+  ring,
+  imageUrl
+}: {
+  name?: string;
+  size?: number;
+  ring?: boolean;
+  imageUrl?: string | null;
+}) {
   return (
     <div
       style={{ width: size, height: size }}
       className={cx(
-        "rounded-full grid place-items-center font-semibold text-white shrink-0 bg-gradient-to-br from-primary to-accent",
+        "rounded-full grid place-items-center overflow-hidden font-semibold text-white shrink-0 bg-gradient-to-br from-primary to-accent",
         ring ? "ring-2 ring-primary/40 ring-offset-2 ring-offset-bg" : ""
       )}
     >
-      <span style={{ fontSize: size * 0.4 }}>{name[0]}</span>
+      {imageUrl ? (
+        <img src={imageUrl} alt="프로필" className="h-full w-full object-cover" />
+      ) : (
+        <span style={{ fontSize: size * 0.4 }}>{name[0]}</span>
+      )}
     </div>
   );
 }
@@ -313,23 +333,23 @@ export function Toggle({
       )}
     >
       <span
-        style={{ width: knob, height: knob, transform: `translateX(${on ? width - knob - 4 : 4}px)` }}
-        className="absolute top-1/2 -translate-y-1/2 left-0 rounded-full bg-white shadow transition-transform duration-300"
+        style={{ width: knob, height: knob, left: on ? width - knob - 4 : 4 }}
+        className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-all duration-300"
       />
     </button>
   );
 }
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useBrainX();
+  const { effectiveTheme, setTheme } = useBrainX();
   return (
     <button
-      onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+      onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")}
       className="h-9 w-9 grid place-items-center rounded-xl border border-line/60 text-txt2 hover:text-txt hover:bg-surface2/60 transition-colors"
-      title={theme === "dark" ? "라이트 모드" : "다크 모드"}
+      title={effectiveTheme === "dark" ? "Light mode" : "Dark mode"}
       type="button"
     >
-      <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+      <Icon name={effectiveTheme === "dark" ? "sun" : "moon"} size={17} />
     </button>
   );
 }
@@ -340,7 +360,7 @@ export function RelevanceBar({ value }: { value: number }) {
       <div className="h-1.5 w-16 rounded-full bg-surface2 overflow-hidden">
         <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${value}%` }} />
       </div>
-      <span className="text-[11px] text-txt3 font-mono tabular-nums">{value}%</span>
+      <span className="text-[13px] text-txt3 font-mono tabular-nums">{value}%</span>
     </div>
   );
 }
@@ -361,8 +381,8 @@ export function EmptyState({
       <div className="w-16 h-16 rounded-2xl grid place-items-center glass mb-5 text-primary">
         <Icon name={icon} size={28} />
       </div>
-      <h3 className="text-lg font-semibold text-txt mb-1.5">{title}</h3>
-      <p className="text-sm text-txt2 max-w-xs mb-5 leading-relaxed">{desc}</p>
+      <h3 className="text-[20px] font-semibold text-txt mb-1.5">{title}</h3>
+      <p className="text-[16px] text-txt2 max-w-xs mb-5 leading-relaxed">{desc}</p>
       {action}
     </div>
   );
@@ -392,8 +412,8 @@ export function SectionHead({
           <Icon name={icon} size={17} />
         </div>
         <div>
-          <h2 className="text-[16px] font-semibold text-txt leading-tight">{title}</h2>
-          {sub ? <p className="text-[12px] text-txt3">{sub}</p> : null}
+          <h2 className="text-[18px] font-semibold text-txt leading-tight">{title}</h2>
+          {sub ? <p className="text-[14px] text-txt3">{sub}</p> : null}
         </div>
       </div>
       {action}
@@ -407,7 +427,7 @@ export function ToastStack() {
   return (
     <div className="fixed bottom-6 left-1/2 z-[100] flex -translate-x-1/2 flex-col gap-2 items-center pointer-events-none">
       {toasts.map((toast) => (
-        <div key={toast.id} className="fade-up glass rounded-xl px-4 h-11 flex items-center gap-2.5 text-sm text-txt shadow-soft">
+        <div key={toast.id} className="fade-up glass rounded-xl px-4 h-11 flex items-center gap-2.5 text-[16px] text-txt shadow-soft">
           <Icon
             name={toast.kind === "ok" ? "check" : toast.kind === "err" ? "x" : "sparkle"}
             size={15}
