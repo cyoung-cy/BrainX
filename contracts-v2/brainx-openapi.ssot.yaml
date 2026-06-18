@@ -3724,6 +3724,7 @@ paths:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
       x-visibility: public
+      x-implementation-status: not-implemented
       x-consumers:
       - id: web.note-editor
         type: frontend
@@ -3802,6 +3803,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3890,6 +3892,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3969,6 +3972,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4048,6 +4052,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4132,6 +4137,12 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: >
+        Current implementation does not read redirectUri from the request body.
+        The controller takes no request body — redirectUri is fixed in
+        application.yml (notion.redirect-uri). Frontend must use
+        window.top.location.href (not iframe navigation) to open the returned
+        authorizationUrl, as Notion blocks loading in iframes.
       requestBody:
         required: true
         content:
@@ -4266,6 +4277,71 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+  /api/v1/imports/notion/pages:
+    get:
+      operationId: listNotionPages
+      summary: Notion 연동 계정의 페이지 목록 조회
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-visibility: public
+      x-consumers:
+      - id: web.import
+        type: frontend
+        description: Notion/Obsidian import screens
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      x-implementation-note: >
+        Added by Ingestion-Service implementation. Not in original SSOT.
+        Called before requestNotionImportJob so user can select which Notion
+        page to import.
+      parameters:
+      - name: integrationAccountId
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NotionPagesData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/imports/notion/jobs:
     post:
       operationId: requestNotionImportJob
@@ -4286,6 +4362,14 @@ paths:
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
       x-async-boundary: true
+      x-implementation-note: >
+        Current implementation processes the Notion import synchronously in the
+        request thread (not truly async). Notes are created by calling legacy
+        knowledge-workspace-service POST /v1/notes individually per page, not
+        via bulkCreateNotesInternal. The 202 response already contains the final
+        COMPLETED or FAILED status. Kafka events (ImportJobRequested,
+        ImportJobCompleted) are not yet published. Migration to true async
+        processing and bulkCreateNotesInternal is planned.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4296,7 +4380,7 @@ paths:
               $ref: '#/components/schemas/NotionImportJobCreateRequest'
       responses:
         '202':
-          description: Success
+          description: Accepted. Returns job ID and status only. Poll GET /api/v1/imports/{importJobId} for full result including createdNotes.
           content:
             application/json:
               schema:
@@ -4307,7 +4391,7 @@ paths:
                   - data
                   properties:
                     data:
-                      $ref: '#/components/schemas/ImportJobData'
+                      $ref: '#/components/schemas/ImportJobAcceptedData'
         '400':
           description: Bad request
           content:
@@ -4366,6 +4450,11 @@ paths:
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
       x-async-boundary: true
+      x-implementation-note: >
+        Current implementation persists the job record and returns 202
+        immediately with status PENDING. Actual Obsidian ZIP extraction and
+        note creation are not yet implemented — the job stays in PENDING state.
+        Kafka event (ImportJobRequested) is not published.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4376,7 +4465,7 @@ paths:
               $ref: '#/components/schemas/ObsidianImportJobCreateRequest'
       responses:
         '202':
-          description: Success
+          description: Accepted. Returns job ID and initial PENDING status only. Poll GET /api/v1/imports/{importJobId} for full result.
           content:
             application/json:
               schema:
@@ -4387,7 +4476,7 @@ paths:
                   - data
                   properties:
                     data:
-                      $ref: '#/components/schemas/ImportJobData'
+                      $ref: '#/components/schemas/ImportJobAcceptedData'
         '400':
           description: Bad request
           content:
@@ -4523,6 +4612,14 @@ paths:
         reason: export renderer needs authoritative note snapshot
         required: true
       x-async-boundary: true
+      x-implementation-note: >
+        Current implementation processes export synchronously and immediately
+        sets status to COMPLETED with a CDN download URL (cdnBaseUrl/export/{noteId}.{format}).
+        checkEntitlementsInternal and getNoteSnapshotInternal are not called.
+        Kafka event (ExportJobRequested) is not published.
+        The 202 response returns only {exportJobId, status} — downloadUrl is
+        omitted from the create response even though it is available. Use
+        GET /api/v1/exports/{exportJobId} to retrieve the downloadUrl.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4663,6 +4760,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4736,6 +4834,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4810,6 +4909,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: chrome-extension
@@ -4890,6 +4990,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.settings
@@ -4966,6 +5067,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: external-agent
@@ -5033,6 +5135,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
+      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: external-agent
@@ -9682,9 +9785,15 @@ components:
         redirectUri:
           type: string
           format: uri
-      required:
-      - redirectUri
+          description: >
+            Optional override. If omitted, the service uses the redirect URI
+            configured in notion.redirect-uri (application.yml). Current
+            implementation ignores this field and uses the server-side default.
       additionalProperties: false
+      x-implementation-note: >
+        Implemented without required redirectUri — redirectUri is fixed in
+        application.yml as notion.redirect-uri. Request body is not required
+        in the current Ingestion-Service controller.
     OAuthUrlData:
       type: object
       properties:
@@ -9696,6 +9805,27 @@ components:
       required:
       - authorizationUrl
       - state
+    NotionPagesData:
+      type: object
+      properties:
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              icon:
+                type: string
+                nullable: true
+            required:
+            - id
+            - title
+      required:
+      - pages
+      additionalProperties: false
       additionalProperties: false
     NotionOAuthCallbackRequest:
       type: object
@@ -9728,14 +9858,16 @@ components:
           enum:
           - IMPORT
           - FORK
-          - SYNC
+          default: IMPORT
+          description: >
+            SYNC mode planned but not yet implemented. Current implementation
+            supports IMPORT and FORK only.
         targetFolderId:
           type: string
           nullable: true
       required:
       - integrationAccountId
       - sourceId
-      - mode
       additionalProperties: false
     ObsidianImportJobCreateRequest:
       type: object
@@ -9747,6 +9879,23 @@ components:
           nullable: true
       required:
       - uploadedZipAssetId
+      additionalProperties: false
+    ImportJobAcceptedData:
+      type: object
+      description: >
+        Minimal response returned in the 202 Accept body of import job creation.
+        Current implementation returns only importJobId and status because the
+        job is recorded synchronously but the full result (createdNotes,
+        failedFiles) is available only after processing. Poll
+        GET /api/v1/imports/{importJobId} for the full ImportJobData.
+      properties:
+        importJobId:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+      required:
+      - importJobId
+      - status
       additionalProperties: false
     ImportJobData:
       type: object
@@ -9790,11 +9939,17 @@ components:
           enum:
           - WEB
           - APP
+          default: WEB
+          description: >
+            Optional. Defaults to WEB. Current implementation accepts any value
+            and defaults to WEB if omitted or unrecognized.
       required:
       - noteId
       - format
-      - clientType
       additionalProperties: false
+      x-implementation-note: >
+        clientType was originally required but implementation defaults it to WEB,
+        so it is now optional in this contract.
     ExportJobData:
       type: object
       properties:
