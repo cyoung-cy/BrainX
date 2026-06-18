@@ -7,22 +7,22 @@ import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
 import { cx } from "@/lib/utils";
-import { readAuthSession, type AuthSession } from "@/lib/auth-api";
+import { isDemoSession, readAuthSession, type AuthSession } from "@/lib/auth-api";
+import { getMyProfile } from "@/lib/user-api";
 
 const NAV = [
-  { id: "home", label: "홈", icon: "home" as const, path: "/home" },
-  { id: "notes", label: "노트", icon: "notes" as const, path: "/notes/n1" },
-  { id: "graph", label: "마인드맵", icon: "graph" as const, path: "/graph" },
-  { id: "chat", label: "AI 챗", icon: "chat" as const, path: "/chat" },
-  { id: "import", label: "가져오기", icon: "import" as const, path: "/import" },
-  { id: "mypage", label: "내 페이지", icon: "dash" as const, path: "/mypage" }
+  { id: "home", labelKey: "nav.home" as const, icon: "home" as const, path: "/home" },
+  { id: "notes", labelKey: "nav.notes" as const, icon: "notes" as const, path: "/notes/n1" },
+  { id: "graph", labelKey: "nav.graph" as const, icon: "graph" as const, path: "/graph" },
+  { id: "chat", labelKey: "nav.chat" as const, icon: "chat" as const, path: "/chat" },
+  { id: "import", labelKey: "nav.import" as const, icon: "import" as const, path: "/import" }
 ];
 
 const NAV2 = [
-  { id: "billing", label: "플랜·결제", icon: "bill" as const, path: "/billing" },
-  { id: "settings", label: "설정", icon: "settings" as const, path: "/settings" },
-  { id: "support", label: "문의하기", icon: "chat" as const, path: "/support" },
-  { id: "admin", label: "관리자", icon: "shield" as const, path: "/admin" }
+  { id: "billing", labelKey: "nav.billing" as const, icon: "bill" as const, path: "/billing" },
+  { id: "settings", labelKey: "nav.settings" as const, icon: "settings" as const, path: "/settings" },
+  { id: "support", labelKey: "nav.support" as const, icon: "chat" as const, path: "/support" },
+  { id: "admin", labelKey: "nav.admin" as const, icon: "shield" as const, path: "/admin" }
 ];
 
 function isActive(pathname: string, path: string) {
@@ -35,7 +35,7 @@ function SearchBar() {
   const [filter, setFilter] = useState("최신순");
   const [semantic, setSemantic] = useState(false);
   const [open, setOpen] = useState(false);
-  const { pushToast } = useBrainX();
+  const { pushToast, t } = useBrainX();
   const options = ["최신순", "오래된순", "제목 기준", "내용 기준", "기간 검색"];
 
   return (
@@ -188,7 +188,7 @@ function SidebarItem({
 
 function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const router = useRouter();
-  const { sidebarCollapsed, setSidebarCollapsed, notes } = useBrainX();
+  const { sidebarCollapsed, setSidebarCollapsed, notes, t } = useBrainX();
 
   return (
     <aside
@@ -214,11 +214,11 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
       <nav className="scroll flex-1 space-y-1 overflow-y-auto px-3">
         {NAV.map((item) => (
-          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
+          <SidebarItem key={item.id} {...item} label={t(item.labelKey)} collapsed={sidebarCollapsed} onMyPageClick={onOpenSettings} />
         ))}
         <div className="my-3 mx-1 h-px bg-line/50" />
         {NAV2.map((item) => (
-          <SidebarItem key={item.id} {...item} collapsed={sidebarCollapsed} />
+          <SidebarItem key={item.id} {...item} label={t(item.labelKey)} collapsed={sidebarCollapsed} />
         ))}
       </nav>
 
@@ -261,17 +261,20 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const { pushToast } = useBrainX();
+  const { pushToast, t } = useBrainX();
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
-  const displayName = session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
+  const [profileName, setProfileName] = useState("");
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const displayName = profileName || session?.nickname?.trim() || session?.email?.split("@")[0] || "사용자";
+  const displayImageUrl = profileImageUrl ?? session?.profileImageUrl;
   const mobileNav = [
-    { label: "홈", icon: "home" as const, path: "/home" },
-    { label: "노트", icon: "notes" as const, path: "/notes/n1" },
-    { label: "그래프", icon: "graph" as const, path: "/graph" },
-    { label: "챗", icon: "chat" as const, path: "/chat" },
-    { label: "가져오기", icon: "import" as const, path: "/import" },
-    { label: "내 페이지", icon: "dash" as const, path: "/mypage" }
+    { label: t("nav.home"), icon: "home" as const, path: "/home" },
+    { label: t("nav.notes"), icon: "notes" as const, path: "/notes/n1" },
+    { label: t("nav.graph"), icon: "graph" as const, path: "/graph" },
+    { label: t("nav.chat"), icon: "chat" as const, path: "/chat" },
+    { label: t("nav.import"), icon: "import" as const, path: "/import" },
+    { label: t("nav.mypage"), icon: "dash" as const, path: "/mypage" }
   ];
 
   useEffect(() => {
@@ -280,6 +283,42 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener("brainx-auth-session-changed", syncSession);
     return () => window.removeEventListener("brainx-auth-session-changed", syncSession);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!session?.accessToken) {
+      setProfileName("");
+      setProfileImageUrl(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    if (isDemoSession(session)) {
+      setProfileName(session.nickname?.trim() || "BrainX Demo");
+      setProfileImageUrl(session.profileImageUrl ?? null);
+      return () => {
+        active = false;
+      };
+    }
+
+    getMyProfile()
+      .then((profile) => {
+        if (!active) return;
+        setProfileName(profile.nickname?.trim() || profile.email.split("@")[0] || "");
+        setProfileImageUrl(profile.profileImageUrl);
+      })
+      .catch(() => {
+        if (!active) return;
+        setProfileName("");
+        setProfileImageUrl(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, session?.userId, session?.nickname, session?.profileImageUrl]);
 
   return (
     <header className="relative z-10 border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
@@ -297,10 +336,10 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <div className="mx-1 hidden h-6 w-px bg-line/60 md:block" />
           <button type="button" onClick={onOpenSettings} className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60">
-            <Avatar name={displayName} size={32} imageUrl={session?.profileImageUrl} />
+            <Avatar name={displayName} size={32} imageUrl={displayImageUrl} />
             <div className="hidden text-left leading-tight sm:block">
-              <div className="text-[13px] font-semibold text-txt">김연우</div>
-              <div className="text-[11px] text-txt3">Free 플랜</div>
+              <div className="max-w-[120px] truncate text-[13px] font-semibold text-txt">{displayName}</div>
+              <div className="text-[11px] text-txt3">{session?.role ?? "Free 플랜"}</div>
             </div>
           </button>
         </div>

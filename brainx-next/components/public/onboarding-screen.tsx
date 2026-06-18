@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { INTERESTS } from "@/lib/brainx-data";
+import { EMPTY_CONSENTS, requiredConsentsAccepted, type ConsentState } from "@/lib/legal";
 import { cx } from "@/lib/utils";
 import { completeOnboarding, readAuthSession } from "@/lib/auth-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { Field } from "@/components/public/auth-shared";
+import { LegalConsents } from "@/components/public/legal-consents";
 
 export function OnboardingScreen() {
   const router = useRouter();
@@ -18,6 +20,7 @@ export function OnboardingScreen() {
   const [profileImageUrl, setProfileImageUrl] = useState("");
   const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [consents, setConsents] = useState<ConsentState>(EMPTY_CONSENTS);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -66,6 +69,11 @@ export function OnboardingScreen() {
       setStep(0);
       return;
     }
+    if (!requiredConsentsAccepted(consents)) {
+      pushToast("필수 약관에 동의해 주세요.", "err");
+      setStep(2);
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -73,7 +81,8 @@ export function OnboardingScreen() {
         onboardingToken,
         nickname: nick.trim(),
         profileImageUrl: profileImageUrl.trim() || null,
-        interests: selected
+        interests: selected,
+        consents
       });
       pushToast("온보딩이 완료되었습니다.", "ok");
       router.push("/home");
@@ -92,7 +101,7 @@ export function OnboardingScreen() {
       </div>
       <Card glow className="relative w-full max-w-lg p-8">
         <div className="mb-7 flex items-center gap-2">
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3].map((index) => (
             <div key={index} className={cx("h-1.5 flex-1 rounded-full transition-colors", index <= step ? "bg-primary" : "bg-surface2")} />
           ))}
         </div>
@@ -161,6 +170,27 @@ export function OnboardingScreen() {
 
         {step === 2 ? (
           <>
+            <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary">
+              <Icon name="shield" size={26} />
+            </div>
+            <h1 className="mb-1.5 text-[24px] font-bold tracking-tight">약관에 동의해 주세요</h1>
+            <p className="mb-5 text-[14px] leading-relaxed text-txt2">
+              소셜 계정으로 새 BrainX 계정을 만들기 전에 서비스 이용과 개인정보 처리에 대한 동의가 필요합니다.
+            </p>
+            <LegalConsents value={consents} onChange={setConsents} disabled={submitting} className="mb-6" />
+            <div className="flex gap-2">
+              <Btn variant="soft" onClick={() => setStep(1)} disabled={submitting}>
+                이전
+              </Btn>
+              <Btn variant="primary" size="lg" className="flex-1" disabled={!requiredConsentsAccepted(consents)} onClick={() => setStep(3)}>
+                다음
+              </Btn>
+            </div>
+          </>
+        ) : null}
+
+        {step === 3 ? (
+          <>
             <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent shadow-glow">
               <Icon name="sparkle" size={26} className="text-white" />
             </div>
@@ -177,7 +207,7 @@ export function OnboardingScreen() {
               ))}
             </div>
             <div className="flex gap-2">
-              <Btn variant="soft" onClick={() => setStep(1)} disabled={submitting}>
+              <Btn variant="soft" onClick={() => setStep(2)} disabled={submitting}>
                 이전
               </Btn>
               <Btn variant="primary" size="lg" className="flex-1" icon="bolt" disabled={submitting} onClick={handleComplete}>

@@ -6,7 +6,7 @@ import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterI
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
-import { ReactFlow, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { UniverseBackground } from "./universe-background";
 import { PlanetNode } from "./planet-node";
@@ -42,6 +42,24 @@ type GraphControls = {
   reheat: () => void;
   bridges: () => void;
 };
+
+type PlanetFlowNode = Node<{
+  label: string;
+  color: string;
+  radius: number;
+  selected: boolean;
+  dimmed: boolean;
+  isDirect: boolean;
+  layer: "front" | "middle" | "back";
+  theme: "2d" | "universe";
+}>;
+
+type OrbitFlowEdge = Edge<{
+  isBridge: boolean;
+  isSelected: boolean;
+  isDimmed: boolean;
+  theme: "2d" | "universe";
+}>;
 
 function seededUnit(seed: string) {
   let hash = 2166136261;
@@ -121,8 +139,8 @@ function GraphCanvasFlow({
   onSelect: (id: string | null) => void;
 }) {
   const { setCenter, fitView, zoomTo } = useReactFlow();
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<PlanetFlowNode>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<OrbitFlowEdge>([]);
   
   const positionsRef = useRef<Record<string, GraphNode>>(settleLayout(notes));
   const raf = useRef(0);

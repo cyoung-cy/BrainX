@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import { CLUSTERS, PRICING } from "@/lib/brainx-data";
+import { startDemoSession } from "@/lib/auth-api";
 
 import { cx } from "@/lib/utils";
 
@@ -132,6 +133,11 @@ function FeatureCard({
 export function LandingScreen() {
   const router = useRouter();
 
+  const enterDemo = () => {
+    startDemoSession();
+    router.push("/home");
+  };
+
   const features = [
     {
       icon: "sparkle" as const,
@@ -181,7 +187,7 @@ export function LandingScreen() {
           <Btn variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => router.push("/login")}>
             로그인
           </Btn>
-          <Btn variant="primary" size="sm" onClick={() => router.push("/home")}>
+          <Btn variant="primary" size="sm" onClick={enterDemo}>
             무료로 시작
           </Btn>
         </div>
@@ -200,10 +206,10 @@ export function LandingScreen() {
             노트, 메모, 자료를 저장하면 AI가 정리하고 연결하며, 필요한 순간 답을 찾아줍니다. 적기만 하세요. 연결과 정리는 AI가 합니다.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <Btn variant="primary" size="lg" icon="bolt" onClick={() => router.push("/home")}>
+            <Btn variant="primary" size="lg" icon="bolt" onClick={enterDemo}>
               무료로 시작하기
             </Btn>
-            <Btn variant="outline" size="lg" icon="eye" onClick={() => router.push("/graph")}>
+            <Btn variant="outline" size="lg" icon="eye" onClick={enterDemo}>
               데모 보기
             </Btn>
           </div>
@@ -280,7 +286,7 @@ export function LandingScreen() {
               <h3 className="mb-3 text-[21px] font-semibold leading-snug text-txt">{item.title}</h3>
               <p className="text-[16px] leading-relaxed text-txt2">{item.desc}</p>
               {index === 2 ? (
-                <Btn variant="outline" size="sm" icon="arrowL" className="mt-5 [&_svg]:rotate-180" onClick={() => router.push("/home")}>
+                <Btn variant="outline" size="sm" icon="arrowL" className="mt-5 [&_svg]:rotate-180" onClick={enterDemo}>
                   지금 경험하기
                 </Btn>
               ) : null}
@@ -332,7 +338,7 @@ export function LandingScreen() {
           <div className="relative">
             <h2 className="mb-4 text-[32px] font-bold tracking-tight md:text-[40px]">머릿속 우주를 정리할 시간</h2>
             <p className="mx-auto mb-7 max-w-md text-txt2">지금 첫 노트를 쓰면, BrainX가 나머지를 연결합니다.</p>
-            <Btn variant="primary" size="lg" icon="bolt" onClick={() => router.push("/home")}>
+            <Btn variant="primary" size="lg" icon="bolt" onClick={enterDemo}>
               무료로 시작하기
             </Btn>
           </div>
