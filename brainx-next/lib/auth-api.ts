@@ -41,27 +41,21 @@ type EmailVerificationData = {
   expiresAt: string;
 };
 
-<<<<<<< HEAD
-=======
 type EmailAvailabilityData = {
   email: string;
   available: boolean;
 };
 
->>>>>>> main
 type EmailVerificationCheckData = {
   verified: boolean;
   email: string;
 };
 
-<<<<<<< HEAD
-=======
 type TemporaryPasswordIssueData = {
   email: string;
   issued: boolean;
 };
 
->>>>>>> main
 type OAuthAuthorizeData = {
   provider: OAuthProvider;
   authorizationUrl: string;
@@ -75,8 +69,6 @@ type OAuthCallbackData = AuthSession & {
 
 const AUTH_SESSION_KEY = "brainx_auth_session_v1";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-<<<<<<< HEAD
-=======
 export const DEMO_AUTH_SESSION: AuthSession = {
   accessToken: "demo-access-token",
   refreshToken: "demo-refresh-token",
@@ -90,7 +82,6 @@ export const DEMO_AUTH_SESSION: AuthSession = {
   onboardingToken: null,
   next: "HOME"
 };
->>>>>>> main
 
 function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
   return response.message ?? response.error?.message ?? fallback;
@@ -152,8 +143,6 @@ export function clearAuthSession() {
   window.dispatchEvent(new Event("brainx-auth-session-changed"));
 }
 
-<<<<<<< HEAD
-=======
 export function startDemoSession() {
   saveAuthSession(DEMO_AUTH_SESSION);
   return DEMO_AUTH_SESSION;
@@ -163,7 +152,6 @@ export function isDemoSession(session: AuthSession | null = readAuthSession()) {
   return session?.accessToken === DEMO_AUTH_SESSION.accessToken || session?.userId === DEMO_AUTH_SESSION.userId;
 }
 
->>>>>>> main
 export async function requestEmailVerification(email: string, purpose: EmailVerificationPurpose) {
   return request<EmailVerificationData>("/api/v1/auth/email-verifications", {
     method: "POST",
@@ -171,15 +159,12 @@ export async function requestEmailVerification(email: string, purpose: EmailVeri
   });
 }
 
-<<<<<<< HEAD
-=======
 export async function checkEmailAvailability(email: string) {
   return request<EmailAvailabilityData>(`/api/v1/auth/email-availability?email=${encodeURIComponent(email)}`, {
     method: "GET"
   });
 }
 
->>>>>>> main
 export async function verifyEmailCode(email: string, verificationCode: string, purpose: EmailVerificationPurpose) {
   return request<EmailVerificationCheckData>("/api/v1/auth/email-verifications/verify", {
     method: "POST",
@@ -187,8 +172,6 @@ export async function verifyEmailCode(email: string, verificationCode: string, p
   });
 }
 
-<<<<<<< HEAD
-=======
 export async function issueTemporaryPassword(email: string, verificationCode: string) {
   return request<TemporaryPasswordIssueData>("/api/v1/auth/password/temporary", {
     method: "POST",
@@ -196,7 +179,6 @@ export async function issueTemporaryPassword(email: string, verificationCode: st
   });
 }
 
->>>>>>> main
 export async function signupWithEmail(payload: {
   email: string;
   verificationCode: string;
@@ -223,13 +205,10 @@ export async function loginLocal(email: string, password: string) {
 
 export async function logout() {
   const session = readAuthSession();
-<<<<<<< HEAD
-=======
   if (isDemoSession(session)) {
     clearAuthSession();
     return;
   }
->>>>>>> main
   await request<null>("/api/v1/auth/logout", {
     method: "POST",
     body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
@@ -239,14 +218,11 @@ export async function logout() {
 
 export async function refreshToken() {
   const session = readAuthSession();
-<<<<<<< HEAD
-=======
   if (isDemoSession(session)) {
     const demoSession = { ...DEMO_AUTH_SESSION, ...session };
     saveAuthSession(demoSession);
     return demoSession;
   }
->>>>>>> main
   const data = await request<AuthSession>("/api/v1/auth/token/refresh", {
     method: "POST",
     body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
@@ -275,10 +251,7 @@ export async function completeOnboarding(payload: {
   nickname: string;
   profileImageUrl?: string | null;
   interests: string[];
-<<<<<<< HEAD
-=======
   consents: SignupConsents;
->>>>>>> main
 }) {
   const data = await request<AuthSession>("/api/v1/auth/onboarding/complete", {
     method: "POST",

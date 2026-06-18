@@ -7,7 +7,8 @@ info:
 
     Revision policy:
 
-    - Public/client API remains under /api/v1.
+    - Public/client API remains under /api/v1, except the currently implemented
+      Ingestion publish helper which is exposed at /v1/publish-jobs.
 
     - Service-to-service synchronous APIs are explicitly isolated under /internal/v1.
 
@@ -17,7 +18,7 @@ info:
 
     - Token usage recording is event-first via AsyncAPI; no public REST command is exposed.
 
-    - Publish jobs return 202 Accepted when status is PENDING.
+    - Publish jobs currently return 200 OK with clipboard-ready content.
 
     - Operation-level consumer metadata is expressed through x-consumers.
 
@@ -47,8 +48,6 @@ tags:
 security:
 - bearerAuth: []
 paths:
-<<<<<<< HEAD
-=======
   /api/v1/auth/email-availability:
     get:
       operationId: checkEmailAvailability
@@ -98,7 +97,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
->>>>>>> main
   /api/v1/auth/email-verifications:
     post:
       operationId: requestEmailVerification
@@ -253,8 +251,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
-<<<<<<< HEAD
-=======
   /api/v1/auth/password/temporary:
     post:
       operationId: issueTemporaryPassword
@@ -331,7 +327,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
->>>>>>> main
   /api/v1/auth/signup/email:
     post:
       operationId: signupWithEmail
@@ -783,8 +778,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
-<<<<<<< HEAD
-=======
   /api/v1/auth/onboarding/complete:
     post:
       operationId: completeOnboarding
@@ -862,7 +855,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
->>>>>>> main
   /api/v1/users/me:
     get:
       operationId: getMyProfile
@@ -1544,14 +1536,10 @@ paths:
       - id: web.support
         type: frontend
         description: User support center
-      x-produces-events:
-      - SupportTicketCreated
-      - NotificationRequested
+      x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
       description: 기존 /support/inquiries와 /support/tickets 중복을 tickets로 통합한다.
-      parameters:
-      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1624,19 +1612,6 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      parameters:
-      - $ref: '#/components/parameters/Page'
-      - $ref: '#/components/parameters/Size'
-      - name: status
-        in: query
-        required: false
-        schema:
-          type: string
-          enum:
-          - OPEN
-          - IN_PROGRESS
-          - RESOLVED
-          - CLOSED
       responses:
         '200':
           description: Success
@@ -3749,10 +3724,7 @@ paths:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
       x-visibility: public
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-consumers:
       - id: web.note-editor
         type: frontend
@@ -3831,10 +3803,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3923,10 +3892,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4006,10 +3972,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4089,10 +4052,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4177,15 +4137,12 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-<<<<<<< HEAD
       x-implementation-note: >
         Current implementation does not read redirectUri from the request body.
         The controller takes no request body — redirectUri is fixed in
         application.yml (notion.redirect-uri). Frontend must use
         window.top.location.href (not iframe navigation) to open the returned
         authorizationUrl, as Notion blocks loading in iframes.
-=======
->>>>>>> main
       requestBody:
         required: true
         content:
@@ -4320,7 +4277,6 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
-<<<<<<< HEAD
   /api/v1/imports/notion/pages:
     get:
       operationId: listNotionPages
@@ -4386,8 +4342,6 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
-=======
->>>>>>> main
   /api/v1/imports/notion/jobs:
     post:
       operationId: requestNotionImportJob
@@ -4408,7 +4362,6 @@ paths:
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
       x-async-boundary: true
-<<<<<<< HEAD
       x-implementation-note: >
         Current implementation processes the Notion import synchronously in the
         request thread (not truly async). Notes are created by calling legacy
@@ -4417,8 +4370,6 @@ paths:
         COMPLETED or FAILED status. Kafka events (ImportJobRequested,
         ImportJobCompleted) are not yet published. Migration to true async
         processing and bulkCreateNotesInternal is planned.
-=======
->>>>>>> main
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4429,11 +4380,7 @@ paths:
               $ref: '#/components/schemas/NotionImportJobCreateRequest'
       responses:
         '202':
-<<<<<<< HEAD
           description: Accepted. Returns job ID and status only. Poll GET /api/v1/imports/{importJobId} for full result including createdNotes.
-=======
-          description: Success
->>>>>>> main
           content:
             application/json:
               schema:
@@ -4444,11 +4391,7 @@ paths:
                   - data
                   properties:
                     data:
-<<<<<<< HEAD
                       $ref: '#/components/schemas/ImportJobAcceptedData'
-=======
-                      $ref: '#/components/schemas/ImportJobData'
->>>>>>> main
         '400':
           description: Bad request
           content:
@@ -4507,14 +4450,11 @@ paths:
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
       x-async-boundary: true
-<<<<<<< HEAD
       x-implementation-note: >
         Current implementation persists the job record and returns 202
         immediately with status PENDING. Actual Obsidian ZIP extraction and
         note creation are not yet implemented — the job stays in PENDING state.
         Kafka event (ImportJobRequested) is not published.
-=======
->>>>>>> main
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4525,11 +4465,7 @@ paths:
               $ref: '#/components/schemas/ObsidianImportJobCreateRequest'
       responses:
         '202':
-<<<<<<< HEAD
           description: Accepted. Returns job ID and initial PENDING status only. Poll GET /api/v1/imports/{importJobId} for full result.
-=======
-          description: Success
->>>>>>> main
           content:
             application/json:
               schema:
@@ -4540,11 +4476,7 @@ paths:
                   - data
                   properties:
                     data:
-<<<<<<< HEAD
                       $ref: '#/components/schemas/ImportJobAcceptedData'
-=======
-                      $ref: '#/components/schemas/ImportJobData'
->>>>>>> main
         '400':
           description: Bad request
           content:
@@ -4680,7 +4612,6 @@ paths:
         reason: export renderer needs authoritative note snapshot
         required: true
       x-async-boundary: true
-<<<<<<< HEAD
       x-implementation-note: >
         Current implementation processes export synchronously and immediately
         sets status to COMPLETED with a CDN download URL (cdnBaseUrl/export/{noteId}.{format}).
@@ -4689,8 +4620,6 @@ paths:
         The 202 response returns only {exportJobId, status} — downloadUrl is
         omitted from the create response even though it is available. Use
         GET /api/v1/exports/{exportJobId} to retrieve the downloadUrl.
-=======
->>>>>>> main
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4831,10 +4760,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -4901,116 +4827,10 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
-  /api/v1/publish-jobs:
+  /v1/publish-jobs:
     post:
       operationId: requestPublishJob
       summary: 발행 작업 요청
-      tags:
-      - Content Ingestion & Publishing
-      x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
-      x-implementation-status: not-implemented
-=======
->>>>>>> main
-      x-visibility: public
-      x-consumers:
-      - id: web.note-editor
-        type: frontend
-        description: Markdown/WYSIWYG note editor
-<<<<<<< HEAD
-      x-produces-events: []
-=======
-      x-produces-events:
-      - PublishJobRequested
->>>>>>> main
-      x-internal-sync-calls:
-      - targetService: knowledge-workspace
-        operationId: getNoteSnapshotInternal
-        reason: publisher needs authoritative note snapshot
-<<<<<<< HEAD
-        required: false
-      x-async-boundary: false
-      x-implementation-note: >
-        1번 방식(동기 처리): request body의 noteContent를 platform 형식으로 변환 후
-        clipboardContent와 openUrl을 HTTP 200으로 즉시 반환한다.
-        getNoteSnapshotInternal은 Workspace-Service 구현 완료 전까지 호출하지 않으며
-        대신 request body의 noteContent를 사용한다.
-        PublishJobRequested 이벤트는 미발행. openUrl은 platform 기준으로 서버가 계산한다
-        (tistory → https://www.tistory.com/,
-        notion → https://www.notion.so/, copy → null).
-      description: >
-        노트 콘텐츠를 platform 형식으로 변환하여 clipboardContent와 openUrl을 즉시 반환한다.
-        클라이언트는 clipboardContent를 클립보드에 복사하고 openUrl을 새 탭으로 열어 사용자가
-        붙여넣기만 하면 발행할 수 있도록 한다(1번 방식).
-        티스토리·네이버 등 공식 글쓰기 API가 폐쇄된 플랫폼에 적용된다.
-=======
-        required: true
-      x-async-boundary: true
-      description: 원 명세의 200/PENDING을 202 Accepted로 수정했다.
->>>>>>> main
-      parameters:
-      - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PublishJobCreateRequest'
-      responses:
-<<<<<<< HEAD
-        '200':
-=======
-        '202':
->>>>>>> main
-          description: Success
-          content:
-            application/json:
-              schema:
-                allOf:
-                - $ref: '#/components/schemas/ApiSuccessBase'
-                - type: object
-                  required:
-                  - data
-                  properties:
-                    data:
-                      $ref: '#/components/schemas/PublishJobData'
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '401':
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '403':
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '404':
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-<<<<<<< HEAD
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-      security:
-      - bearerAuth: []
-  /api/v1/publish-jobs/{publishJobId}:
-    get:
-      operationId: getPublishJob
-      summary: 발행 작업 상태 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -5023,12 +4843,13 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      parameters:
-      - name: publishJobId
-        in: path
+      description: Currently implemented as a synchronous clipboard publishing helper. The service receives noteContent and returns converted clipboard content immediately.
+      requestBody:
         required: true
-        schema:
-          type: string
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishJobCreateRequest'
       responses:
         '200':
           description: Success
@@ -5063,10 +4884,12 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: Not found
-=======
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: Conflict
->>>>>>> main
           content:
             application/json:
               schema:
@@ -5086,10 +4909,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: chrome-extension
@@ -5170,10 +4990,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: web.settings
@@ -5250,10 +5067,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: external-agent
@@ -5321,10 +5135,7 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-<<<<<<< HEAD
       x-implementation-status: not-implemented
-=======
->>>>>>> main
       x-visibility: public
       x-consumers:
       - id: external-agent
@@ -8639,8 +8450,6 @@ components:
       - email
       - expiresAt
       additionalProperties: false
-<<<<<<< HEAD
-=======
     EmailAvailabilityData:
       type: object
       properties:
@@ -8653,7 +8462,6 @@ components:
       - email
       - available
       additionalProperties: false
->>>>>>> main
     EmailVerificationVerifyRequest:
       type: object
       properties:
@@ -8684,8 +8492,6 @@ components:
       - verified
       - email
       additionalProperties: false
-<<<<<<< HEAD
-=======
     TemporaryPasswordIssueRequest:
       type: object
       properties:
@@ -8710,7 +8516,6 @@ components:
       - email
       - issued
       additionalProperties: false
->>>>>>> main
     ConsentFlags:
       type: object
       properties:
@@ -9980,7 +9785,6 @@ components:
         redirectUri:
           type: string
           format: uri
-<<<<<<< HEAD
           description: >
             Optional override. If omitted, the service uses the redirect URI
             configured in notion.redirect-uri (application.yml). Current
@@ -9990,11 +9794,6 @@ components:
         Implemented without required redirectUri — redirectUri is fixed in
         application.yml as notion.redirect-uri. Request body is not required
         in the current Ingestion-Service controller.
-=======
-      required:
-      - redirectUri
-      additionalProperties: false
->>>>>>> main
     OAuthUrlData:
       type: object
       properties:
@@ -10006,7 +9805,6 @@ components:
       required:
       - authorizationUrl
       - state
-<<<<<<< HEAD
     NotionPagesData:
       type: object
       properties:
@@ -10028,8 +9826,6 @@ components:
       required:
       - pages
       additionalProperties: false
-=======
->>>>>>> main
       additionalProperties: false
     NotionOAuthCallbackRequest:
       type: object
@@ -10062,24 +9858,16 @@ components:
           enum:
           - IMPORT
           - FORK
-<<<<<<< HEAD
           default: IMPORT
           description: >
             SYNC mode planned but not yet implemented. Current implementation
             supports IMPORT and FORK only.
-=======
-          - SYNC
->>>>>>> main
         targetFolderId:
           type: string
           nullable: true
       required:
       - integrationAccountId
       - sourceId
-<<<<<<< HEAD
-=======
-      - mode
->>>>>>> main
       additionalProperties: false
     ObsidianImportJobCreateRequest:
       type: object
@@ -10092,7 +9880,6 @@ components:
       required:
       - uploadedZipAssetId
       additionalProperties: false
-<<<<<<< HEAD
     ImportJobAcceptedData:
       type: object
       description: >
@@ -10110,8 +9897,6 @@ components:
       - importJobId
       - status
       additionalProperties: false
-=======
->>>>>>> main
     ImportJobData:
       type: object
       properties:
@@ -10154,7 +9939,6 @@ components:
           enum:
           - WEB
           - APP
-<<<<<<< HEAD
           default: WEB
           description: >
             Optional. Defaults to WEB. Current implementation accepts any value
@@ -10166,13 +9950,6 @@ components:
       x-implementation-note: >
         clientType was originally required but implementation defaults it to WEB,
         so it is now optional in this contract.
-=======
-      required:
-      - noteId
-      - format
-      - clientType
-      additionalProperties: false
->>>>>>> main
     ExportJobData:
       type: object
       properties:
@@ -10229,18 +10006,12 @@ components:
         templateId:
           type: string
           nullable: true
-<<<<<<< HEAD
         noteContent:
           type: string
-          nullable: true
-          description: >
-            마크다운 본문. Workspace-Service 구현 전 fallback용.
-            값이 있으면 getNoteSnapshotInternal 호출 없이 이 값을 변환에 사용한다.
-=======
->>>>>>> main
       required:
       - noteId
       - platform
+      - noteContent
       additionalProperties: false
     PublishJobData:
       type: object
@@ -10249,33 +10020,22 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/JobStatus'
-<<<<<<< HEAD
         clipboardContent:
           type: string
           nullable: true
-          description: platform 형식으로 변환된 콘텐츠. 클라이언트가 클립보드에 복사한다.
         clipboardContentType:
           type: string
-          enum:
-          - text/html
-          - text/markdown
-          - text/plain
           nullable: true
-          description: clipboardContent의 MIME 타입.
+          enum:
+          - text/markdown
+          - text/html
         openUrl:
           type: string
           format: uri
           nullable: true
-          description: >
-            클라이언트가 새 탭으로 열어야 할 글쓰기 URL.
-            platform 기준 서버 계산값
-            (tistory → https://www.tistory.com/manage/newpost/,
-            notion → https://www.notion.so/, copy → null).
         error:
           type: string
           nullable: true
-=======
->>>>>>> main
       required:
       - publishJobId
       - status

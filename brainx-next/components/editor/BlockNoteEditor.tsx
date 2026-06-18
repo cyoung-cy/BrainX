@@ -10,8 +10,8 @@ import type { Block } from "@blocknote/core";
 import { useEffect, useRef, useState } from "react";
 import { useBrainX } from "@/components/brainx-provider";
 import { cx } from "@/lib/utils";
-import type { EditorFontSize } from "@/app/editor-lab/page";
-import { FONT_SIZES, FONT_SIZE_LABELS } from "@/app/editor-lab/page";
+import type { EditorFontSize } from "@/components/editor/editorTypes";
+import { FONT_SIZES, FONT_SIZE_LABELS } from "@/components/editor/editorTypes";
 
 const TITLE_KEY = "brainx_blocknote_title_v1";
 const CONTENT_KEY = "brainx_blocknote_content_v1";
@@ -35,20 +35,12 @@ function loadSavedBlocks(): Block[] | undefined {
 }
 
 export default function BlockNoteEditor({ fontSize, onFontSizeChange }: BlockNoteEditorProps) {
-<<<<<<< HEAD
-  const { theme } = useBrainX();
-=======
   const { effectiveTheme } = useBrainX();
->>>>>>> main
   const [title, setTitle] = useState("");
   const [showJson, setShowJson] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-<<<<<<< HEAD
-  const isLight = theme === "light";
-=======
   const isLight = effectiveTheme === "light";
->>>>>>> main
 
   const editor = useCreateBlockNote({
     initialContent: loadSavedBlocks(),

@@ -27,13 +27,16 @@ public class EventOutbox {
     private String tenantId;
     private String userId;
     private String correlationId;
+    private String causationId;
+    private String idempotencyKey;
     @Column(nullable = false)
     private String channel;
     @Column(columnDefinition = "text", nullable = false)
     private String payloadJson;
 
     public EventOutbox(String eventId, String eventType, int eventVersion, Instant occurredAt, String producer,
-                       String tenantId, String userId, String correlationId, String channel, String payloadJson) {
+                       String tenantId, String userId, String correlationId, String causationId,
+                       String idempotencyKey, String channel, String payloadJson) {
         this.eventId = eventId;
         this.eventType = eventType;
         this.eventVersion = eventVersion;
@@ -42,6 +45,8 @@ public class EventOutbox {
         this.tenantId = tenantId;
         this.userId = userId;
         this.correlationId = correlationId;
+        this.causationId = causationId;
+        this.idempotencyKey = idempotencyKey;
         this.channel = channel;
         this.payloadJson = payloadJson;
     }

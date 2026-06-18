@@ -63,6 +63,7 @@ public class UserService {
                 .security(SecurityInfo.builder()
                         .twoFactorEnabled(user.isTwoFactorEnabled())
                         .linkedProviders(linkedProviders)
+                        .hasPassword(StringUtils.hasText(user.getPassword()))
                         .build())
                 .consents(toConsentInfo(consent))
                 .build();

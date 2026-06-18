@@ -43,8 +43,6 @@ type GraphControls = {
   bridges: () => void;
 };
 
-<<<<<<< HEAD
-=======
 type PlanetFlowNode = Node<{
   label: string;
   color: string;
@@ -63,7 +61,6 @@ type OrbitFlowEdge = Edge<{
   theme: "2d" | "universe";
 }>;
 
->>>>>>> main
 function seededUnit(seed: string) {
   let hash = 2166136261;
   for (let index = 0; index < seed.length; index += 1) {
@@ -126,6 +123,7 @@ function GraphCanvasFlow({
   timeFilter,
   hiddenClusters,
   controls,
+  bridgeMode,
   onSelect
 }: {
   theme: '2d' | 'universe';
@@ -137,6 +135,7 @@ function GraphCanvasFlow({
   timeFilter: string;
   hiddenClusters: Partial<Record<ClusterId, boolean>>;
   controls: MutableRefObject<GraphControls | null>;
+  bridgeMode: boolean;
   onSelect: (id: string | null) => void;
 }) {
   const { setCenter, fitView, zoomTo } = useReactFlow();
@@ -167,6 +166,7 @@ function GraphCanvasFlow({
       };
     }
   }, [controls, fitView, zoomTo]);
+
 
   // Layout target calculations
   useEffect(() => {
@@ -387,7 +387,18 @@ function GraphCanvasFlow({
       });
     }
 
-    const newNodes: PlanetFlowNode[] = notes.map(note => {
+    // bridgeMode: bridge 엣지에 연결된 노드 집합
+    const bridgeNodes = new Set<string>();
+    if (bridgeMode) {
+      edges.forEach((e) => {
+        if (e.bridge) {
+          bridgeNodes.add(e.source);
+          bridgeNodes.add(e.target);
+        }
+      });
+    }
+
+    const newNodes = notes.map(note => {
       const cluster = clusterById(note.cluster);
       const linkCount = note.links.length;
       const baseRadius = 7 + Math.min(8, linkCount * 1.5);
@@ -399,8 +410,13 @@ function GraphCanvasFlow({
       
       let layer: 'front' | 'middle' | 'back' = 'middle';
       if (selectedId) {
+        // 노드 선택 상태가 우선
         if (selected) layer = 'front';
         else if (isDirect) layer = 'middle';
+        else layer = 'back';
+      } else if (bridgeMode) {
+        // bridgeMode: bridge 노드만 front, 나머지 back
+        if (bridgeNodes.has(note.id)) layer = 'front';
         else layer = 'back';
       } else {
         if (baseRadius > 10) layer = 'front';
@@ -425,16 +441,20 @@ function GraphCanvasFlow({
       };
     });
     
-    const newEdges: OrbitFlowEdge[] = edges.map(edge => {
-      const isSelected = Boolean(selectedId && (edge.source === selectedId || edge.target === selectedId));
-      const isDimmed = Boolean(selectedId && !isSelected);
+    const newEdges = edges.map(edge => {
+      const isSelected = selectedId && (edge.source === selectedId || edge.target === selectedId);
+      // bridgeMode: bridge 아닌 엣지는 흐리게, bridge 엣지는 강조
+      const isDimmed = selectedId
+        ? !isSelected
+        : (bridgeMode ? !edge.bridge : false);
       return {
         id: `${edge.source}-${edge.target}`,
         source: edge.source,
         target: edge.target,
         type: 'orbit',
         data: {
-          isBridge: Boolean(edge.bridge),
+          isBridge: edge.bridge,
+          isBridgeHighlight: bridgeMode && edge.bridge,
           isSelected,
           isDimmed,
           theme
@@ -444,7 +464,7 @@ function GraphCanvasFlow({
     
     setRfNodes(newNodes);
     setRfEdges(newEdges);
-  }, [notes, edges, selectedId, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme]);
+  }, [notes, edges, selectedId, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme, bridgeMode]);
 
   const [hovered, setHovered] = useState<BrainXNote | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -559,6 +579,7 @@ function GraphScreenInner() {
   const [clusterOn, setClusterOn] = useState(false);
   const [timeFilter, setTimeFilter] = useState("전체");
   const [hiddenClusters, setHiddenClusters] = useState<Partial<Record<ClusterId, boolean>>>({});
+  const [bridgeMode, setBridgeMode] = useState(false);
   const controls = useRef<GraphControls | null>(null);
   const edges = useMemo(() => deriveGraphEdges(notes), [notes]);
   const selected = selectedId ? notes.find((note) => note.id === selectedId) ?? null : null;
@@ -576,7 +597,11 @@ function GraphScreenInner() {
           timeFilter={timeFilter}
           hiddenClusters={hiddenClusters}
           controls={controls}
-          onSelect={(id) => setSelectedId(id)}
+          bridgeMode={bridgeMode}
+          onSelect={(id) => {
+            if (id !== null && bridgeMode) setBridgeMode(false);
+            setSelectedId(id);
+          }}
         />
       </ReactFlowProvider>
 
@@ -669,11 +694,20 @@ function GraphScreenInner() {
             ))}
           </div>
 
-          <Btn variant="accent" size="sm" icon="sparkle" onClick={() => {
-            controls.current?.bridges();
-            pushToast("징검다리 개념 3개를 발견했어요 ✨", "ok");
-          }}>
-            징검다리 개념 추천
+          <Btn
+            variant={bridgeMode ? "primary" : "accent"}
+            size="sm"
+            icon="sparkle"
+            onClick={() => {
+              const next = !bridgeMode;
+              setBridgeMode(next);
+              controls.current?.bridges();
+              if (next) {
+                pushToast("징검다리 개념 연결선이 강조 표시됩니다 ✨", "ok");
+              }
+            }}
+          >
+            {bridgeMode ? "강조 해제" : "징검다리 개념 추천"}
           </Btn>
         </div>
       </div>

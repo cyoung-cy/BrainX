@@ -22,15 +22,24 @@ public class WorkspaceEventPublisher {
 
     public void publish(String eventType, String userId, Map<String, Object> payload) {
         Instant now = Instant.now();
+        String eventId = "evt_" + UUID.randomUUID();
+        String correlationId = stringValue(payload, "correlationId");
+        if (correlationId == null) {
+            correlationId = "req_" + UUID.randomUUID();
+        }
+        String causationId = stringValue(payload, "causationId");
+        String idempotencyKey = stringValue(payload, "idempotencyKey");
         WorkspaceEvent event = new WorkspaceEvent(
-                "evt_" + UUID.randomUUID(),
+                eventId,
                 eventType,
                 1,
                 now,
                 PRODUCER,
                 null,
                 userId,
-                null,
+                correlationId,
+                causationId,
+                idempotencyKey,
                 channel(eventType),
                 payload
         );
@@ -43,6 +52,8 @@ public class WorkspaceEventPublisher {
                 event.tenantId(),
                 event.userId(),
                 event.correlationId(),
+                event.causationId(),
+                event.idempotencyKey(),
                 event.channel(),
                 toJson(event.payload())
         ));
@@ -55,6 +66,11 @@ public class WorkspaceEventPublisher {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to serialize event payload.", exception);
         }
+    }
+
+    private String stringValue(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        return value instanceof String text && !text.isBlank() ? text : null;
     }
 
     private String channel(String eventType) {

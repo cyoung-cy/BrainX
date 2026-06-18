@@ -22,7 +22,8 @@ public class UserResponses {
     @Builder
     public record SecurityInfo(
             boolean twoFactorEnabled,
-            List<String> linkedProviders
+            List<String> linkedProviders,
+            boolean hasPassword
     ) {
     }
 

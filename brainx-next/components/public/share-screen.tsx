@@ -49,21 +49,12 @@ export function ShareScreen({ noteId }: { noteId?: string } = {}) {
         <Badge color={cluster.color} dot className="mb-4">
           {cluster.label}
         </Badge>
-<<<<<<< HEAD
-        <h1 className="mb-4 text-[34px] font-bold tracking-tight">{note?.title ?? "공유 노트"}</h1>
-        <div className="mb-8 flex items-center gap-3 border-b border-line/40 pb-8">
-          <Avatar name="연우" size={36} />
-          <div>
-            <div className="text-[14px] font-medium text-txt">김연우</div>
-            <div className="text-[12px] text-txt3">2026년 6월 6일 작성 · 공개 노트</div>
-=======
         <h1 className="mb-4 text-[36px] font-bold tracking-tight">{note?.title ?? "공유 노트"}</h1>
         <div className="mb-8 flex items-center gap-3 border-b border-line/40 pb-8">
           <Avatar name="연우" size={36} />
           <div>
             <div className="text-[16px] font-medium text-txt">김연우</div>
             <div className="text-[14px] text-txt3">2026년 6월 6일 작성 · 공개 노트</div>
->>>>>>> main
           </div>
         </div>
         <div className="prose-bx space-y-4">
@@ -72,11 +63,7 @@ export function ShareScreen({ noteId }: { noteId?: string } = {}) {
             .map((line, index) => {
               if (line.startsWith("## ")) {
                 return (
-<<<<<<< HEAD
-                  <h2 key={index} className="text-[20px] font-bold mt-7 mb-2">
-=======
                   <h2 key={index} className="text-[22px] font-bold mt-7 mb-2">
->>>>>>> main
                     {line.replace("## ", "")}
                   </h2>
                 );
@@ -85,11 +72,7 @@ export function ShareScreen({ noteId }: { noteId?: string } = {}) {
                 return (
                   <li
                     key={index}
-<<<<<<< HEAD
-                    className="ml-5 list-disc text-[15px] leading-relaxed text-txt2"
-=======
                     className="ml-5 list-disc text-[17px] leading-relaxed text-txt2"
->>>>>>> main
                     dangerouslySetInnerHTML={{ __html: line.replace("- ", "").replace(/\*\*(.+?)\*\*/g, "<b class=\"text-txt\">$1</b>") }}
                   />
                 );

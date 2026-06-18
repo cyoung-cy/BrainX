@@ -50,13 +50,8 @@ export function AdminScreen() {
           <Badge color="244 114 182" dot className="mb-2.5">
             관리자 · 운영 대시보드
           </Badge>
-<<<<<<< HEAD
-          <h1 className="text-[27px] font-bold tracking-tight">관리자</h1>
-          <p className="mt-1.5 max-w-2xl text-[14px] text-txt2">사용량, 플래그, 운영 상태를 점검하는 내부 화면입니다.</p>
-=======
           <h1 className="text-[29px] font-bold tracking-tight">관리자</h1>
           <p className="mt-1.5 max-w-2xl text-[16px] text-txt2">사용량, 플래그, 운영 상태를 점검하는 내부 화면입니다.</p>
->>>>>>> main
         </div>
         <Btn variant="soft" icon="refresh" onClick={() => pushToast("운영 지표를 새로 고쳤어요", "ok")}>
           새로고침
@@ -76,13 +71,8 @@ export function AdminScreen() {
             {ADMIN_FLAGS.map((flag) => (
               <div key={flag.key} className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                 <div>
-<<<<<<< HEAD
-                  <div className="text-[13px] font-medium text-txt">{flag.label}</div>
-                  <div className="text-[11.5px] text-txt3">{flag.desc}</div>
-=======
                   <div className="text-[15px] font-medium text-txt">{flag.label}</div>
                   <div className="text-[13.5px] text-txt3">{flag.desc}</div>
->>>>>>> main
                 </div>
                 <Toggle
                   on={flags[flag.key]}
@@ -97,17 +87,6 @@ export function AdminScreen() {
           <SectionCard title="상태" sub="배포와 인프라 상태는 모의 값입니다.">
             <div className="space-y-2.5">
               <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
-<<<<<<< HEAD
-                <span className="text-[13px] text-txt2">API 응답</span>
-                <Badge color="34 211 238" dot>Healthy</Badge>
-              </div>
-              <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
-                <span className="text-[13px] text-txt2">큐 적체</span>
-                <Badge color="234 179 8" dot>Low</Badge>
-              </div>
-              <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
-                <span className="text-[13px] text-txt2">보안 경고</span>
-=======
                 <span className="text-[15px] text-txt2">API 응답</span>
                 <Badge color="34 211 238" dot>Healthy</Badge>
               </div>
@@ -117,7 +96,6 @@ export function AdminScreen() {
               </div>
               <div className="flex items-center justify-between rounded-xl bg-surface2/40 px-3 py-2.5">
                 <span className="text-[15px] text-txt2">보안 경고</span>
->>>>>>> main
                 <Badge color="244 114 182" dot>2건</Badge>
               </div>
             </div>
@@ -129,11 +107,7 @@ export function AdminScreen() {
                 const count = notes.filter((note) => note.cluster === cluster.id).length;
                 return (
                   <div key={cluster.id}>
-<<<<<<< HEAD
-                    <div className="mb-1.5 flex items-center justify-between text-[12px] text-txt2">
-=======
                     <div className="mb-1.5 flex items-center justify-between text-[14px] text-txt2">
->>>>>>> main
                       <span>{cluster.label}</span>
                       <span className="font-mono text-txt3">{count}</span>
                     </div>
@@ -160,13 +134,8 @@ export function AdminScreen() {
                   {index + 1}
                 </div>
                 <div className="min-w-0 flex-1">
-<<<<<<< HEAD
-                  <div className="truncate text-[13px] font-medium text-txt">{note.title}</div>
-                  <div className="text-[11.5px] text-txt3">{countWords(note.markdown)} 단어 · {note.links.length} 연결</div>
-=======
                   <div className="truncate text-[15px] font-medium text-txt">{note.title}</div>
                   <div className="text-[13.5px] text-txt3">{countWords(note.markdown)} 단어 · {note.links.length} 연결</div>
->>>>>>> main
                 </div>
                 <Icon name="chevR" size={15} className="text-txt3" />
               </button>
@@ -184,13 +153,8 @@ export function AdminScreen() {
               <div key={`${log.title}-${log.time}`} className="flex items-start gap-3 rounded-xl bg-surface2/40 px-3 py-2.5">
                 <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: `rgb(${log.tone})` }} />
                 <div className="min-w-0 flex-1">
-<<<<<<< HEAD
-                  <div className="text-[13px] font-medium text-txt">{log.title}</div>
-                  <div className="text-[11.5px] text-txt3">{log.time} · local mock</div>
-=======
                   <div className="text-[15px] font-medium text-txt">{log.title}</div>
                   <div className="text-[13.5px] text-txt3">{log.time} · local mock</div>
->>>>>>> main
                 </div>
               </div>
             ))}

@@ -31,7 +31,7 @@ public class WorkspaceApiClient {
         Map<String, Object> body = Map.of("targetNoteId", targetNoteId, "targetTitle", targetTitle);
         try {
             restTemplate.postForEntity(
-                    workspaceBaseUrl + "/v1/notes/" + sourceNoteId + "/links",
+                    workspaceBaseUrl + "/api/v1/notes/" + sourceNoteId + "/links",
                     new HttpEntity<>(body, headers),
                     Map.class
             );
@@ -55,7 +55,7 @@ public class WorkspaceApiClient {
 
         try {
             ResponseEntity<Map> res = restTemplate.postForEntity(
-                    workspaceBaseUrl + "/v1/notes",
+                    workspaceBaseUrl + "/api/v1/notes",
                     new HttpEntity<>(body, headers),
                     Map.class
             );
