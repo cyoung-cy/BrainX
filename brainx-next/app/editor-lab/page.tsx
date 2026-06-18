@@ -1,456 +1,731 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, ArrowRight, Star, Zap, Clock } from "lucide-react";
 import { useBrainX } from "@/components/brainx-provider";
 import { cx } from "@/lib/utils";
 
-/* ── Shared types (must match both editor components) ─ */
-export type EditorFontSize = "sm" | "base" | "lg" | "xl";
+/* ── Demo list ───────────────────────────────── */
+interface Demo {
+  id: string;
+  href: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  tags: string[];
+  badge?: { label: string; color: "primary" | "accent" | "cyan" | "green" };
+  badgeExtra?: string;
+  featured?: boolean;
+  preview?: React.ReactNode;
+}
 
-export const FONT_SIZE_LABELS: Record<EditorFontSize, string> = {
-  sm: "작게",
-  base: "보통",
-  lg: "크게",
-  xl: "매우 크게",
-};
-
-export const FONT_SIZES: Record<EditorFontSize, number> = {
-  sm: 14,
-  base: 16,
-  lg: 20,
-  xl: 24,
-};
-
-/* ── Dynamic imports ─────────────────────────────── */
-const TipTapEditor = dynamic(
-  () => import("@/components/editor/TipTapEditor"),
-  { ssr: false, loading: () => <EditorSkeleton /> }
-);
-
-const BlockNoteEditor = dynamic(
-  () => import("@/components/editor/BlockNoteEditor"),
-  { ssr: false, loading: () => <EditorSkeleton /> }
-);
-
-type Tab = "tiptap" | "blocknote";
-
-const TABS: { id: Tab; label: string; sub: string; desc: string }[] = [
-  {
-    id: "tiptap",
-    label: "TipTap",
-    sub: "ProseMirror 기반",
-    desc: "세밀한 커스터마이징, 확장 에코시스템, 마크다운 단축키 지원",
-  },
-  {
-    id: "blocknote",
-    label: "BlockNote",
-    sub: "Block 기반",
-    desc: "Notion 스타일 블록 에디터, / 명령어, 드래그 앤 드롭 내장",
-  },
-];
-
-const COMPARISON: { feature: string; tiptap: string; blocknote: string }[] = [
-  { feature: "글씨 크기 변경", tiptap: "전체 에디터 (em 상속)", blocknote: "전체 문서 (.bn-default-styles 오버라이드)" },
-  { feature: "제목 크기 변경", tiptap: "em 단위 비례 스케일", blocknote: "em 단위 비례 스케일" },
-  { feature: "자동 저장", tiptap: "✓ localStorage", blocknote: "✓ localStorage" },
-  { feature: "JSON 출력", tiptap: "✓ ProseMirror JSON", blocknote: "✓ Block[] JSON" },
-  { feature: "서식 도구", tiptap: "커스텀 툴바", blocknote: "내장 Mantine 툴바" },
-  { feature: "/ 명령어", tiptap: "확장 필요", blocknote: "✓ 기본 내장" },
-  { feature: "블록 드래그", tiptap: "확장 필요", blocknote: "✓ 기본 내장" },
-  { feature: "커스터마이징", tiptap: "매우 강력 (확장 API)", blocknote: "보통 (스키마/슬롯)" },
-  { feature: "Light Mode", tiptap: "CSS 변수로 즉시 반영", blocknote: "theme prop으로 즉시 반영" },
-];
-
-const FONT_SIZE_KEYS = Object.keys(FONT_SIZE_LABELS) as EditorFontSize[];
-
-function EditorSkeleton() {
+function MiniLayoutPreview({ isLight }: { isLight: boolean }) {
   return (
-    <div className="space-y-3 animate-pulse">
-      <div className="h-9 rounded-lg bg-surface2/60" />
-      <div className="h-11 rounded-xl bg-surface2/60" />
-      <div className="h-80 rounded-xl bg-surface2/60" />
+    <div
+      className={cx(
+        "w-full rounded-xl overflow-hidden border text-[8px] leading-none",
+        isLight
+          ? "border-slate-200 bg-slate-50"
+          : "border-line/50 bg-surface/60",
+      )}
+      style={{ height: 100 }}
+    >
+      <div
+        className={cx(
+          "flex items-center gap-1 px-2 py-1 border-b",
+          isLight
+            ? "border-slate-200 bg-white"
+            : "border-line/40 bg-surface2/60",
+        )}
+      >
+        <div className="w-2 h-2 rounded-full bg-primary" />
+        <div
+          className={cx(
+            "flex-1 h-1.5 rounded",
+            isLight ? "bg-slate-200" : "bg-line/40",
+          )}
+        />
+        <div
+          className={cx(
+            "w-6 h-1.5 rounded",
+            isLight ? "bg-slate-200" : "bg-line/40",
+          )}
+        />
+      </div>
+      <div className="flex h-[calc(100%-28px)]">
+        {/* Left panel */}
+        <div
+          className={cx(
+            "w-10 shrink-0 border-r p-1.5 space-y-1",
+            isLight ? "border-slate-200 bg-slate-50" : "border-line/40",
+          )}
+        >
+          {[...Array(4)].map((_, i) => (
+            <div
+              key={i}
+              className={cx(
+                "h-1 rounded",
+                i === 0
+                  ? "bg-primary/50"
+                  : isLight
+                    ? "bg-slate-200"
+                    : "bg-line/30",
+              )}
+            />
+          ))}
+        </div>
+        {/* Editor panels */}
+        <div className="flex-1 flex">
+          <div
+            className={cx(
+              "flex-1 p-1.5",
+              isLight ? "bg-white" : "bg-surface/80",
+            )}
+          >
+            <div
+              className={cx(
+                "h-2 rounded mb-1 w-3/4",
+                isLight ? "bg-slate-300" : "bg-txt3/30",
+              )}
+            />
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className={cx(
+                  "h-1 rounded mb-0.5",
+                  isLight ? "bg-slate-200" : "bg-line/30",
+                )}
+                style={{ width: `${60 + i * 10}%` }}
+              />
+            ))}
+          </div>
+          <div
+            className={cx(
+              "w-0.5 shrink-0",
+              isLight ? "bg-slate-200" : "bg-line/30",
+            )}
+          />
+          <div
+            className={cx(
+              "flex-1 p-1.5 opacity-60",
+              isLight ? "bg-white" : "bg-surface/80",
+            )}
+          >
+            <div
+              className={cx(
+                "h-2 rounded mb-1 w-1/2",
+                isLight ? "bg-slate-300" : "bg-txt3/30",
+              )}
+            />
+            {[...Array(2)].map((_, i) => (
+              <div
+                key={i}
+                className={cx(
+                  "h-1 rounded mb-0.5",
+                  isLight ? "bg-slate-200" : "bg-line/30",
+                )}
+                style={{ width: `${50 + i * 15}%` }}
+              />
+            ))}
+          </div>
+        </div>
+        {/* Right panel */}
+        <div
+          className={cx(
+            "w-12 shrink-0 border-l p-1.5 space-y-1",
+            isLight ? "border-slate-200 bg-slate-50" : "border-line/40",
+          )}
+        >
+          {[...Array(5)].map((_, i) => (
+            <div
+              key={i}
+              className={cx(
+                "h-1 rounded",
+                i === 0
+                  ? "bg-accent/50"
+                  : isLight
+                    ? "bg-slate-200"
+                    : "bg-line/30",
+              )}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function EditorLabPage() {
-  const { effectiveTheme, setTheme } = useBrainX();
-  const [tab, setTab] = useState<Tab>("tiptap");
-  const [fontSize, setFontSize] = useState<EditorFontSize>("base");
+  const { theme, setTheme } = useBrainX();
+  const isLight = theme === "light";
 
-  const activeLabel = tab === "tiptap" ? "TipTap" : "BlockNote";
-  const isLight = effectiveTheme === "light";
+  const DEMOS: Demo[] = [
+    {
+      id: "brainx-note-demo",
+      href: "/editor-lab/brainx-note-demo",
+      title: "BrainX Note Demo",
+      subtitle: "통합 노트 환경",
+      description:
+        "Obsidian + Notion + AI 기반 BrainX 통합 노트 환경. 화면 분할, 백링크, 지식 그래프, AI 보조, 시맨틱 검색, Import/Export, Command Palette를 한 화면에서 체험.",
+      tags: [
+        "화면분할",
+        "백링크",
+        "지식그래프",
+        "AI",
+        "시맨틱검색",
+        "Import/Export",
+      ],
+      badge: { label: "NEW", color: "primary" },
+      badgeExtra: "추천",
+      featured: true,
+    },
+    {
+      id: "split-demo",
+      href: "/editor-lab/split-demo",
+      title: "Split View Demo",
+      subtitle: "무제한 화면 분할",
+      description:
+        "Obsidian 스타일 무제한 분할 뷰. 좌우/상하 혼합 분할, 드래그 앤 드롭 노트 배치, 독립 스크롤.",
+      tags: ["화면분할", "DnD", "react-resizable-panels"],
+      badge: { label: "STABLE", color: "cyan" },
+    },
+    {
+      id: "tiptap-code-test",
+      href: "/editor-lab/tiptap-code-test",
+      title: "TipTap Code Editor",
+      subtitle: "코드 하이라이팅",
+      description:
+        "TipTap + CodeBlockLowlight. 40+ 언어 지원, 복사 버튼, 언어 선택, 마크다운 단축키.",
+      tags: ["TipTap", "Lowlight", "코드블록"],
+      badge: { label: "V3", color: "accent" },
+    },
+    {
+      id: "editor-compare",
+      href: "#",
+      title: "Editor Compare",
+      subtitle: "TipTap vs BlockNote",
+      description:
+        "TipTap vs BlockNote 에디터 비교. 이 페이지의 원래 내용 (아래 스크롤).",
+      tags: ["TipTap", "BlockNote", "비교"],
+    },
+  ];
+
+  const featuredDemo = DEMOS[0];
+  const otherDemos = DEMOS.slice(1);
+
+  const RECENT_FEATURES = [
+    {
+      label: "BrainX Note Demo",
+      icon: "✦",
+      href: "/editor-lab/brainx-note-demo",
+    },
+    { label: "Infinite Split View", icon: "⫸", href: "/editor-lab/split-demo" },
+    {
+      label: "Knowledge Graph Mock",
+      icon: "⬡",
+      href: "/editor-lab/brainx-note-demo",
+    },
+    {
+      label: "AI Assistant Panel",
+      icon: "🤖",
+      href: "/editor-lab/brainx-note-demo",
+    },
+    {
+      label: "Obsidian Backlinks",
+      icon: "←→",
+      href: "/editor-lab/brainx-note-demo",
+    },
+    {
+      label: "Command Palette",
+      icon: "⌘",
+      href: "/editor-lab/brainx-note-demo",
+    },
+  ];
 
   return (
     <div className="min-h-screen" data-route>
-      {/* ── Header ──────────────────────────────────── */}
-      <header className="sticky top-0 z-30 glass border-b border-line/40 px-4 sm:px-6 py-3 flex items-center gap-3">
+      {/* ── Header ──────────────────────────────── */}
+      <header
+        className={cx(
+          "sticky top-0 z-30 border-b px-4 sm:px-6 py-3 flex items-center gap-3",
+          isLight
+            ? "bg-white border-slate-200 shadow-sm"
+            : "glass border-line/40",
+        )}
+      >
         <Link href="/" className="flex items-center gap-2 group shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
-            <span className="text-primary font-bold font-display text-sm">B</span>
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-glow">
+            <span className="text-white font-bold text-[11px]">B</span>
           </div>
-          <span className="text-txt2 text-sm group-hover:text-txt transition-colors hidden sm:block">
+          <span
+            className={cx(
+              "text-sm font-semibold hidden sm:block",
+              isLight ? "text-slate-700" : "text-txt",
+            )}
+          >
             BrainX
           </span>
         </Link>
-        <span className="text-line/70 text-sm">/</span>
-        <span className="text-txt text-sm font-medium">Editor Lab</span>
-
-        {/* Active editor badge */}
-        <div className="hidden sm:flex items-center gap-1.5 ml-2 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />
-          <span className="text-[11px] text-primary font-medium whitespace-nowrap">
-            {activeLabel}
-          </span>
-        </div>
+        <span
+          className={cx("text-sm", isLight ? "text-slate-300" : "text-line/50")}
+        >
+          /
+        </span>
+        <span
+          className={cx(
+            "text-sm font-medium",
+            isLight ? "text-slate-700" : "text-txt",
+          )}
+        >
+          Playground
+        </span>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Theme toggle */}
+          <span
+            className={cx(
+              "text-[11px] px-2.5 py-1 rounded-full border hidden sm:block",
+              isLight
+                ? "text-slate-500 border-slate-200 bg-slate-50"
+                : "text-txt3 border-line/30 bg-surface2",
+            )}
+          >
+            실험용 · 백엔드 미연결
+          </span>
           <button
             onClick={() => setTheme(isLight ? "dark" : "light")}
-            title={isLight ? "다크 모드로 전환" : "라이트 모드로 전환"}
             className={cx(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
               isLight
                 ? "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                : "bg-surface2 text-txt2 border-line/50 hover:text-txt hover:bg-surface2"
+                : "bg-surface2 text-txt2 border-line/50 hover:text-txt",
             )}
           >
             {isLight ? (
-              <><Moon size={13} /> Dark</>
+              <>
+                <Moon size={13} /> Dark
+              </>
             ) : (
-              <><Sun size={13} /> Light</>
+              <>
+                <Sun size={13} /> Light
+              </>
             )}
           </button>
-
-          <span className="text-[11px] text-txt3 bg-surface2 px-2.5 py-1 rounded-full border border-line/30 hidden sm:block">
-            실험용 · 백엔드 미연결
-          </span>
         </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-        {/* ── Page title ──────────────────────────── */}
-        <div className="mb-4 fade-up">
-          <h1 className="text-2xl sm:text-3xl font-bold font-display text-txt mb-2">
-            에디터 비교 실험실
-          </h1>
-          <p className="text-txt3 text-sm leading-relaxed">
-            BrainX 최종 에디터 선정을 위한 비교 페이지입니다.
-            각 에디터를 직접 사용하고 개발자 경험을 평가해보세요.
-          </p>
-        </div>
-
-        {/* ── Code highlight test quick link ──────── */}
-        <div className={cx(
-          "flex items-center justify-between gap-3 mb-5 px-4 py-2.5 rounded-xl border",
-          isLight
-            ? "bg-blue-50/60 border-blue-200/80"
-            : "bg-primary/5 border-primary/15"
-        )}>
-          <div className="min-w-0">
-            <p className={cx("text-xs font-semibold", isLight ? "text-blue-700" : "text-primary")}>
-              코드 하이라이팅 테스트
-            </p>
-            <p className="text-[10px] text-txt3 truncate">
-              TipTap CodeBlockLowlight · lowlight · 40+ 언어 · ``` 마크다운 단축키
-            </p>
-          </div>
-          <Link
-            href="/editor-lab/tiptap-code-test"
+        {/* ── Hero ────────────────────────────────── */}
+        <div className="mb-10 text-center animate-fadeUp">
+          <div
             className={cx(
-              "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all whitespace-nowrap",
+              "inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[11px] font-medium mb-4",
               isLight
-                ? "bg-white border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300"
-                : "bg-primary/15 border-primary/30 text-primary hover:bg-primary/25"
+                ? "border-blue-200 bg-blue-50 text-blue-600"
+                : "border-primary/30 bg-primary/10 text-primary",
             )}
           >
-            바로가기 →
+            <Zap size={11} />
+            BrainX 실험실
+          </div>
+          <h1
+            className={cx(
+              "text-3xl sm:text-4xl font-bold font-display mb-3",
+              isLight ? "text-slate-900" : "text-txt",
+            )}
+          >
+            BrainX Playground
+          </h1>
+          <p
+            className={cx(
+              "text-sm sm:text-base leading-relaxed mb-6 max-w-xl mx-auto",
+              isLight ? "text-slate-500" : "text-txt3",
+            )}
+          >
+            BrainX에서 구현 중인 기능들을 직접 체험하는 공간입니다.
+            <br />
+            실제 서비스 적용 전 검증 및 UI 프리뷰를 제공합니다.
+          </p>
+          {/* CTA buttons */}
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <Link
+              href="/editor-lab/brainx-note-demo"
+              className={cx(
+                "inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-glow",
+                "bg-gradient-to-r from-primary to-accent text-white hover:brightness-110 hover:shadow-lg",
+              )}
+            >
+              <span>✦</span>
+              BrainX Note Demo 열기
+              <ArrowRight size={15} />
+            </Link>
+            <Link
+              href="/editor-lab/split-demo"
+              className={cx(
+                "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium border transition-all",
+                isLight
+                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  : "border-line/50 bg-surface/60 text-txt2 hover:border-line hover:bg-surface2",
+              )}
+            >
+              ⫸ Split Demo
+            </Link>
+          </div>
+        </div>
+
+        {/* ── Featured Demo ──────────────────────── */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Star size={14} className="text-primary" />
+            <span
+              className={cx(
+                "text-[11px] font-semibold uppercase tracking-wide",
+                isLight ? "text-slate-500" : "text-txt3",
+              )}
+            >
+              주요 데모
+            </span>
+          </div>
+
+          <Link
+            href={featuredDemo.href}
+            className={cx(
+              "group relative block rounded-2xl border p-6 transition-all overflow-hidden",
+              isLight
+                ? "bg-white border-slate-200 shadow-sm hover:border-primary/40 hover:shadow-md"
+                : "border-line/40 bg-surface/30 hover:border-primary/40 hover:bg-surface/50",
+            )}
+          >
+            {/* Background gradient accent */}
+            <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+              <div
+                className="absolute inset-0"
+                style={{
+                  background:
+                    "radial-gradient(circle at 30% 50%, rgb(59 130 246 / 0.04) 0%, transparent 70%)",
+                }}
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-6">
+              <div className="flex-1">
+                {/* Badges */}
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  {featuredDemo.badge && (
+                    <span
+                      className={cx(
+                        "px-2 py-0.5 rounded-full text-[10px] font-bold border",
+                        "border-primary/30 bg-primary/10 text-primary",
+                      )}
+                    >
+                      {featuredDemo.badge.label}
+                    </span>
+                  )}
+                  {featuredDemo.badgeExtra && (
+                    <span
+                      className={cx(
+                        "px-2 py-0.5 rounded-full text-[10px] font-medium border",
+                        isLight
+                          ? "border-amber-200 bg-amber-50 text-amber-600"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-400",
+                      )}
+                    >
+                      ⭐ {featuredDemo.badgeExtra}
+                    </span>
+                  )}
+                </div>
+
+                <h2
+                  className={cx(
+                    "text-xl font-bold font-display mb-1",
+                    isLight ? "text-slate-900" : "text-txt",
+                  )}
+                >
+                  {featuredDemo.title}
+                </h2>
+                <p
+                  className={cx(
+                    "text-[13px] mb-3",
+                    isLight ? "text-slate-500" : "text-txt3",
+                  )}
+                >
+                  {featuredDemo.subtitle}
+                </p>
+                <p
+                  className={cx(
+                    "text-[13px] leading-relaxed mb-4",
+                    isLight ? "text-slate-600" : "text-txt2",
+                  )}
+                >
+                  {featuredDemo.description}
+                </p>
+
+                {/* Feature tags */}
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {featuredDemo.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className={cx(
+                        "text-[11px] px-2 py-0.5 rounded-full border",
+                        isLight
+                          ? "border-blue-100 bg-blue-50 text-blue-600"
+                          : "border-primary/20 bg-primary/10 text-primary",
+                      )}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <div
+                  className={cx(
+                    "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium transition-all",
+                    "bg-gradient-to-r from-primary to-accent text-white group-hover:brightness-110",
+                  )}
+                >
+                  데모 열기
+                  <ArrowRight size={14} />
+                </div>
+              </div>
+
+              {/* Mini preview */}
+              <div className="sm:w-52 shrink-0">
+                <MiniLayoutPreview isLight={isLight} />
+                <p
+                  className={cx(
+                    "text-center text-[10px] mt-1.5",
+                    isLight ? "text-slate-400" : "text-txt3",
+                  )}
+                >
+                  좌측 탐색기 + 에디터 + 우측 AI
+                </p>
+              </div>
+            </div>
           </Link>
         </div>
 
-        {/* ── Status bar ──────────────────────────── */}
-        <div className={cx(
-          "flex flex-wrap items-center gap-x-5 gap-y-1.5 mb-6 px-4 py-2.5 rounded-xl border text-xs",
-          isLight
-            ? "bg-slate-50 border-slate-200 text-slate-500"
-            : "bg-surface2/40 border-line/40 text-txt3"
-        )}>
-          <StatusItem label="현재 에디터" value={activeLabel} accent />
-          <StatusItem
-            label="현재 테마"
-            value={isLight ? "Light ☀" : "Dark ☾"}
-            accent={false}
-          />
-          <StatusItem
-            label="현재 글씨 크기"
-            value={`${FONT_SIZE_LABELS[fontSize]} (${FONT_SIZES[fontSize]}px)`}
-            accent={false}
-          />
-          {/* Font size quick-pick */}
-          <div className="flex items-center gap-1 ml-auto">
-            {FONT_SIZE_KEYS.map((size) => (
-              <button
-                key={size}
-                onClick={() => setFontSize(size)}
-                className={cx(
-                  "px-2 py-0.5 rounded text-[11px] transition-all",
-                  fontSize === size
-                    ? "bg-primary/20 text-primary font-semibold"
-                    : isLight
-                      ? "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                      : "text-txt3 hover:text-txt hover:bg-surface2"
-                )}
-              >
-                {FONT_SIZE_LABELS[size]}
-              </button>
+        {/* ── Other demos (grid) ────────────────── */}
+        <div className="mb-10">
+          <div className="flex items-center gap-2 mb-4">
+            <span
+              className={cx(
+                "text-[11px] font-semibold uppercase tracking-wide",
+                isLight ? "text-slate-500" : "text-txt3",
+              )}
+            >
+              더 많은 실험
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {otherDemos.map((demo) => (
+              <DemoCard key={demo.id} demo={demo} isLight={isLight} />
             ))}
           </div>
         </div>
 
-        {/* ── Tab switcher ────────────────────────── */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          {TABS.map(({ id, label, sub, desc }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
+        {/* ── Recent Features ────────────────────── */}
+        <div
+          className={cx(
+            "rounded-2xl border p-5 mb-8",
+            isLight ? "bg-white border-slate-200 shadow-sm" : "card",
+          )}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Clock
+              size={14}
+              className={isLight ? "text-slate-500" : "text-txt3"}
+            />
+            <span
               className={cx(
-                "flex-1 text-left px-5 py-4 rounded-2xl border transition-all",
-                tab === id
-                  ? "border-primary/50 bg-primary/10 shadow-glow"
-                  : isLight
-                    ? "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                    : "border-line/40 bg-surface/30 hover:border-line hover:bg-surface2/30"
+                "text-[13px] font-semibold",
+                isLight ? "text-slate-700" : "text-txt",
               )}
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className={cx(
-                  "font-semibold font-display text-base transition-colors",
-                  tab === id ? "text-primary" : "text-txt"
-                )}>
-                  {label}
-                </span>
-                <span className={cx(
-                  "text-[10px] px-1.5 py-0.5 rounded-full border transition-colors",
-                  tab === id
-                    ? "text-primary/80 border-primary/30 bg-primary/10"
-                    : "text-txt3 border-line/40"
-                )}>
-                  {sub}
-                </span>
-                {tab === id && (
-                  <span className="ml-auto text-[10px] text-primary/70">선택됨 ✦</span>
+              Recently Added
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {RECENT_FEATURES.map((feat) => (
+              <Link
+                key={feat.label}
+                href={feat.href}
+                className={cx(
+                  "flex items-center gap-2 px-3 py-2 rounded-xl border text-[12px] transition-all",
+                  isLight
+                    ? "border-slate-200 bg-slate-50 text-slate-600 hover:border-primary/40 hover:bg-blue-50 hover:text-primary"
+                    : "border-line/40 bg-surface/40 text-txt2 hover:border-primary/40 hover:bg-primary/5 hover:text-primary",
                 )}
-              </div>
-              <p className="text-xs text-txt3 leading-relaxed">{desc}</p>
-            </button>
-          ))}
+              >
+                <span className="text-[14px] shrink-0">{feat.icon}</span>
+                <span className="truncate">{feat.label}</span>
+              </Link>
+            ))}
+          </div>
         </div>
 
-        {/* ── Editor card ─────────────────────────── */}
-        <div className={cx(
-          "rounded-2xl p-5 sm:p-7 fade-up border",
-          isLight
-            ? "bg-white border-slate-200 shadow-sm"
-            : "card"
-        )}>
-          {tab === "tiptap" ? (
-            <TipTapEditor fontSize={fontSize} onFontSizeChange={setFontSize} />
-          ) : (
-            <BlockNoteEditor fontSize={fontSize} onFontSizeChange={setFontSize} />
+        {/* ── Legacy editor compare section ─────── */}
+        <div
+          className={cx(
+            "rounded-2xl border p-5",
+            isLight ? "bg-white border-slate-200 shadow-sm" : "card",
           )}
-        </div>
-
-        {/* ── 비교 결과 영역 ────────────────────────── */}
-        <div className="mt-8 space-y-5">
-          {/* Feature cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FeatureCard
-              title="TipTap 특징"
-              color="primary"
-              isLight={isLight}
-              items={[
-                "전체 에디터 글씨 크기 변경",
-                "ProseMirror 기반 강력한 확장",
-                "마크다운 단축키 지원 (**굵게**, ## 제목)",
-                "편집 / 미리보기 / JSON 3단 뷰",
-                "ProseMirror JSON 출력",
-                "커스텀 툴바 완전 제어",
-              ]}
-            />
-            <FeatureCard
-              title="BlockNote 특징"
-              color="accent"
-              isLight={isLight}
-              items={[
-                "전체 문서 단위 글씨 크기 변경",
-                "Notion 스타일 블록 편집",
-                "슬래시(/) 명령어 내장",
-                "블록 드래그 앤 드롭 내장",
-                "Block[] JSON 출력",
-                "라이트/다크 테마 즉시 전환",
-              ]}
-            />
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className={cx(
+                "text-[11px] px-2 py-0.5 rounded-full border",
+                isLight
+                  ? "border-slate-200 text-slate-400"
+                  : "border-line/40 text-txt3",
+              )}
+            >
+              레거시
+            </span>
+            <span
+              className={cx(
+                "text-[13px] font-semibold",
+                isLight ? "text-slate-700" : "text-txt",
+              )}
+            >
+              에디터 비교 실험실 (TipTap vs BlockNote)
+            </span>
           </div>
-
-          {/* Comparison table */}
-          <div className={cx(
-            "rounded-2xl overflow-hidden border",
-            isLight ? "bg-white border-slate-200 shadow-sm" : "card"
-          )}>
-            <div className={cx(
-              "px-5 py-3 border-b flex items-center gap-2",
-              isLight ? "border-slate-200 bg-slate-50" : "border-line/40"
-            )}>
-              <span className="text-sm font-semibold text-txt">기능 비교표</span>
-              <span className="text-xs text-txt3">주요 기능 비교</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className={cx(
-                    "border-b",
-                    isLight ? "border-slate-200 bg-slate-50/80" : "border-line/30 bg-surface2/30"
-                  )}>
-                    <th className="text-left px-5 py-2.5 text-txt2 font-medium w-36">기능</th>
-                    <th className="text-left px-4 py-2.5 text-primary font-medium">TipTap</th>
-                    <th className="text-left px-4 py-2.5 text-accent font-medium">BlockNote</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {COMPARISON.map((row, i) => (
-                    <tr
-                      key={i}
-                      className={cx(
-                        "border-b last:border-0 transition-colors",
-                        isLight
-                          ? "border-slate-100 hover:bg-slate-50"
-                          : "border-line/20 hover:bg-surface2/20"
-                      )}
-                    >
-                      <td className="px-5 py-2.5 text-txt2 font-medium">{row.feature}</td>
-                      <td className="px-4 py-2.5 text-txt3">{row.tiptap}</td>
-                      <td className="px-4 py-2.5 text-txt3">{row.blocknote}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Checkpoint cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <CheckCard
-              title="TipTap 체크포인트"
-              isLight={isLight}
-              items={[
-                "서식 툴바 UX가 직관적인가?",
-                "마크다운 단축키 (**, ## 등) 작동하는가?",
-                "JSON 구조가 BrainX 데이터 모델과 맞는가?",
-                "커스텀 확장 추가가 용이한가?",
-                "라이트 모드에서 가독성이 좋은가?",
-              ]}
-            />
-            <CheckCard
-              title="BlockNote 체크포인트"
-              isLight={isLight}
-              items={[
-                "/ 명령어 메뉴가 편리한가?",
-                "블록 드래그 앤 드롭이 자연스러운가?",
-                "Block[] JSON이 BrainX와 호환 가능한가?",
-                "라이트 모드가 실제 Notion과 유사한가?",
-                "테마 커스터마이징이 충분한가?",
-              ]}
-            />
+          <p
+            className={cx(
+              "text-[12px] mb-3",
+              isLight ? "text-slate-500" : "text-txt3",
+            )}
+          >
+            이 페이지는 원래 에디터 비교 도구로 사용되었습니다. 비교 기능은
+            아래로 이동되었습니다.
+          </p>
+          <div className="flex gap-2">
+            <Link
+              href="/editor-lab/tiptap-code-test"
+              className={cx(
+                "px-3 py-1.5 rounded-lg text-[12px] border transition-all",
+                isLight
+                  ? "border-slate-200 text-slate-600 hover:border-primary/40 hover:text-primary"
+                  : "border-line/40 text-txt2 hover:border-primary/40 hover:text-primary",
+              )}
+            >
+              코드 하이라이팅 테스트 →
+            </Link>
+            <Link
+              href="/editor-lab/split-demo"
+              className={cx(
+                "px-3 py-1.5 rounded-lg text-[12px] border transition-all",
+                isLight
+                  ? "border-slate-200 text-slate-600 hover:border-accent/40 hover:text-accent"
+                  : "border-line/40 text-txt2 hover:border-accent/40 hover:text-accent",
+              )}
+            >
+              Split View Demo →
+            </Link>
           </div>
         </div>
 
-        <p className="mt-6 text-[11px] text-txt3 text-center">
-          ✦ 모든 내용은 브라우저 localStorage에 자동 저장됩니다 · 탭 또는 테마 전환 후에도 유지됩니다
+        <p
+          className={cx(
+            "mt-6 text-center text-[11px]",
+            isLight ? "text-slate-400" : "text-txt3",
+          )}
+        >
+          BrainX Playground · 실험용 페이지 · 백엔드 미연결 · TipTap v3 +
+          Lowlight
         </p>
       </div>
     </div>
   );
 }
 
-/* ── Sub-components ──────────────────────────────── */
+/* ── DemoCard ─────────────────────────────────── */
+function DemoCard({ demo, isLight }: { demo: Demo; isLight: boolean }) {
+  const colorMap = {
+    primary: {
+      badge: "border-primary/30 bg-primary/10 text-primary",
+      dot: "bg-primary",
+    },
+    accent: {
+      badge: "border-accent/30 bg-accent/10 text-accent",
+      dot: "bg-accent",
+    },
+    cyan: { badge: "border-cyan/30 bg-cyan/10 text-cyan", dot: "bg-cyan" },
+    green: {
+      badge: "border-green-500/30 bg-green-500/10 text-green-400",
+      dot: "bg-green-400",
+    },
+  };
+  const colors = demo.badge ? colorMap[demo.badge.color] : colorMap.primary;
 
-function StatusItem({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent: boolean;
-}) {
   return (
-    <span>
-      <span className="opacity-70">{label}:</span>{" "}
-      <span className={accent ? "text-primary font-medium" : "font-medium text-txt2"}>
-        {value}
-      </span>
-    </span>
-  );
-}
-
-function FeatureCard({
-  title,
-  color,
-  isLight,
-  items,
-}: {
-  title: string;
-  color: "primary" | "accent";
-  isLight: boolean;
-  items: string[];
-}) {
-  const dot = color === "primary" ? "bg-primary" : "bg-accent";
-  const heading = color === "primary" ? "text-primary" : "text-accent";
-  return (
-    <div className={cx(
-      "rounded-2xl p-5 border",
-      isLight ? "bg-white border-slate-200 shadow-sm" : "card"
-    )}>
-      <h3 className={cx("text-sm font-semibold mb-3", heading)}>{title}</h3>
-      <ul className="space-y-1.5">
-        {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-2 text-xs text-txt3">
-            <span className={cx("w-1.5 h-1.5 rounded-full mt-1 shrink-0", dot)} />
-            {item}
-          </li>
+    <Link
+      href={demo.href}
+      className={cx(
+        "group flex flex-col rounded-2xl border p-4 transition-all",
+        isLight
+          ? "bg-white border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5"
+          : "border-line/40 bg-surface/30 hover:border-line hover:bg-surface/50 hover:-translate-y-0.5",
+      )}
+    >
+      {demo.badge && (
+        <span
+          className={cx(
+            "self-start px-2 py-0.5 rounded-full text-[10px] font-bold border mb-2",
+            colors.badge,
+          )}
+        >
+          {demo.badge.label}
+        </span>
+      )}
+      <h3
+        className={cx(
+          "text-[14px] font-bold font-display mb-0.5",
+          isLight ? "text-slate-800" : "text-txt",
+        )}
+      >
+        {demo.title}
+      </h3>
+      <p
+        className={cx(
+          "text-[11px] mb-2",
+          isLight ? "text-slate-400" : "text-txt3",
+        )}
+      >
+        {demo.subtitle}
+      </p>
+      <p
+        className={cx(
+          "text-[12px] leading-relaxed flex-1 mb-3",
+          isLight ? "text-slate-600" : "text-txt2",
+        )}
+      >
+        {demo.description}
+      </p>
+      <div className="flex items-center gap-1.5 flex-wrap mt-auto">
+        {demo.tags.slice(0, 3).map((tag) => (
+          <span
+            key={tag}
+            className={cx(
+              "text-[10px] px-1.5 py-px rounded-full",
+              isLight ? "bg-slate-100 text-slate-500" : "bg-surface2 text-txt3",
+            )}
+          >
+            {tag}
+          </span>
         ))}
-      </ul>
-    </div>
-  );
-}
-
-function CheckCard({
-  title,
-  isLight,
-  items,
-}: {
-  title: string;
-  isLight: boolean;
-  items: string[];
-}) {
-  return (
-    <div className={cx(
-      "rounded-xl p-4 border",
-      isLight ? "bg-white border-slate-200 shadow-sm" : "card"
-    )}>
-      <h3 className="text-xs font-semibold text-txt mb-2.5">{title}</h3>
-      <ul className="space-y-1">
-        {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-1.5 text-xs text-txt3">
-            <span className="text-txt3/50 mt-0.5">□</span>
-            {item}
-          </li>
-        ))}
-      </ul>
-    </div>
+      </div>
+      <div
+        className={cx(
+          "mt-3 flex items-center gap-1 text-[12px] font-medium transition-all group-hover:gap-2",
+          isLight
+            ? "text-slate-400 group-hover:text-primary"
+            : "text-txt3 group-hover:text-primary",
+        )}
+      >
+        열기
+        <ArrowRight size={12} />
+      </div>
+    </Link>
   );
 }

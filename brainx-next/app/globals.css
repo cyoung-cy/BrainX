@@ -103,6 +103,76 @@ a {
   background: transparent;
 }
 
+/* ── 탭바 가로 스크롤 — Obsidian/Notion 스타일: 기본 상태에서는 거의 안 보이고
+   호버 중일 때만 아주 얇고 옅은 thumb가 살짝 나타난다. 탭 높이/레이아웃에는 영향 없음
+   (스크롤바는 콘텐츠 박스 바깥의 별도 레이어라 height만 차지, 탭 자체 높이는 그대로). */
+.scroll-x-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scroll-x-thin:hover {
+  scrollbar-color: rgb(var(--border) / 0.5) transparent;
+}
+
+.scroll-x-thin::-webkit-scrollbar {
+  height: 3px;
+}
+
+.scroll-x-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-x-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.scroll-x-thin:hover::-webkit-scrollbar-thumb {
+  background: rgb(var(--border) / 0.5);
+}
+
+.scroll-x-thin::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--txt3) / 0.7);
+}
+
+/* ── /notes 워크스페이스 전용 얇은 스크롤(세로/가로 공용) — 노트 본문, 노트 탐색기,
+   우측 컨텍스트 패널, Quick Switcher에서 사용. 기존 .scroll(앱 전역, 10px 항상 표시)은
+   다른 화면(채팅/그래프/랜딩 등)에 영향을 주지 않기 위해 그대로 두고, /notes 쪽 컴포넌트만
+   이 클래스로 옮겼다. 기본 상태에서 thumb가 거의 안 보이게 해서, 텍스트 드래그 선택 중
+   스크롤바 가장자리를 실수로 붙잡는 충돌 가능성도 함께 줄인다(두껍고 항상 보이는 thumb일수록
+   본문 우측 가까이에서 드래그할 때 스크롤바를 잡기 쉬워진다). */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scroll-thin:hover {
+  scrollbar-color: rgb(var(--border) / 0.5) transparent;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.scroll-thin:hover::-webkit-scrollbar-thumb {
+  background: rgb(var(--border) / 0.5);
+}
+
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--txt3) / 0.7);
+}
+
 .glass {
   background-color: rgb(var(--surface) / 0.9);
   background-image: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.02));
@@ -461,6 +531,314 @@ html.light .aurora b {
   color: rgb(var(--txt3));
   pointer-events: none;
   height: 0;
+}
+
+/* ── TipTap Note Content (BrainX Note Demo) ───── */
+.tiptap-note-content .ProseMirror {
+  outline: none;
+  min-height: 300px;
+  max-width: 72ch;
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-note-content .ProseMirror > * + * {
+  margin-top: 0.55em;
+}
+
+.tiptap-note-content .ProseMirror p {
+  line-height: 1.8;
+  color: rgb(var(--txt2));
+}
+
+.tiptap-note-content .ProseMirror h1 {
+  font-size: 1.8em;
+  font-weight: 700;
+  margin-top: 1.4em;
+  margin-bottom: 0.2em;
+  color: rgb(var(--txt));
+  letter-spacing: -0.02em;
+}
+
+.tiptap-note-content .ProseMirror h2 {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin-top: 1.2em;
+  margin-bottom: 0.15em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-note-content .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1em;
+  color: rgb(var(--txt));
+}
+
+.tiptap-note-content .ProseMirror h4 {
+  font-size: 0.95em;
+  font-weight: 600;
+  margin-top: 0.9em;
+  color: rgb(var(--txt2));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tiptap-note-content .ProseMirror ul,
+.tiptap-note-content .ProseMirror ol {
+  padding-left: 1.6em;
+  margin: 0.4em 0;
+}
+
+.tiptap-note-content .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tiptap-note-content .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tiptap-note-content .ProseMirror li {
+  line-height: 1.75;
+  color: rgb(var(--txt2));
+  margin: 0.1em 0;
+}
+
+.tiptap-note-content .ProseMirror strong,
+.tiptap-note-content .ProseMirror b {
+  /* color는 지정하지 않음: Color/TextStyle mark(<span style="color:...">)가
+     strong의 상위 또는 하위 어느 쪽에 위치하든 직접 지정한 color가 항상
+     이 규칙에 의해 덮어써지는 문제(Bold+글자색 동시 적용 불가)를 방지한다. */
+  font-weight: 700;
+}
+
+.tiptap-note-content .ProseMirror em {
+  font-style: italic;
+}
+
+.tiptap-note-content .ProseMirror s {
+  opacity: 0.6;
+}
+
+.tiptap-note-content .ProseMirror blockquote {
+  border-left: 3px solid rgb(var(--primary) / 0.5);
+  padding-left: 1em;
+  margin: 0.75em 0 0.75em 0;
+  color: rgb(var(--txt3));
+  font-style: italic;
+}
+
+.tiptap-note-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid rgb(var(--border) / 0.5);
+  margin: 1.5em 0;
+}
+
+.tiptap-note-content .ProseMirror code {
+  background: rgb(var(--surface2));
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.85em;
+  color: rgb(var(--cyan));
+}
+
+.tiptap-note-content .ProseMirror pre {
+  margin: 0.5em 0;
+  background: transparent;
+}
+
+.tiptap-note-content .ProseMirror .is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--txt3));
+  pointer-events: none;
+  height: 0;
+}
+
+/* Light mode overrides */
+.tiptap-note-content--light .ProseMirror {
+  color: #374151;
+}
+
+.tiptap-note-content--light .ProseMirror p,
+.tiptap-note-content--light .ProseMirror li {
+  color: #4b5563;
+}
+
+.tiptap-note-content--light .ProseMirror h1,
+.tiptap-note-content--light .ProseMirror h2,
+.tiptap-note-content--light .ProseMirror h3,
+.tiptap-note-content--light .ProseMirror h4 {
+  color: #111827;
+}
+
+.tiptap-note-content--light .ProseMirror blockquote {
+  border-left-color: #2563eb;
+  color: #6b7280;
+}
+
+.tiptap-note-content--light .ProseMirror code {
+  background: #f1f5f9;
+  color: #0369a1;
+}
+
+.tiptap-note-content--light .ProseMirror hr {
+  border-top-color: #e2e8f0;
+}
+
+.tiptap-note-content--light .ProseMirror .is-editor-empty::before {
+  color: #9ca3af;
+}
+
+/* ── Split Demo Live Preview Editor ─────────────────────────── */
+/* tiptap-note-content 상속 + split pane 전용 오버라이드           */
+
+.split-pane-editor.tiptap-note-content .ProseMirror {
+  min-height: 0;
+  max-width: none;
+  font-size: 0.8125rem;  /* 13px — ReadMarkdown과 동일 */
+  line-height: 1.85;
+}
+
+.split-pane-editor.tiptap-note-content .ProseMirror[contenteditable="true"] {
+  cursor: text;
+}
+
+.split-pane-editor.tiptap-note-content .ProseMirror[contenteditable="false"] {
+  cursor: default;
+  user-select: text;
+}
+
+/* 커서가 위치한 줄 → 마크다운 소스 표시 (Obsidian Live Preview)
+   heading은 크기·굵기·색상을 그대로 유지하고 접두사 위젯만 추가한다.
+   blockquote는 소스 표시를 위해 스타일을 초기화한다.            */
+
+.split-pane-editor .ProseMirror blockquote.md-source-active {
+  border-left: none !important;
+  padding-left: 0 !important;
+  font-style: normal !important;
+  color: rgb(var(--txt2)) !important;
+  margin: 0 !important;
+}
+
+/* ── 인라인 코드 backtick 마커 (Live Preview cursor 위치) ───── */
+
+.split-pane-editor .ProseMirror .md-code-marker {
+  color: rgb(var(--txt3));
+  opacity: 0.6;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Split Demo 코드블록 NodeView ───────────────────────────── */
+
+/* NodeViewWrapper 자체 여백 제거 (wrapper div의 기본 margin 방지) */
+.split-pane-editor .ProseMirror .split-code-block {
+  display: block;
+}
+
+/* pre 내부 폰트 일관성 */
+.split-pane-editor .ProseMirror .split-code-block pre {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* tiptap-note-content의 기본 pre 스타일 무력화 (CodeBlockLowlight NodeView가 직접 렌더링)
+   padding은 NodeView의 inline style이 담당하므로 여기서는 설정하지 않음 */
+.split-pane-editor.tiptap-note-content .ProseMirror .split-code-block pre {
+  background: transparent;
+  border-radius: 0;
+  margin: 0;
+}
+
+/* ── Heading Fold (접기/펼치기) ──────────────────────────────── */
+
+/* Heading에 position: relative → chevron absolute 기준점 */
+.split-pane-editor .ProseMirror h1,
+.split-pane-editor .ProseMirror h2,
+.split-pane-editor .ProseMirror h3,
+.split-pane-editor .ProseMirror h4 {
+  position: relative;
+}
+
+/* Chevron 버튼 — absolute 배치로 레이아웃 공간 차지하지 않음
+   heading text와 paragraph text의 시작 위치가 동일하게 유지됨 */
+.split-pane-editor .ProseMirror .hf-btn {
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: rgb(var(--txt3));
+  opacity: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s, color 0.12s;
+  border-radius: 3px;
+}
+
+/* heading에 마우스 올리면 chevron 표시 */
+.split-pane-editor .ProseMirror h1:hover .hf-btn,
+.split-pane-editor .ProseMirror h2:hover .hf-btn,
+.split-pane-editor .ProseMirror h3:hover .hf-btn,
+.split-pane-editor .ProseMirror h4:hover .hf-btn {
+  opacity: 0.45;
+}
+
+/* chevron 자체에 hover → 선명하게 */
+.split-pane-editor .ProseMirror .hf-btn:hover {
+  opacity: 0.9 !important;
+  color: rgb(var(--primary));
+}
+
+/* 접힌 헤딩: chevron을 항상 표시 (숨겨진 콘텐츠 있음 표시)
+   — 같은 specificity이므로 이 규칙이 뒤에 위치해 hover 규칙을 덮어씀 */
+.split-pane-editor .ProseMirror h1.hf-heading-collapsed .hf-btn,
+.split-pane-editor .ProseMirror h2.hf-heading-collapsed .hf-btn,
+.split-pane-editor .ProseMirror h3.hf-heading-collapsed .hf-btn,
+.split-pane-editor .ProseMirror h4.hf-heading-collapsed .hf-btn {
+  opacity: 0.6;
+}
+
+/* 접힌 헤딩: 뒤에 '···' 표시 */
+.split-pane-editor .ProseMirror .hf-heading-collapsed::after {
+  content: " ···";
+  font-size: 0.62em;
+  font-weight: 400;
+  color: rgb(var(--txt3));
+  opacity: 0.45;
+  vertical-align: middle;
+  letter-spacing: 0.06em;
+}
+
+/* 읽기 모드: heading hover 시 살짝만 표시 */
+.split-pane-editor .ProseMirror[contenteditable="false"] h1:hover .hf-btn,
+.split-pane-editor .ProseMirror[contenteditable="false"] h2:hover .hf-btn,
+.split-pane-editor .ProseMirror[contenteditable="false"] h3:hover .hf-btn,
+.split-pane-editor .ProseMirror[contenteditable="false"] h4:hover .hf-btn {
+  opacity: 0.25;
+}
+
+.split-pane-editor .ProseMirror[contenteditable="false"] .hf-btn:hover {
+  opacity: 0.55 !important;
+}
+
+/* 언어 선택 드롭다운 스크롤바 */
+.split-code-lang-list::-webkit-scrollbar { width: 4px; }
+.split-code-lang-list::-webkit-scrollbar-track { background: transparent; }
+.split-code-lang-list::-webkit-scrollbar-thumb {
+  background: rgb(var(--line) / 0.45);
+  border-radius: 2px;
+}
+.split-code-lang-list::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--line) / 0.8);
 }
 
 /* ── TipTap Code Test Editor ────────────────────────────────── */
