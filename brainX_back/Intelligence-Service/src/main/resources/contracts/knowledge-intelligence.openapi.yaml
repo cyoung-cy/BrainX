@@ -1,0 +1,1914 @@
+openapi: 3.0.3
+info:
+  title: BrainX API SSOT - Knowledge Intelligence
+  version: 1.0.0-revised
+  description: 'BrainX public and internal REST contract.
+
+
+    Revision policy:
+
+    - Public/client API remains under /api/v1.
+
+    - Service-to-service synchronous APIs are explicitly isolated under /internal/v1.
+
+    - Duplicate member-deletion cancel endpoint was removed.
+
+    - /support/inquiries was consolidated into /support/tickets.
+
+    - Token usage recording is event-first via AsyncAPI; no public REST command is exposed.
+
+    - Publish jobs return 202 Accepted when status is PENDING.
+
+    - Operation-level consumer metadata is expressed through x-consumers.
+
+    - Operation-level event coupling is expressed through x-produces-events and references the AsyncAPI SSOT.'
+servers:
+- url: http://localhost:8080
+  description: Local API Gateway
+- url: https://api.brainx.com
+  description: Production API Gateway
+tags:
+- name: Knowledge Intelligence
+  description: Semantic search, RAG, AI suggestions, reports and model settings
+paths:
+  /api/v1/intelligence/semantic-search:
+    post:
+      operationId: semanticSearch
+      summary: 시맨틱 검색
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.home
+        type: frontend
+        description: Home, workspace sync, recent activity and search UI
+      x-produces-events:
+      - SemanticSearchPerformed
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: false
+      description: Intelligence는 원본 노트를 소유하지 않고 Workspace 이벤트 기반 read model/vector index를 조회한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticSearchRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/SemanticSearchData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/inline-assists:
+    post:
+      operationId: createInlineAssist
+      summary: AI 인라인 어시스트
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      x-produces-events:
+      - AiSuggestionCreated
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      - targetService: knowledge-workspace
+        operationId: getNoteSnapshotInternal
+        reason: only when the operation requires latest authoritative markdown beyond the Intelligence read model
+        required: conditional
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InlineAssistRequest'
+      responses:
+        '200':
+          description: AI inline assist SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream. Events are line-delimited text/event-stream frames.
+              examples:
+                delta_done:
+                  summary: Delta stream with terminal event
+                  value: 'event: delta
+
+                    data: {"text":"JWT는 "}
+
+
+                    event: done
+
+                    data: {"messageId":"msg_01J..."}
+
+
+                    '
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      x-streaming: sse
+  /api/v1/ai/suggestions/{suggestionId}/decision:
+    post:
+      operationId: decideAiSuggestion
+      summary: AI 제안 수락/거절/재생성 결정
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events:
+      - AiSuggestionDecisionRecorded
+      x-internal-sync-calls:
+      - targetService: knowledge-workspace
+        operationId: patchNoteContentInternal
+        reason: ACCEPTED decision that changes note content must be applied through Workspace command API
+        required: conditional
+      x-async-boundary: false
+      description: Accepted/Rejected/Regenerated 개별 이벤트 대신 AiSuggestionDecisionRecorded 하나로 표준화한다.
+      parameters:
+      - name: suggestionId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiSuggestionDecisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AiSuggestionDecisionData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/chat-threads:
+    post:
+      operationId: createChatThread
+      summary: AI 채팅 스레드 생성
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG chatbot UI
+      x-produces-events:
+      - ChatThreadCreated
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatThreadCreateRequest'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/chat-threads/{threadId}/messages:
+    post:
+      operationId: sendChatMessage
+      summary: AI 채팅 메시지 전송
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG chatbot UI
+      x-produces-events:
+      - ChatMessageCreated
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageCreateRequest'
+      responses:
+        '200':
+          description: RAG chat SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream. Events are line-delimited text/event-stream frames.
+              examples:
+                delta_done:
+                  summary: Delta stream with terminal event
+                  value: 'event: delta
+
+                    data: {"text":"JWT는 "}
+
+
+                    event: done
+
+                    data: {"messageId":"msg_01J..."}
+
+
+                    '
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      x-streaming: sse
+  /api/v1/ai/chat-threads/{threadId}:
+    get:
+      operationId: getChatThread
+      summary: 채팅 스레드 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG chatbot UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadDetailData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/models:
+    get:
+      operationId: listAiModels
+      summary: 사용 가능한 AI 모델 목록
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG chatbot UI
+      - id: web.settings
+        type: frontend
+        description: Account, profile, security and AI settings
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AiModelsData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/model-settings:
+    put:
+      operationId: putAiModelSettings
+      summary: AI 모델 설정 변경
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.settings
+        type: frontend
+        description: Account, profile, security and AI settings
+      x-produces-events:
+      - AiModelSettingsChanged
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelSettingsPutRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AiModelSettingsData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/notes/{noteId}/summary:
+    get:
+      operationId: getNoteSummary
+      summary: 노트 요약 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 캐시 미스 시에는 동기 LLM 호출 대신 SummaryGenerationRequested 이벤트/잡으로 처리할 수 있다.
+      parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteSummaryData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/folder-organization-proposals:
+    post:
+      operationId: createFolderOrganizationProposal
+      summary: AI 폴더 정리 제안 요청
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events:
+      - AiSuggestionCreated
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: false
+      description: AI 비용이 발생하므로 토큰 사용량 이벤트를 추가했다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderOrganizationProposalRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/FolderOrganizationProposalData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/link-suggestions:
+    post:
+      operationId: createLinkSuggestions
+      summary: AI 링크 추천
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events:
+      - AiSuggestionCreated
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkSuggestionsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/LinkSuggestionsData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/clusters:
+    post:
+      operationId: requestAiClusterJob
+      summary: AI 클러스터링 요청
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events:
+      - ClusterJobRequested
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: true
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterJobCreateRequest'
+      responses:
+        '202':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ClusterJobData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/clusters/{clusterJobId}:
+    get:
+      operationId: getAiClusterJob
+      summary: AI 클러스터링 결과 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: clusterJobId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ClusterJobData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/bridge-concepts:
+    post:
+      operationId: createBridgeConcepts
+      summary: 징검다리 개념 추천
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      x-produces-events:
+      - AiSuggestionCreated
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BridgeConceptsRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/BridgeConceptsData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/insight-reports:
+    post:
+      operationId: requestInsightReport
+      summary: AI 인사이트 리포트 요청
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      - id: web.billing
+        type: frontend
+        description: Subscription, token usage, billing pages
+      x-produces-events:
+      - InsightReportRequested
+      - TokenUsageRecordedRequested
+      x-internal-sync-calls:
+      - targetService: commerce-operations
+        operationId: checkEntitlementsInternal
+        reason: capability/quota must be decided synchronously before model call or job acceptance
+        required: true
+      x-async-boundary: true
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InsightReportCreateRequest'
+      responses:
+        '202':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/InsightReportData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/insight-reports/{reportId}:
+    get:
+      operationId: getInsightReport
+      summary: AI 인사이트 리포트 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D graph and mind map UI
+      - id: web.billing
+        type: frontend
+        description: Subscription, token usage, billing pages
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/InsightReportData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/users/me/style-profile:
+    get:
+      operationId: getStyleProfile
+      summary: 문체 프로필 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.settings
+        type: frontend
+        description: Account, profile, security and AI settings
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/StyleProfileData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+    put:
+      operationId: putStyleProfile
+      summary: 문체 프로필 설정
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.settings
+        type: frontend
+        description: Account, profile, security and AI settings
+      x-produces-events:
+      - UserStyleProfileChanged
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StyleProfilePutRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/StyleProfileData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Recommended for commands and job requests. Same key must return the same result for retries.
+  schemas:
+    ApiSuccessBase:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum:
+          - true
+        message:
+          type: string
+      required:
+      - success
+      - message
+      additionalProperties: false
+    ApiErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum:
+          - false
+        data:
+          nullable: true
+        message:
+          type: string
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            traceId:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+              description: Machine-readable error details
+          required:
+          - code
+          - message
+          additionalProperties: true
+      required:
+      - success
+      - message
+      additionalProperties: false
+    JobStatus:
+      type: string
+      enum:
+      - PENDING
+      - RUNNING
+      - COMPLETED
+      - FAILED
+      - CANCELLED
+    SemanticSearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+        filters:
+          type: object
+          additionalProperties: true
+        limit:
+          type: integer
+        hybridWithClientKeywordIds:
+          type: array
+          items:
+            type: string
+      required:
+      - query
+      additionalProperties: false
+    SemanticSearchData:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              noteId:
+                type: string
+              title:
+                type: string
+              excerpt:
+                type: string
+              score:
+                type: number
+              matchedType:
+                type: string
+                enum:
+                - SEMANTIC
+                - KEYWORD
+                - HYBRID
+            required:
+            - noteId
+            - title
+            - score
+            - matchedType
+            additionalProperties: false
+        tokenEstimate:
+          type: integer
+        charged:
+          type: boolean
+      required:
+      - results
+      - charged
+      additionalProperties: false
+    InlineAssistRequest:
+      type: object
+      properties:
+        noteId:
+          type: string
+        selectedText:
+          type: string
+          nullable: true
+        action:
+          type: string
+          enum:
+          - SUMMARIZE
+          - REWRITE
+          - CONTINUE
+          - TRANSLATE
+          - SPELLCHECK
+        language:
+          type: string
+          example: ko
+      required:
+      - noteId
+      - action
+      additionalProperties: false
+    AiSuggestionDecisionRequest:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+          - ACCEPTED
+          - REJECTED
+          - REGENERATED
+      required:
+      - decision
+      additionalProperties: false
+    AiSuggestionDecisionData:
+      type: object
+      properties:
+        suggestionId:
+          type: string
+        decision:
+          type: string
+          enum:
+          - ACCEPTED
+          - REJECTED
+          - REGENERATED
+      required:
+      - suggestionId
+      - decision
+      additionalProperties: false
+    ChatThreadCreateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        modelId:
+          type: string
+      required:
+      - title
+      - modelId
+      additionalProperties: false
+    ChatThreadData:
+      type: object
+      properties:
+        threadId:
+          type: string
+        title:
+          type: string
+        modelId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - threadId
+      - title
+      - modelId
+      - createdAt
+      additionalProperties: false
+    ChatMessageCreateRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        noteScope:
+          type: object
+          additionalProperties: true
+        modelId:
+          type: string
+      required:
+      - message
+      - modelId
+      additionalProperties: false
+    ChatThreadDetailData:
+      type: object
+      properties:
+        thread:
+          $ref: '#/components/schemas/ChatThreadData'
+        messages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+      - thread
+      - messages
+      additionalProperties: false
+    AiModelsData:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              modelId:
+                type: string
+              name:
+                type: string
+              provider:
+                type: string
+              costPer1kTokens:
+                type: number
+            required:
+            - modelId
+            - name
+            - provider
+            additionalProperties: false
+        enabledModels:
+          type: array
+          items:
+            type: string
+        costInfo:
+          type: object
+          additionalProperties: true
+      required:
+      - models
+      - enabledModels
+      additionalProperties: false
+    AiModelSettingsPutRequest:
+      type: object
+      properties:
+        defaultModelId:
+          type: string
+        userApiKeys:
+          type: object
+          additionalProperties: true
+      required:
+      - defaultModelId
+      additionalProperties: false
+    AiModelSettingsData:
+      type: object
+      properties:
+        settings:
+          type: object
+          additionalProperties: true
+      required:
+      - settings
+      additionalProperties: false
+    NoteSummaryData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        summary:
+          type: string
+        source:
+          type: string
+          enum:
+          - AI
+          - EXCERPT
+      required:
+      - noteId
+      - summary
+      - source
+      additionalProperties: false
+    FolderOrganizationProposalRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum:
+          - all
+          - folder
+        folderId:
+          type: string
+          nullable: true
+      required:
+      - scope
+      additionalProperties: false
+    FolderOrganizationProposalData:
+      type: object
+      properties:
+        proposalId:
+          type: string
+        proposedFolders:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        proposedMoves:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+      - proposalId
+      additionalProperties: false
+    LinkSuggestionsRequest:
+      type: object
+      properties:
+        noteId:
+          type: string
+      required:
+      - noteId
+      additionalProperties: false
+    LinkSuggestionsData:
+      type: object
+      properties:
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              suggestionId:
+                type: string
+              targetNoteId:
+                type: string
+              targetTitle:
+                type: string
+              score:
+                type: number
+              reason:
+                type: string
+            required:
+            - suggestionId
+            - targetNoteId
+            - score
+            additionalProperties: false
+      required:
+      - suggestions
+      additionalProperties: false
+    ClusterJobCreateRequest:
+      type: object
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+        algorithmOptions:
+          type: object
+          additionalProperties: true
+      required:
+      - scope
+      additionalProperties: false
+    ClusterJobData:
+      type: object
+      properties:
+        clusterJobId:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        clusters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+      - clusterJobId
+      - status
+      additionalProperties: false
+    BridgeConceptsRequest:
+      type: object
+      properties:
+        fromNoteId:
+          type: string
+        toNoteId:
+          type: string
+      required:
+      - fromNoteId
+      - toNoteId
+      additionalProperties: false
+    BridgeConceptsData:
+      type: object
+      properties:
+        recommendations:
+          type: array
+          items:
+            type: object
+            properties:
+              noteId:
+                type: string
+              title:
+                type: string
+              bridgeReason:
+                type: string
+            required:
+            - noteId
+            - title
+            - bridgeReason
+            additionalProperties: false
+      required:
+      - recommendations
+      additionalProperties: false
+    InsightReportCreateRequest:
+      type: object
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+        includeLearningRecommendations:
+          type: boolean
+      required:
+      - scope
+      additionalProperties: false
+    InsightReportData:
+      type: object
+      properties:
+        reportId:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        summary:
+          type: string
+          nullable: true
+        knowledgeGaps:
+          type: array
+          items:
+            type: string
+        recommendations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - reportId
+      additionalProperties: false
+    StyleProfileData:
+      type: object
+      properties:
+        style:
+          type: object
+          additionalProperties: true
+        detectedFromNotesAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - style
+      additionalProperties: false
+    StyleProfilePutRequest:
+      type: object
+      properties:
+        style:
+          type: object
+          additionalProperties: true
+      required:
+      - style
+      additionalProperties: false
+x-extracted-from:
+  source: contracts-v2/brainx-openapi.ssot.yaml
+  tag: Knowledge Intelligence
+  producerService: knowledge-intelligence
+  conflictSide: right

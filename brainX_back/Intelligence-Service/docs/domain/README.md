@@ -1,0 +1,11 @@
+# Domain Documentation
+
+이 디렉터리는 Intelligence Service를 기술 구조가 아니라 도메인 흐름으로 이해하기 위한 문서를 둔다.
+
+- `knowledge-intelligence-domain-flow.md`: API 명세를 바탕으로 도메인 스토리텔링, 이벤트 스토밍, 컨텍스트 맵 관점에서 기능 흐름과 도메인 관계를 정리한다.
+
+## 작성 기준
+
+- 데이터베이스, framework, package, class, messaging 구현 같은 기술 세부사항은 다루지 않는다.
+- 사용자가 무엇을 하고, 지식이 어떤 상태로 바뀌며, 다음 도메인 행동이 무엇인지에 집중한다.
+- API 명세의 endpoint는 원천 사양으로만 참고하고, 본문은 가능한 한 비즈니스 언어로 표현한다.
