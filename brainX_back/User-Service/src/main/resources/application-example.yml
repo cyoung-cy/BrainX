@@ -2,6 +2,8 @@ server:
   port: ${SERVER_PORT:8080}
 
 spring:
+  config:
+    import: optional:file:../.env[.properties]
   application:
     name: User-Service
   datasource:
@@ -19,8 +21,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:your_email@gmail.com}
-    password: ${MAIL_PASSWORD:your_google_app_password}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:

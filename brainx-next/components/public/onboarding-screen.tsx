@@ -7,6 +7,7 @@ import { INTERESTS } from "@/lib/brainx-data";
 import { EMPTY_CONSENTS, requiredConsentsAccepted, type ConsentState } from "@/lib/legal";
 import { cx } from "@/lib/utils";
 import { completeOnboarding, readAuthSession } from "@/lib/auth-api";
+import { updateMyConsents, updateMyProfile } from "@/lib/user-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { Field } from "@/components/public/auth-shared";
@@ -19,6 +20,7 @@ export function OnboardingScreen() {
   const [nick, setNick] = useState("");
   const [profileImageUrl, setProfileImageUrl] = useState("");
   const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
+  const [hasAuthSession, setHasAuthSession] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [consents, setConsents] = useState<ConsentState>(EMPTY_CONSENTS);
   const [submitting, setSubmitting] = useState(false);
@@ -29,6 +31,7 @@ export function OnboardingScreen() {
     setNick(session?.nickname ?? "");
     setProfileImageUrl(session?.profileImageUrl ?? "");
     setOnboardingToken(session?.onboardingToken ?? null);
+    setHasAuthSession(Boolean(session?.accessToken));
   }, []);
 
   const avatarInitial = useMemo(() => nick.trim()[0]?.toUpperCase() ?? "?", [nick]);
@@ -59,11 +62,6 @@ export function OnboardingScreen() {
   };
 
   const handleComplete = async () => {
-    if (!onboardingToken) {
-      pushToast("온보딩 토큰이 없습니다. 소셜 로그인을 다시 시도해 주세요.", "err");
-      router.push("/login");
-      return;
-    }
     if (!nick.trim()) {
       pushToast("이름을 입력해 주세요.", "err");
       setStep(0);
@@ -77,13 +75,25 @@ export function OnboardingScreen() {
 
     setSubmitting(true);
     try {
-      await completeOnboarding({
-        onboardingToken,
-        nickname: nick.trim(),
-        profileImageUrl: profileImageUrl.trim() || null,
-        interests: selected,
-        consents
-      });
+      if (onboardingToken) {
+        await completeOnboarding({
+          onboardingToken,
+          nickname: nick.trim(),
+          profileImageUrl: profileImageUrl.trim() || null,
+          interests: selected,
+          consents
+        });
+      } else if (hasAuthSession) {
+        await updateMyProfile({
+          nickname: nick.trim(),
+          profileImageAssetId: profileImageUrl.trim() || null
+        });
+        await updateMyConsents(consents);
+      } else {
+        pushToast("로그인이 필요합니다.", "err");
+        router.push("/login");
+        return;
+      }
       pushToast("온보딩이 완료되었습니다.", "ok");
       router.push("/home");
     } catch (error) {
