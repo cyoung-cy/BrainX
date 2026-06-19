@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -124,123 +125,352 @@ function resolveEditorHtml(rawContent: string): string {
 }
 
 /* ── Obsidian Live Preview ────────────────────────────────────────────── */
-const LivePreviewKey = new PluginKey("livePreview");
+type LivePreviewState = {
+  /** mousedown ~ mouseup 사이에만 true. 데코레이션 동결 범위를 결정한다. */
+  dragging: boolean;
+  decos: DecorationSet;
+  /** 현재 mousedown~mouseup "세션" 동안 한 번이라도 non-empty selection이 만들어졌는지.
+      mousedown마다 false로 리셋되고, 드래그 중 selection이 실제로 생기면 true로 래치된다.
+      이 값이 false인 채로 mouseup이 오면 "단순 클릭"(드래그가 아니라 클릭으로 selection을
+      해제하려는 의도)으로 간주해 settling/복원 보호를 전혀 걸지 않는다 — 이게 빠지면
+      클릭으로 선택을 해제하려 해도 직전 드래그의 `lastNonEmpty`가 되살아나 버린다(실제로
+      발생한 회귀). */
+  sawNonEmpty: boolean;
+  /** 직전 세션에서(또는 진행 중인 세션에서) 마지막으로 관찰된 non-empty selection. 드래그가
+      본문 바깥(제목, 다른 패널, 사이드바, 우측 패널 등)에서 끝나면 브라우저가 selection
+      자체를 collapse시켜버리는 경우가 있어(아래 `view()`의 주석 참고), 그 경우에만 이 값으로
+      복원한다. */
+  lastNonEmpty: { from: number; to: number } | null;
+  /** "이번 mouseup이 실제 드래그-선택의 끝인지"가 확정된 뒤(= sawNonEmpty였던 경우만) 짧게
+      true로 유지된다. `CustomBubbleMenu`가 이 값을 읽어서, 이 기간 동안 native selection이
+      일시적으로 collapse돼도 툴바를 숨기지 않는다 — 단순 클릭(sawNonEmpty=false)에는 이
+      보호가 전혀 걸리지 않으므로 클릭 즉시 정상적으로 선택 해제된다. 왜 "collapse를 막는
+      것"이 아니라 "UI가 collapse에 반응하지 않게 하는 것"인지는 아래 `view()`의 주석 참고. */
+  settling: boolean;
+};
+const LivePreviewKey = new PluginKey<LivePreviewState>("livePreview");
+/** 실제 드래그-선택이 끝난 뒤, 이 시간(ms) 동안만 "드래그가 남긴 잔여 collapse"로 간주해
+    무시/복원한다. 단순 클릭에는 적용되지 않는다(sawNonEmpty 가드 참고). */
+const SETTLE_MS = 150;
+
+/** 마우스 드래그(텍스트 선택) 중에는 이 데코레이션을 절대 다시 계산하면 안 된다 — 드래그
+    중에 heading prefix 위젯/`md-source-active` 클래스가 추가·제거되면서 헤딩 노드의 DOM이
+    교체되는데, 이 DOM 변경이 진행 중인 브라우저 네이티브 selection 확장(drag-to-select)
+    제스처를 깨뜨려 selection이 통째로 collapse되는 버그의 실제 원인이었다(Playwright로
+    `window.getSelection()`/`editor.state.selection`을 직접 찍어 확인: 헤딩 경계를 넘는
+    드래그, 본문 바깥 제목 영역으로 넘어가는 드래그 모두 동일하게 collapse를 일으켰다).
+    버블 툴바가 "사라지는" 것처럼 보였던 건 증상이고, 진짜 문제는 selection 자체가 깨진
+    것이었다 — 그래서 mousedown~mouseup 동안은 데코레이션을 동결(freeze)해 DOM을 건드리지
+    않고, 드래그가 끝난 뒤(mouseup, 어디서 끝나든)에만 최종 selection 기준으로 다시 계산한다. */
+function computeLivePreviewDecorations(editor: Editor, state: EditorState): DecorationSet {
+  if (!editor.isEditable) return DecorationSet.empty;
+
+  const { selection, doc } = state;
+  const { $from, from, to } = selection;
+  const decos: Decoration[] = [];
+
+  /* ── Heading prefix 위젯
+     커서가 안에 있을 때(opacity 0.45) + 빈 heading(opacity 0.3)에 항상 표시.
+     빈 heading에 marker를 보여야 Enter→split 후 시각적으로 heading이 남아 있게 됨. */
+  doc.forEach((node, offset) => {
+    if (node.type.name !== "heading") return;
+    const level   = node.attrs.level as number;
+    const nodeEnd = offset + node.nodeSize;
+    const cursorInside = from > offset && to < nodeEnd;
+    const isEmpty = node.textContent === "";
+    if (!cursorInside && !isEmpty) return;
+
+    const opacity = cursorInside ? 0.45 : 0.3;
+    const prefix  = "#".repeat(level) + " ";
+    decos.push(
+      Decoration.widget(
+        offset + 1,
+        () => {
+          const s = document.createElement("span");
+          s.textContent = prefix;
+          s.style.cssText =
+            `color:rgb(var(--txt3));opacity:${opacity};font-size:inherit;` +
+            `font-weight:inherit;line-height:inherit;` +
+            `user-select:none;pointer-events:none;`;
+          return s;
+        },
+        { side: -1, key: `md-h-prefix-${offset}-${level}-${cursorInside ? 1 : 0}` }
+      )
+    );
+    if (cursorInside) {
+      decos.push(
+        Decoration.node(offset, nodeEnd, { class: "md-source-active" })
+      );
+    }
+  });
+
+  /* ── Blockquote prefix (커서가 있을 때만) ── */
+  for (let d = $from.depth; d >= 1; d--) {
+    const node = $from.node(d);
+    const pos  = $from.before(d);
+
+    if (node.type.name === "blockquote") {
+      const paraPos = $from.depth > d ? $from.before(d + 1) : pos + 1;
+      decos.push(
+        Decoration.widget(
+          paraPos + 1,
+          () => {
+            const s = document.createElement("span");
+            s.textContent = "> ";
+            s.style.cssText =
+              "color:rgb(var(--txt3));opacity:0.55;" +
+              "user-select:none;pointer-events:none;";
+            return s;
+          },
+          { side: -1, key: "md-bq-prefix" }
+        )
+      );
+      decos.push(
+        Decoration.node(pos, pos + node.nodeSize, { class: "md-source-active" })
+      );
+      break;
+    }
+  }
+
+  /* ── 인라인 코드: 커서가 있을 때 backtick 표시 ── */
+  const codeMarkType = state.schema.marks.code;
+  if (
+    codeMarkType &&
+    $from.parent.isTextblock &&
+    $from.marks().some((m) => m.type === codeMarkType)
+  ) {
+    const parent = $from.parent;
+    const base = $from.start();
+    let spanFrom = -1;
+    let spanTo = -1;
+
+    parent.forEach((child, offset) => {
+      const hasCode =
+        child.isText &&
+        child.marks.some((m) => m.type === codeMarkType);
+      if (hasCode) {
+        if (spanFrom === -1) spanFrom = base + offset;
+        spanTo = base + offset + child.nodeSize;
+      } else if (spanFrom !== -1) {
+        // code span ended → flush
+        if ($from.pos >= spanFrom && $from.pos <= spanTo) {
+          pushCodeMarkers(decos, spanFrom, spanTo);
+        }
+        spanFrom = -1;
+        spanTo = -1;
+      }
+    });
+    // trailing span
+    if (spanFrom !== -1 && $from.pos >= spanFrom && $from.pos <= spanTo) {
+      pushCodeMarkers(decos, spanFrom, spanTo);
+    }
+  }
+
+  return DecorationSet.create(doc, decos);
+}
 
 const MarkdownLivePreview = Extension.create({
   name: "markdownLivePreview",
 
   addProseMirrorPlugins() {
     const { editor } = this;
+    // mousedown 지점에서 일정 거리 이상 움직였는지를 별도로 추적한다(아래 view()의 mousemove
+    // 리스너가 채움) — PM 모델의 selection이 non-empty가 됐는지(sawNonEmpty)만으로 "실제
+    // 드래그였는가"를 판단하면, 드래그가 에디터 DOM 바깥으로 빠르게 빠져나가는 경로에서는
+    // PM이 selection 변화를 한 번도 못 잡아챌 수 있다(focus가 view.dom에 있어도, 그 사이
+    // 'selectionchange' 처리 타이밍에 따라 비어있는 상태만 관찰될 수 있음 — Playwright로
+    // 같은 경로를 반복 실행해도 sawNonEmpty가 true/false로 들쑥날쑥하게 나오는 것으로 확인됨,
+    // 즉 PM 신호만으로는 신뢰할 수 없다). 포인터 이동 거리는 PM 상태와 무관하게 항상 정확히
+    // 잡을 수 있으므로 더 신뢰할 수 있는 "이건 클릭이 아니라 드래그였다" 신호다.
+    let mouseDownPoint: { x: number; y: number } | null = null;
+    let movedEnough = false;
+    const DRAG_THRESHOLD_PX = 4;
     return [
       new Plugin({
         key: LivePreviewKey,
+        state: {
+          init(_, state): LivePreviewState {
+            return {
+              dragging: false,
+              decos: computeLivePreviewDecorations(editor, state),
+              sawNonEmpty: false,
+              lastNonEmpty: null,
+              settling: false,
+            };
+          },
+          apply(tr, prev, _oldState, newState): LivePreviewState {
+            const meta = tr.getMeta(LivePreviewKey) as
+              | { dragging?: boolean; settling?: boolean; resetSession?: boolean }
+              | undefined;
+            const dragging = meta?.dragging ?? prev.dragging;
+            const settling = meta?.settling ?? prev.settling;
+            // resetSession: 새 mousedown마다 "이번 세션에서 실제로 선택이 만들어졌는가"를
+            // 처음부터 다시 관찰해야 한다 — 그래야 "드래그 끝(클릭 아님)"과 "단순 클릭"을
+            // 구분할 수 있다. 리셋하지 않으면 직전 드래그의 sawNonEmpty=true가 남아있어서,
+            // 바로 이어지는 단순 클릭까지 "드래그의 연속"으로 오인해 선택 해제를 막아버린다
+            // (실제로 발생한 회귀: 클릭으로 선택 해제가 안 됨).
+            const sawNonEmpty = meta?.resetSession
+              ? false
+              : dragging && !newState.selection.empty
+                ? true
+                : prev.sawNonEmpty;
+            const lastNonEmpty =
+              dragging && !newState.selection.empty
+                ? { from: newState.selection.from, to: newState.selection.to }
+                : meta?.dragging === false
+                  ? null // 드래그가 끝났으면 다음 드래그를 위해 비운다
+                  : prev.lastNonEmpty;
+            if (dragging) {
+              // 드래그 중에는 데코레이션을 새로 계산하지 않고 위치만 매핑한다 — 셀렉션이
+              // 바뀌어도 위젯/노드 데코레이션을 추가·제거하지 않아야 진행 중인 네이티브
+              // drag-to-select 제스처가 깨지지 않는다.
+              return { dragging, decos: prev.decos.map(tr.mapping, tr.doc), sawNonEmpty, lastNonEmpty, settling };
+            }
+            return {
+              dragging,
+              decos: computeLivePreviewDecorations(editor, newState),
+              sawNonEmpty,
+              lastNonEmpty,
+              settling,
+            };
+          },
+        },
         props: {
           decorations(state) {
-            if (!editor.isEditable) return DecorationSet.empty;
-
-            const { selection, doc } = state;
-            const { $from, from, to } = selection;
-            const decos: Decoration[] = [];
-
-            /* ── Heading prefix 위젯
-               커서가 안에 있을 때(opacity 0.45) + 빈 heading(opacity 0.3)에 항상 표시.
-               빈 heading에 marker를 보여야 Enter→split 후 시각적으로 heading이 남아 있게 됨. */
-            doc.forEach((node, offset) => {
-              if (node.type.name !== "heading") return;
-              const level   = node.attrs.level as number;
-              const nodeEnd = offset + node.nodeSize;
-              const cursorInside = from > offset && to < nodeEnd;
-              const isEmpty = node.textContent === "";
-              if (!cursorInside && !isEmpty) return;
-
-              const opacity = cursorInside ? 0.45 : 0.3;
-              const prefix  = "#".repeat(level) + " ";
-              decos.push(
-                Decoration.widget(
-                  offset + 1,
-                  () => {
-                    const s = document.createElement("span");
-                    s.textContent = prefix;
-                    s.style.cssText =
-                      `color:rgb(var(--txt3));opacity:${opacity};font-size:inherit;` +
-                      `font-weight:inherit;line-height:inherit;` +
-                      `user-select:none;pointer-events:none;`;
-                    return s;
-                  },
-                  { side: -1, key: `md-h-prefix-${offset}-${level}-${cursorInside ? 1 : 0}` }
-                )
-              );
-              if (cursorInside) {
-                decos.push(
-                  Decoration.node(offset, nodeEnd, { class: "md-source-active" })
-                );
-              }
-            });
-
-            /* ── Blockquote prefix (커서가 있을 때만) ── */
-            for (let d = $from.depth; d >= 1; d--) {
-              const node = $from.node(d);
-              const pos  = $from.before(d);
-
-              if (node.type.name === "blockquote") {
-                const paraPos = $from.depth > d ? $from.before(d + 1) : pos + 1;
-                decos.push(
-                  Decoration.widget(
-                    paraPos + 1,
-                    () => {
-                      const s = document.createElement("span");
-                      s.textContent = "> ";
-                      s.style.cssText =
-                        "color:rgb(var(--txt3));opacity:0.55;" +
-                        "user-select:none;pointer-events:none;";
-                      return s;
-                    },
-                    { side: -1, key: "md-bq-prefix" }
-                  )
-                );
-                decos.push(
-                  Decoration.node(pos, pos + node.nodeSize, { class: "md-source-active" })
-                );
-                break;
-              }
-            }
-
-            /* ── 인라인 코드: 커서가 있을 때 backtick 표시 ── */
-            const codeMarkType = state.schema.marks.code;
-            if (
-              codeMarkType &&
-              $from.parent.isTextblock &&
-              $from.marks().some((m) => m.type === codeMarkType)
-            ) {
-              const parent = $from.parent;
-              const base = $from.start();
-              let spanFrom = -1;
-              let spanTo = -1;
-
-              parent.forEach((child, offset) => {
-                const hasCode =
-                  child.isText &&
-                  child.marks.some((m) => m.type === codeMarkType);
-                if (hasCode) {
-                  if (spanFrom === -1) spanFrom = base + offset;
-                  spanTo = base + offset + child.nodeSize;
-                } else if (spanFrom !== -1) {
-                  // code span ended → flush
-                  if ($from.pos >= spanFrom && $from.pos <= spanTo) {
-                    pushCodeMarkers(decos, spanFrom, spanTo);
-                  }
-                  spanFrom = -1;
-                  spanTo = -1;
-                }
-              });
-              // trailing span
-              if (spanFrom !== -1 && $from.pos >= spanFrom && $from.pos <= spanTo) {
-                pushCodeMarkers(decos, spanFrom, spanTo);
-              }
-            }
-
-            return DecorationSet.create(doc, decos);
+            return LivePreviewKey.getState(state)?.decos ?? DecorationSet.empty;
           },
+          handleDOMEvents: {
+            mousedown(view, event) {
+              // settling은 여기서 켜지 않는다 — 이번 mousedown이 "드래그"가 될지 "클릭"이
+              // 될지는 아직 모른다. settling(=collapse 무시 보호)은 mouseup에서 이번 세션이
+              // 실제 드래그였다고 확정된 뒤에만 켠다(아래 onMouseUp).
+              mouseDownPoint = { x: event.clientX, y: event.clientY };
+              movedEnough = false;
+              view.dispatch(view.state.tr.setMeta(LivePreviewKey, { dragging: true, resetSession: true }));
+              return false;
+            },
+          },
+        },
+        view(view) {
+          // ── 왜 "collapse를 막는 것"이 아니라 "UI가 반응하지 않게 하는 것"인가 ──────────
+          // 처음에는 'selectionchange'를 다른 누구보다 먼저 가로채 collapse가 보이기 전에
+          // 동기적으로 복원하려 했다. 하지만 실제로는 효과가 없었다(Playwright로 직접
+          // requestAnimationFrame 단위까지 추적해 확인) — ProseMirror의 EditorView가 생성될
+          // 때 내부 domObserver가 이미 'selectionchange'를 듣고 있고, 이 domObserver는
+          // collapse를 감지하면 **그 자리에서 동기적으로** `editor.state.selection`을
+          // collapse된 값으로 동기화하면서 "selectionUpdate" 이벤트를 즉시 발생시킨다.
+          // domObserver는 EditorView 생성 시점(어떤 Plugin의 view()보다 먼저)에 등록되므로,
+          // 우리가 아무리 일찍 'selectionchange' 리스너를 달아도 domObserver를 앞지를 수
+          // 없다 — 즉 "collapse 자체를 막는 것"은 prosemirror-view 내부를 패치하지 않는 한
+          // 불가능하다.
+          //
+          // 그래서 접근을 바꿨다: collapse가 PM 모델에 잠깐 반영되는 것 자체는 막지 못해도,
+          // **그 잠깐의 collapse를 누구도 "선택이 해제됐다"는 신호로 받아들이지 않게 만들면
+          // 된다.** `CustomBubbleMenu`가 이 Plugin의 `settling` 상태를 읽어서, settling이
+          // true인 동안 native selection이 collapse로 보이더라도 툴바를 숨기지 않고 마지막
+          // 위치를 그대로 유지한다(아래 `updateAnchor` 참고).
+          //
+          // settling은 "실제 드래그-선택이 끝났을 때만" 켜진다(sawNonEmpty 가드, 위 apply()
+          // 참고) — 단순 클릭은 sawNonEmpty가 끝까지 false이므로 settling이 전혀 켜지지
+          // 않고, 클릭의 collapse가 그대로 반영되어 즉시 선택 해제된다.
+          //
+          // native selection highlight(브라우저가 직접 그리는 파란 음영) 자체의 깜빡임을
+          // 줄이기 위해, setTimeout 한 번이 아니라 settle 구간 내내 requestAnimationFrame마다
+          // 확인-복원한다 — rAF 콜백은 그 프레임의 paint보다 먼저 실행되므로, "이번 프레임에서
+          // collapse를 감지해 같은 콜백 안에서 즉시 복원"하면 그 collapse가 화면에 그려질
+          // 기회 자체가 없다(다음 paint는 이미 복원된 selection을 그린다). setTimeout(특히
+          // 150ms 단위)에 맡기면 그 사이 여러 프레임이 collapse 상태로 paint될 수 있어 눈에
+          // 보이는 하이라이트 깜빡임으로 이어졌다.
+          let rafId: number | null = null;
+          let settleDeadline = 0;
+
+          const restoreIfCollapsed = (snapshot: { from: number; to: number } | null) => {
+            if (!snapshot) return false;
+            // PM 모델(`view.state.selection.empty`)이 아니라 **네이티브 DOM selection**을
+            // 기준으로 판단해야 한다 — 브라우저가 한 번의 collapse가 아니라 여러 프레임에 걸쳐
+            // selection을 반복적으로 재-collapse하는 경우가 실제로 있는데(Playwright로 확인),
+            // 이전 프레임에 우리가 이미 PM 모델을 복원해놓았다는 이유로(`view.state.selection.empty
+            // === false`) 다음 프레임에 또 발생한 네이티브 재-collapse를 그냥 지나치면, 네이티브
+            // 하이라이트는 다시 사라진 채로 한동안 방치된다. 매 프레임 네이티브 DOM을 직접 다시
+            // 확인해야 이 반복적인 재-collapse를 전부 잡아낼 수 있다.
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed) return false; // 네이티브가 이미 정상이면 손대지 않음
+            const docSize = view.state.doc.content.size;
+            try {
+              const restored = TextSelection.create(
+                view.state.doc,
+                Math.min(snapshot.from, docSize),
+                Math.min(snapshot.to, docSize)
+              );
+              // 항상 새 Selection 인스턴스를 dispatch해 prosemirror-view가 "변경 없음"으로
+              // 판단해 DOM 갱신을 skip하지 않고, 매번 강제로 selectionToDOM을 다시 태우게 한다.
+              view.dispatch(view.state.tr.setSelection(restored));
+              return true;
+            } catch {
+              // 매핑이 불가능한 위치라면(문서 구조가 그 사이 바뀐 경우 등) 복원을 건너뛴다.
+              return false;
+            }
+          };
+
+          const stopSettleLoop = () => {
+            if (rafId !== null) cancelAnimationFrame(rafId);
+            rafId = null;
+          };
+
+          const settleLoop = (snapshot: { from: number; to: number } | null) => {
+            restoreIfCollapsed(snapshot);
+            if (performance.now() >= settleDeadline) {
+              view.dispatch(view.state.tr.setMeta(LivePreviewKey, { settling: false }));
+              rafId = null;
+              return;
+            }
+            rafId = requestAnimationFrame(() => settleLoop(snapshot));
+          };
+
+          // mousedown 지점에서 DRAG_THRESHOLD_PX 이상 움직이면 movedEnough를 true로 래치한다.
+          // 패널/사이드바/제목 등 에디터 바깥까지 포함해 항상 정확하므로 window 레벨로 듣는다.
+          const onMouseMove = (e: MouseEvent) => {
+            if (!mouseDownPoint || movedEnough) return;
+            const dx = e.clientX - mouseDownPoint.x;
+            const dy = e.clientY - mouseDownPoint.y;
+            if (dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) movedEnough = true;
+          };
+          window.addEventListener("mousemove", onMouseMove);
+
+          // mouseup은 패널 바깥(제목, 다른 분할 패널, 사이드바, 우측 패널 등)에서 끝날 수
+          // 있으므로 이 에디터 DOM의 handleDOMEvents만으로는 못 잡는다 — window 레벨로 들어야
+          // 드래그가 어디서 끝나든 동결을 해제하고 최종 selection 기준으로 다시 계산한다.
+          const onMouseUp = () => {
+            const pluginState = LivePreviewKey.getState(view.state);
+            if (!pluginState?.dragging) return;
+            const { lastNonEmpty: snapshot } = pluginState;
+            // "실제 드래그였다"는 두 신호 중 하나라도 참이면 인정한다 — PM이 selection
+            // non-empty를 한 번이라도 직접 관찰했거나(sawNonEmpty), 포인터가 임계값 이상
+            // 움직였거나(movedEnough, 위 주석 참고). 둘 다 거짓이어야만 "단순 클릭"이다.
+            const wasRealDrag = pluginState.sawNonEmpty || movedEnough;
+            stopSettleLoop();
+            mouseDownPoint = null;
+            if (!wasRealDrag) {
+              // 이번 세션은 드래그가 아니라 단순 클릭이었다 — collapse를 그대로 둔다(보호
+              // 없이 즉시 선택 해제). settling도 강제로 끈다(혹시 직전 드래그의 settle 구간이
+              // 아직 안 끝난 채 겹쳤더라도, 사용자의 새 클릭 의도를 우선한다).
+              view.dispatch(view.state.tr.setMeta(LivePreviewKey, { dragging: false, settling: false }));
+              return;
+            }
+            // 실제 드래그였다 — settling을 켜고 settle 구간 동안 매 프레임 collapse를 감시한다.
+            view.dispatch(view.state.tr.setMeta(LivePreviewKey, { dragging: false, settling: true }));
+            settleDeadline = performance.now() + SETTLE_MS;
+            settleLoop(snapshot);
+          };
+          window.addEventListener("mouseup", onMouseUp);
+
+          return {
+            destroy: () => {
+              window.removeEventListener("mousemove", onMouseMove);
+              window.removeEventListener("mouseup", onMouseUp);
+              stopSettleLoop();
+            },
+          };
         },
       }),
     ];
@@ -707,6 +937,21 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
     // 명확히 한 곳으로만 결정된다(같은 selection이 두 에디터에서 동시에 채택될 일이 없음).
     const sel = window.getSelection();
 
+    // 드래그 중(mousedown~mouseup) 그리고 드래그가 막 끝난 직후(mouseup~SETTLE_MS)에는 native
+    // selection이 일시적으로 collapse될 수 있다 — ① 드래그 도중에는 마우스 경로가 대각선으로
+    // 두 블록(예: 문단→헤딩)을 가로지를 때 중간 보간 지점이 일시적으로 anchor와 같은 위치로
+    // hit-test되어 한두 프레임 collapse처럼 보일 수 있고(Playwright로 실제 재현됨), ② mouseup
+    // 직후에는 브라우저의 mouseup 처리 자체에서 비동기로 한 번 더 collapse가 발생할 수 있다
+    // (prosemirror-view의 domObserver가 우리보다 먼저 'selectionchange'를 가로채 동기적으로
+    // 반영해버리므로 이 collapse는 가로채서 막을 수 없다, 위 `MarkdownLivePreview` Plugin의
+    // `view()` 주석 참고). 두 경우 모두 collapse 자체를 막는 대신, 그 기간 동안은 "collapse처럼
+    // 보여도 숨기지 않는다" — 마지막으로 그려진 위치를 그대로 유지해 hide→show 깜빡임이 한 번도
+    // 일어나지 않게 한다. `dragging`은 마우스를 누르고 있는 동안(클릭이든 드래그든) 항상 켜져
+    // 있지만, 짧은 클릭이라면 mouseup 시점에 바로 보호가 해제되므로(아래 Plugin의 onMouseUp,
+    // `wasRealDrag` 분기 참고) 클릭으로 선택을 해제하는 동작과는 충돌하지 않는다.
+    const livePreviewState = LivePreviewKey.getState(editor.state);
+    const settling = (livePreviewState?.dragging || livePreviewState?.settling) ?? false;
+
     if (sel && sel.rangeCount > 0) {
       // 네이티브 selection이 페이지에 존재하는 한, 그 selection의 소유 여부를 명확히 판정해서
       // "이 에디터 것이 아니면 무조건 숨긴다." 이 분기가 핵심이다 — 처음 구현에서는 소유권이
@@ -722,10 +967,12 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
       const belongsHere = !!anchorEl && editor.view.dom.contains(anchorEl);
 
       if (!belongsHere) {
+        if (settling) return; // 잔여 collapse 가능성 — 마지막 위치 유지, 숨기지 않음
         setAnchor(null);
         return;
       }
       if (sel.isCollapsed || editor.isActive("codeBlock")) {
+        if (settling && sel.isCollapsed) return; // 잔여 collapse — 마지막 위치 유지
         setAnchor(null);
         return;
       }
@@ -737,6 +984,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
     // 내부 selection으로 판단한다.
     const { from, to } = editor.state.selection;
     if (from === to || editor.isActive("codeBlock")) {
+      if (settling && from === to) return; // 잔여 collapse — 마지막 위치 유지
       setAnchor(null);
       return;
     }
