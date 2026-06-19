@@ -10318,8 +10318,12 @@ components:
                 type: string
               provider:
                 type: string
-              costPer1kTokens:
+              vendorInputCostPer1kTokens:
                 type: number
+                nullable: true
+              vendorOutputCostPer1kTokens:
+                type: number
+                nullable: true
             required:
             - modelId
             - name
@@ -10540,7 +10544,13 @@ components:
     StyleProfileData:
       type: object
       properties:
-        style:
+        conversationTone:
+          type: object
+          additionalProperties: true
+        writingStyle:
+          type: object
+          additionalProperties: true
+        assistanceStyle:
           type: object
           additionalProperties: true
         detectedFromNotesAt:
@@ -10548,16 +10558,22 @@ components:
           format: date-time
           nullable: true
       required:
-      - style
+      - conversationTone
+      - writingStyle
+      - assistanceStyle
       additionalProperties: false
     StyleProfilePutRequest:
       type: object
       properties:
-        style:
+        conversationTone:
           type: object
           additionalProperties: true
-      required:
-      - style
+        writingStyle:
+          type: object
+          additionalProperties: true
+        assistanceStyle:
+          type: object
+          additionalProperties: true
       additionalProperties: false
     PlansData:
       type: object
