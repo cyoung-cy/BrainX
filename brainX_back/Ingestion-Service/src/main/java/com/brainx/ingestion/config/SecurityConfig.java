@@ -32,6 +32,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/v1/publish-jobs/**").permitAll()
+                // TEMP: 로그인 없이 Notion 가져오기 기능 테스트용. 실제 로그인 연동 완료 후 제거할 것.
+                .requestMatchers("/api/v1/imports/notion/**").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/imports/*").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

@@ -6817,6 +6817,88 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+  /api/v1/subscriptions/checkout-sessions/{checkoutSessionId}/confirm:
+    post:
+      operationId: confirmCheckoutSession
+      summary: 결제 승인 confirm (Toss Payments)
+      tags:
+      - Commerce & Operations
+      x-producer-service: commerce-operations
+      x-visibility: public
+      x-consumers:
+      - id: web.billing
+        type: frontend
+        description: Subscription, token usage, billing pages
+      x-produces-events:
+      - PaymentSucceeded
+      - PaymentFailed
+      - SubscriptionChanged
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: >
+        Toss successUrl 리다이렉트에서 받은 paymentKey/orderId/amount로 Toss Payments
+        confirm API를 서버 간 호출해 결제를 최종 승인한다. 클라이언트가 보낸 amount는
+        체크아웃 세션 생성 시 서버에 저장해 둔 금액과 대조해 위변조를 막는다. 승인 성공 시
+        구독 플랜을 즉시 업그레이드한다.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: checkoutSessionId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionConfirmRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/CheckoutSessionConfirmData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/subscriptions/change:
     post:
       operationId: changeSubscription
@@ -9826,7 +9908,6 @@ components:
       required:
       - pages
       additionalProperties: false
-      additionalProperties: false
     NotionOAuthCallbackRequest:
       type: object
       properties:
@@ -10318,8 +10399,12 @@ components:
                 type: string
               provider:
                 type: string
-              costPer1kTokens:
+              vendorInputCostPer1kTokens:
                 type: number
+                nullable: true
+              vendorOutputCostPer1kTokens:
+                type: number
+                nullable: true
             required:
             - modelId
             - name
@@ -10540,7 +10625,13 @@ components:
     StyleProfileData:
       type: object
       properties:
-        style:
+        conversationTone:
+          type: object
+          additionalProperties: true
+        writingStyle:
+          type: object
+          additionalProperties: true
+        assistanceStyle:
           type: object
           additionalProperties: true
         detectedFromNotesAt:
@@ -10548,16 +10639,22 @@ components:
           format: date-time
           nullable: true
       required:
-      - style
+      - conversationTone
+      - writingStyle
+      - assistanceStyle
       additionalProperties: false
     StyleProfilePutRequest:
       type: object
       properties:
-        style:
+        conversationTone:
           type: object
           additionalProperties: true
-      required:
-      - style
+        writingStyle:
+          type: object
+          additionalProperties: true
+        assistanceStyle:
+          type: object
+          additionalProperties: true
       additionalProperties: false
     PlansData:
       type: object
@@ -10644,12 +10741,82 @@ components:
       additionalProperties: false
     CheckoutSessionData:
       type: object
+      description: >
+        Toss Payments는 호스팅된 결제 페이지 URL 모델이 아니라 클라이언트 SDK + 서버 confirm
+        모델을 사용한다. provider가 toss인 경우 checkoutUrl은 null이고, 프론트는
+        clientKey/orderId/amount/orderName으로 Toss SDK widget을 직접 구동한 뒤,
+        결제 승인 콜백에서 POST /api/v1/subscriptions/checkout-sessions/{checkoutSessionId}/confirm
+        을 호출해 결제를 확정해야 한다.
       properties:
+        checkoutSessionId:
+          type: string
+        provider:
+          type: string
+          enum:
+          - toss
+          - stripe
         checkoutUrl:
           type: string
           format: uri
+          nullable: true
+        clientKey:
+          type: string
+          nullable: true
+          description: Toss Payments 클라이언트 키 (provider가 toss일 때만 채워짐).
+        orderId:
+          type: string
+          nullable: true
+          description: Toss 결제 승인 confirm 호출 시 사용할 주문 ID (provider가 toss일 때만 채워짐).
+        orderName:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          nullable: true
+        currency:
+          type: string
+          nullable: true
       required:
-      - checkoutUrl
+      - checkoutSessionId
+      - provider
+      additionalProperties: false
+    CheckoutSessionConfirmRequest:
+      type: object
+      description: Toss 결제 승인 리다이렉트(successUrl)에서 받은 paymentKey/orderId/amount를 그대로 전달한다.
+      properties:
+        paymentKey:
+          type: string
+        orderId:
+          type: string
+        amount:
+          type: number
+      required:
+      - paymentKey
+      - orderId
+      - amount
+      additionalProperties: false
+    CheckoutSessionConfirmData:
+      type: object
+      properties:
+        checkoutSessionId:
+          type: string
+        paymentId:
+          type: string
+        status:
+          type: string
+          enum:
+          - SUCCEEDED
+          - FAILED
+        planId:
+          type: string
+        subscriptionStatus:
+          type: string
+      required:
+      - checkoutSessionId
+      - paymentId
+      - status
+      - planId
+      - subscriptionStatus
       additionalProperties: false
     SubscriptionChangeRequest:
       type: object

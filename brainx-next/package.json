@@ -23,6 +23,7 @@
     "@tiptap/pm": "^3.27.1",
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
+    "@tosspayments/payment-sdk": "^1.9.3",
     "@xyflow/react": "^12.11.0",
     "framer-motion": "^12.40.0",
     "lowlight": "^3.3.0",
@@ -30,8 +31,8 @@
     "next": "16.2.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-resizable-panels": "^4.11.2",
     "react-parallax-tilt": "^1.7.331",
+    "react-resizable-panels": "^4.11.2",
     "shiki": "^4.2.0"
   },
   "devDependencies": {

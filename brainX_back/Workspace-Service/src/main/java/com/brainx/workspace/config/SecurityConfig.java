@@ -34,6 +34,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/actuator/health", "/h2-console/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/share-links/*").permitAll()
+                        // TEMP: 로그인 없이 Notion 가져오기 기능 테스트용. 실제 로그인 연동 완료 후 제거할 것.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/notes", "/api/v1/notes/*/links").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/notes/*").permitAll()
                         .requestMatchers("/internal/v1/**").hasRole("SERVICE")
                         .anyRequest().authenticated()
                 )
