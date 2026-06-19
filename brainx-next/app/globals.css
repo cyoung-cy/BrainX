@@ -657,6 +657,135 @@ html.light .aurora b {
   height: 0;
 }
 
+/* ── 표(Table) — .tableWrapper/.column-resize-handle/.selectedCell/.resize-cursor는
+   @tiptap/extension-table이 자동으로 붙이는 고정 클래스명(설정 불가)이라 반드시 스타일이
+   필요하다. */
+.tiptap-note-content .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.75em 0;
+  border-radius: 0.55rem;
+}
+
+.tiptap-note-content .ProseMirror table.note-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  color: rgb(var(--txt2));
+  background: rgb(var(--surface) / 0.45);
+}
+
+.tiptap-note-content .ProseMirror table.note-table td,
+.tiptap-note-content .ProseMirror table.note-table th {
+  border: 1px solid rgb(var(--border) / 0.82);
+  padding: 0.45em 0.65em;
+  vertical-align: top;
+  position: relative;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.tiptap-note-content .ProseMirror table.note-table th {
+  background: rgb(var(--surface2) / 0.92);
+  color: rgb(var(--txt));
+  font-weight: 650;
+  text-align: left;
+}
+
+.tiptap-note-content .ProseMirror table.note-table tr:hover > :is(td, th) {
+  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.035);
+}
+
+.tiptap-note-content .ProseMirror table.note-table :is(td, th):hover {
+  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.085);
+}
+
+/* :has()로 hover된 셀의 열을 찾는다. 표 입력 상한(20열)까지 지원한다. */
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(1):hover) :is(td, th):nth-child(1),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(2):hover) :is(td, th):nth-child(2),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(3):hover) :is(td, th):nth-child(3),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(4):hover) :is(td, th):nth-child(4),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(5):hover) :is(td, th):nth-child(5),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(6):hover) :is(td, th):nth-child(6),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(7):hover) :is(td, th):nth-child(7),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(8):hover) :is(td, th):nth-child(8),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(9):hover) :is(td, th):nth-child(9),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(10):hover) :is(td, th):nth-child(10),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(11):hover) :is(td, th):nth-child(11),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(12):hover) :is(td, th):nth-child(12),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(13):hover) :is(td, th):nth-child(13),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(14):hover) :is(td, th):nth-child(14),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(15):hover) :is(td, th):nth-child(15),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(16):hover) :is(td, th):nth-child(16),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(17):hover) :is(td, th):nth-child(17),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(18):hover) :is(td, th):nth-child(18),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(19):hover) :is(td, th):nth-child(19),
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(20):hover) :is(td, th):nth-child(20) {
+  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.05);
+}
+
+.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):hover) :is(td, th):hover {
+  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.1);
+}
+
+/* 표 전체 크기. 확대한 폭은 .tableWrapper 안에서만 스크롤된다. */
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="fit"] { width: 100%; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="original"] {
+  width: max-content !important;
+  min-width: max-content !important;
+}
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="50"] { width: 50% !important; min-width: 50% !important; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="75"] { width: 75% !important; min-width: 75% !important; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="100"] { width: 100% !important; min-width: 100% !important; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="125"] { width: 125% !important; min-width: 125% !important; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="150"] { width: 150% !important; min-width: 150% !important; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="custom"] {
+  width: var(--brainx-table-width, 100%) !important;
+  min-width: var(--brainx-table-width, 100%) !important;
+}
+
+.tiptap-note-content .ProseMirror .tableWrapper:has(table.note-table[data-align="center"]) table.note-table { margin-inline: auto; }
+.tiptap-note-content .ProseMirror .tableWrapper:has(table.note-table[data-align="right"]) table.note-table { margin-left: auto; }
+
+.tiptap-note-content .ProseMirror table.note-table[data-border-width="2"] :is(td, th) { border-width: 2px; }
+.tiptap-note-content .ProseMirror table.note-table[data-border-width="3"] :is(td, th) { border-width: 3px; }
+
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="blue"] td { background: rgb(59 130 246 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="blue"] th { background: rgb(59 130 246 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="emerald"] td { background: rgb(16 185 129 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="emerald"] th { background: rgb(16 185 129 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="amber"] td { background: rgb(245 158 11 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="amber"] th { background: rgb(245 158 11 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] td { background: rgb(244 63 94 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] th { background: rgb(244 63 94 / 0.16); }
+
+.tiptap-note-content .ProseMirror table.note-table .selectedCell {
+  background: rgb(var(--primary) / 0.12);
+}
+
+.tiptap-note-content .ProseMirror table.note-table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: rgb(var(--primary) / 0.5);
+  pointer-events: none;
+}
+
+.tiptap-note-content .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.tiptap-note-content .ProseMirror[contenteditable="false"] .column-resize-handle {
+  display: none;
+}
+
+html.light .tiptap-note-content .ProseMirror table.note-table :is(td, th) {
+  border-color: rgb(var(--border));
+}
+
 /* Light mode overrides */
 .tiptap-note-content--light .ProseMirror {
   color: #374151;

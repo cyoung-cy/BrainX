@@ -6,6 +6,7 @@ import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
@@ -15,11 +16,16 @@ import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import { createLowlight, all } from "lowlight";
 import { Link2, Highlighter, Sparkles, Wand2 } from "lucide-react";
+import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
+import { ImageBlock, insertImageBlockFromFile } from "./ImageBlockNode";
+import { TableToolbar } from "./TableToolbar";
+import EditorContextMenu, { type EditorContextTarget } from "./EditorContextMenu";
 
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
@@ -530,7 +536,12 @@ const MarkdownCodeFenceEnter = Extension.create({
         return this.editor
           .chain()
           .command(({ tr }) => {
-            tr.setNodeMarkup($from.before(), codeBlockType, { language: lang });
+            // preview:false — 막 fence를 입력한 직후라 내용이 비어있다. mermaid 블록은
+            // 기본 preview:true(렌더링 모드)인데, 그대로 두면 타이핑을 시작하는 순간(텍스트가
+            // 비어있지 않게 되는 순간) CodeBlockView가 편집 영역을 display:none으로 숨겨버려
+            // 포커스가 날아가고 이후 입력이 전부 사라지는 버그가 있었다(실측 확인). 새로 만든
+            // 블록은 항상 편집 모드로 시작해야 안전하다.
+            tr.setNodeMarkup($from.before(), codeBlockType, { language: lang, preview: false });
             tr.delete($from.pos - $from.parentOffset, $from.pos);
             return true;
           })
@@ -782,6 +793,79 @@ function BubbleToolbar({
    link/underline과 별도 import가 다시 섞여 "Duplicate extension names" 경고가
    재발하기 쉽다. 모든 인스턴스가 이 단일 배열을 공유하도록 모듈 스코프에 한 번만
    정의한다. (link/underline은 StarterKit 내장분만 사용) */
+class BrainXTableView extends TableView {
+  constructor(
+    node: ProseMirrorNode,
+    cellMinWidth: number,
+    view?: EditorView,
+    HTMLAttributes: Record<string, unknown> = {}
+  ) {
+    super(node, cellMinWidth, view, HTMLAttributes);
+    // columnResizing plugin은 View 생성 시 extension의 HTMLAttributes를 넘기지 않는다.
+    // 표 스타일 계약이 리사이즈 활성화 여부에 따라 사라지지 않도록 NodeView가 직접 보장한다.
+    this.table.classList.add("note-table");
+    this.syncDisplayAttributes(node);
+  }
+
+  update(node: ProseMirrorNode) {
+    const updated = super.update(node);
+    if (updated) this.syncDisplayAttributes(node);
+    return updated;
+  }
+
+  private syncDisplayAttributes(node: ProseMirrorNode) {
+    this.table.dataset.align = String(node.attrs.align ?? "center");
+    this.table.dataset.widthMode = String(node.attrs.widthMode ?? "fit");
+    this.table.dataset.tableColor = String(node.attrs.tableColor ?? "default");
+    this.table.dataset.borderWidth = String(node.attrs.borderWidth ?? 1);
+    const widthPercent = Number(node.attrs.widthPercent) || 100;
+    this.table.dataset.widthPercent = String(widthPercent);
+    this.table.style.setProperty("--brainx-table-width", `${widthPercent}%`);
+  }
+}
+
+const BrainXTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      align: {
+        default: "center",
+        parseHTML: (el) => el.getAttribute("data-align") ?? "center",
+        renderHTML: (attrs) => ({ "data-align": String(attrs.align ?? "center") }),
+      },
+      widthMode: {
+        default: "fit",
+        parseHTML: (el) => el.getAttribute("data-width-mode") ?? "fit",
+        renderHTML: (attrs) => ({ "data-width-mode": String(attrs.widthMode ?? "fit") }),
+      },
+      widthPercent: {
+        default: null,
+        parseHTML: (el) => {
+          const value = el.getAttribute("data-width-percent");
+          return value ? Number(value) : null;
+        },
+        renderHTML: (attrs) => attrs.widthPercent
+          ? { "data-width-percent": String(attrs.widthPercent) }
+          : {},
+      },
+      tableColor: {
+        default: "default",
+        parseHTML: (el) => el.getAttribute("data-table-color") ?? "default",
+        renderHTML: (attrs) => ({ "data-table-color": String(attrs.tableColor ?? "default") }),
+      },
+      borderWidth: {
+        default: 1,
+        parseHTML: (el) => Number(el.getAttribute("data-border-width")) || 1,
+        renderHTML: (attrs) => ({ "data-border-width": String(attrs.borderWidth ?? 1) }),
+      },
+    };
+  },
+}).configure({
+  resizable: true,
+  View: BrainXTableView,
+  HTMLAttributes: { class: "note-table" },
+});
+
 const NOTE_EDITOR_EXTENSIONS = [
   StarterKit.configure({
     codeBlock: false,
@@ -804,6 +888,31 @@ const NOTE_EDITOR_EXTENSIONS = [
           renderHTML: (attrs) =>
             attrs.filename ? { "data-filename": String(attrs.filename) } : {},
         },
+        // ── Mermaid 전용 표시 옵션(언어가 mermaid가 아니면 무시됨) ──
+        align: {
+          default: "center",
+          parseHTML: (el) => el.getAttribute("data-align") ?? "center",
+          renderHTML: (attrs) => ({ "data-align": String(attrs.align ?? "center") }),
+        },
+        widthMode: {
+          default: "fit",
+          parseHTML: (el) => el.getAttribute("data-width-mode") ?? "fit",
+          renderHTML: (attrs) => ({ "data-width-mode": String(attrs.widthMode ?? "fit") }),
+        },
+        widthPercent: {
+          default: null,
+          parseHTML: (el) => {
+            const v = el.getAttribute("data-width-percent");
+            return v ? Number(v) : null;
+          },
+          renderHTML: (attrs) =>
+            attrs.widthPercent ? { "data-width-percent": String(attrs.widthPercent) } : {},
+        },
+        preview: {
+          default: true,
+          parseHTML: (el) => el.getAttribute("data-preview") !== "false",
+          renderHTML: (attrs) => ({ "data-preview": attrs.preview === false ? "false" : "true" }),
+        },
       };
     },
     addNodeView() {
@@ -812,9 +921,11 @@ const NOTE_EDITOR_EXTENSIONS = [
     addInputRules() {
       return [
         textblockTypeInputRule({
-          find: /^```([a-z]+)?[\s\n]$/,
+          // 대소문자 모두 허용(```Mermaid, ```MERMAID 등) — getAttributes에서 소문자로 정규화한다.
+          find: /^```([a-zA-Z]+)?[\s\n]$/,
           type: this.type,
-          getAttributes: (match) => ({ language: match[1] ?? null }),
+          // preview:false — 위 MarkdownCodeFenceEnter의 같은 이유로 새 블록은 항상 편집 모드로 시작.
+          getAttributes: (match) => ({ language: match[1] ? match[1].toLowerCase() : null, preview: false }),
         }),
       ];
     },
@@ -861,12 +972,23 @@ const NOTE_EDITOR_EXTENSIONS = [
     exitOnTripleEnter: true,
     exitOnArrowDown: true,
   }),
+  ImageBlock,
+  BrainXTable,
+  TableRow,
+  TableHeader,
+  TableCell,
 ];
 
 export interface NoteEditorHandle {
   focusStart: () => void;
   focusEnd: () => void;
   flushPendingSave: () => void;
+  /** 패널 레벨(EditorPanel.tsx)의 항상-보이는 삽입 버튼이 호출한다 — 본문 안에 버튼을 두면
+      노트 길이에 따라 스크롤해야 보이는 위치에 가는 버그가 있었음(고정 위치 버튼은 패널
+      기준으로 둬야 함). */
+  insertImageFile: (file: File) => void;
+  insertImageUrl: (src: string) => void;
+  insertTable: (rows: number, cols: number) => void;
 }
 
 /* ── 커스텀 버블 메뉴 ──────────────────────────────────────────────────
@@ -1066,7 +1188,8 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
 }
 
 /** 본문이 비어있고 포커스되지 않았을 때만 보이는 안내 문구 — placeholder처럼 동작 */
-const EDITOR_HINT_TEXT = "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · 텍스트 선택 → 버블 툴바";
+const EDITOR_HINT_TEXT =
+  "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · ```mermaid 다이어그램 · ![](url) 이미지 · 텍스트 선택 → 버블 툴바";
 
 interface NoteEditorProps {
   note: MockNote;
@@ -1086,19 +1209,49 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   ref
 ) {
   const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
+  const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
 
   const editor = useEditor({
     extensions: NOTE_EDITOR_EXTENSIONS,
     content: resolveEditorHtml(note.content),
     immediatelyRender: false,
-    editable: false,
+    // Table의 columnResizing plugin은 생성 시점의 isEditable을 한 번만 읽는다. 항상 등록되게
+    // true로 생성하고, 아래 layout effect에서 실제 탭 mode를 첫 paint 전에 적용한다.
+    editable: true,
     editorProps: {
       attributes: {
         spellcheck: "false",
         autocomplete: "off",
         translate: "no",
+      },
+      // 클립보드에 이미지 파일이 있을 때만 가로채 이미지 블록으로 삽입한다 — 이미지가 아닌
+      // 일반 텍스트/HTML 붙여넣기는 false를 반환해 tiptap의 기본 처리를 그대로 따른다.
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        files.forEach((file) => insertImageBlockFromFile(view, file));
+        return true;
+      },
+      // 사이드바 노트 드래그(EditorPanel의 dragPayload 오버레이)는 이 핸들러와 무관하게
+      // 별도의 absolute 오버레이가 이벤트를 먼저 가로채므로 충돌하지 않는다 — 여기서는 OS
+      // 파일 탐색기 등에서 끌어온 실제 이미지 파일(event.dataTransfer.files)만 처리한다.
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false; // 에디터 내부 노드 이동(드래그) — 기본 동작 유지
+        const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        const pos = coords?.pos ?? view.state.selection.from;
+        files.forEach((file) => insertImageBlockFromFile(view, file, pos));
+        return true;
       },
     },
     onFocus: () => setFocused(true),
@@ -1130,6 +1283,16 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       }
       onContentChange(note.id, editor.getHTML());
     },
+    insertImageFile: (file) => {
+      if (!editor) return;
+      insertImageBlockFromFile(editor.view, file);
+    },
+    insertImageUrl: (src) => {
+      editor?.chain().focus().setImageBlock({ src }).run();
+    },
+    insertTable: (rows, cols) => {
+      editor?.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    },
   }), [editor, note.id, onContentChange]);
 
   /* note 변경(탭 전환 등) → 내용만 갱신한다. 모드는 여기서 설정하지 않는다 — mode prop은
@@ -1153,7 +1316,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
 
   /* mode prop(탭별 읽기/편집 상태) → editable 토글. 탭 전환으로 note.id와 mode가 같은 렌더에서
      함께 바뀌어도 두 effect가 각자 최신 값으로 정확히 적용된다. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!editor) return;
     editor.setEditable(mode === "edit");
   }, [editor, mode]);
@@ -1171,8 +1334,66 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     <div
       className="split-pane-editor tiptap-note-content relative"
       onClick={(e) => { if (mode === "edit") { e.stopPropagation(); onActivate(); } }}
+      onContextMenu={(event) => {
+        if (mode !== "edit" || !editor) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate();
+        const coords = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+        let clickedInTable = false;
+        if (coords) {
+          const $clicked = editor.state.doc.resolve(coords.pos);
+          for (let depth = $clicked.depth; depth >= 0; depth -= 1) {
+            if ($clicked.node(depth).type.name === "table") {
+              clickedInTable = true;
+              break;
+            }
+          }
+          const currentSelection = editor.state.selection;
+          const keepCellRange = currentSelection instanceof CellSelection
+            && coords.pos >= currentSelection.from
+            && coords.pos <= currentSelection.to;
+          if (!keepCellRange) {
+            const selection = TextSelection.near($clicked);
+            editor.view.dispatch(editor.state.tr.setSelection(selection));
+          }
+        }
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          inTable: clickedInTable,
+        });
+      }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        aria-label="이미지 파일 선택"
+        style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
+        onChange={(event) => {
+          Array.from(event.target.files ?? []).forEach((file) => {
+            if (editor) insertImageBlockFromFile(editor.view, file);
+          });
+          event.target.value = "";
+        }}
+      />
       {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
+      {editor && <TableToolbar editor={editor} />}
+      {editor && contextMenu && (
+        <EditorContextMenu
+          target={contextMenu}
+          editor={editor}
+          onClose={() => setContextMenu(null)}
+          onChooseImage={() => fileInputRef.current?.click()}
+          onInsertImageUrl={() => {
+            const url = window.prompt("이미지 URL 입력:", "https://")?.trim();
+            if (url) editor.chain().focus().setImageBlock({ src: url }).run();
+          }}
+          onInsertTable={(rows, cols) => editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()}
+        />
+      )}
       <EditorContent editor={editor} />
       {showHint && (
         <p
