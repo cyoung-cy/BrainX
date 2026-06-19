@@ -19,6 +19,7 @@ export function Field({
   right,
   disabled,
   autoComplete,
+  error,
 }: {
   label: string;
   type?: string;
@@ -28,8 +29,10 @@ export function Field({
   right?: ReactNode;
   disabled?: boolean;
   autoComplete?: string;
+  error?: string;
 }) {
   const inputId = useId();
+  const errorId = error ? `${inputId}-error` : undefined;
 
   return (
     <div className="mb-4">
@@ -44,8 +47,17 @@ export function Field({
         value={value}
         onChange={onChange}
         disabled={disabled}
-        className="h-11 w-full rounded-xl border border-line/60 bg-surface/60 px-3.5 text-[16px] text-txt outline-none transition-colors placeholder:text-txt3 focus:border-primary/60 focus:bg-surface"
+        aria-invalid={Boolean(error)}
+        aria-describedby={errorId}
+        className={`h-11 w-full rounded-xl border bg-surface/60 px-3.5 text-[16px] text-txt outline-none transition-colors placeholder:text-txt3 focus:bg-surface ${
+          error ? "border-red-400/80 focus:border-red-400" : "border-line/60 focus:border-primary/60"
+        }`}
       />
+      {error ? (
+        <p id={errorId} className="mt-1.5 break-keep text-[12.5px] leading-snug text-red-400">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

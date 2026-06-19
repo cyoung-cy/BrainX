@@ -260,6 +260,27 @@ API와 이벤트 계약의 기준은 `contracts-v2`입니다.
 
 ## Getting Started
 
+### Local Backend Environment
+
+```powershell
+cd C:\Edu\Final\BrainX\brainX_back
+Copy-Item .env.example .env
+docker compose up -d user-postgres workspace-postgres ingestion-mysql
+```
+
+`.env`는 각자 로컬 값만 넣고 Git에 올리지 않습니다. `JWT_SECRET`은 User-Service, Workspace-Service, Ingestion-Service가 같은 값을 사용해야 합니다.
+User-Service는 `brainX_back/User-Service` 기준으로 실행하면 `../.env`를 자동으로 읽습니다.
+
+기본 DB 접속 정보:
+
+| Service | DB | JDBC URL |
+| --- | --- | --- |
+| User-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_user` |
+| Workspace-Service | PostgreSQL | `jdbc:postgresql://localhost:5433/brainx_workspace` |
+| Ingestion-Service | MySQL | `jdbc:mysql://localhost:3306/brainx_ingestion?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true` |
+
+`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`는 세 Spring 서비스가 같은 env 이름을 쓰므로, 여러 백엔드를 IDE에서 동시에 실행할 때는 서비스별 Run Configuration에 맞는 DB 값을 따로 넣습니다.
+
 ### Frontend
 
 ```powershell

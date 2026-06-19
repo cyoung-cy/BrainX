@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { EMPTY_CONSENTS, requiredConsentsAccepted, type ConsentState } from "@/lib/legal";
+import { EMPTY_CONSENTS, type ConsentState } from "@/lib/legal";
 import { checkEmailAvailability, requestEmailVerification, signupWithEmail, verifyEmailCode } from "@/lib/auth-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Icon } from "@/components/brainx-ui";
@@ -75,6 +75,7 @@ export function SignupScreen() {
   const passwordConfirmTouched = passwordConfirm.length > 0;
   const passwordMatches = passwordConfirmTouched && password === passwordConfirm;
   const passwordMismatch = passwordConfirmTouched && password !== passwordConfirm;
+  const requiredOnlyConsentsAccepted = consents.termsRequired && consents.privacyRequired;
   const canCheckEmail = email.trim().length > 0 && emailAvailabilityStatus !== "checking" && !submitting;
   const canSendCode = emailChecked && !sendingCode;
   const canCheckCode =
@@ -83,7 +84,7 @@ export function SignupScreen() {
     verificationStatus !== "checking" &&
     !submitting;
   const canProceed =
-    requiredConsentsAccepted(consents) &&
+    requiredOnlyConsentsAccepted &&
     email.trim().length > 0 &&
     verificationCode.trim().length > 0 &&
     passwordMeetsPolicy &&
@@ -176,7 +177,7 @@ export function SignupScreen() {
         }
       });
       pushToast("회원가입이 완료되었습니다.", "ok");
-      router.push(data.next === "ONBOARDING" ? "/onboarding" : "/home");
+      router.push("/onboarding");
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "회원가입에 실패했습니다.", "err");
     } finally {

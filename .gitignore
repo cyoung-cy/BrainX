@@ -28,6 +28,7 @@ Thumbs.db
 
 # Secrets (로컬 전용, git에 올리지 않음)
 .env
+brainX_back/.env
 application-local.yml
 **/application-local.yml
 # Build outputs
