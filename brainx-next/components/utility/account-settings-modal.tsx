@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useBrainX } from "@/components/brainx-provider";
 import { Icon, type IconName } from "@/components/brainx-ui";
+import { ImportScreen } from "@/components/utility/import-screen";
 import { getOAuthAuthorization, logout, readAuthSession, type OAuthProvider } from "@/lib/auth-api";
 import {
   AuthRequiredError,
@@ -32,7 +33,7 @@ import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
 
-type TabId = "profile" | "general" | "notifications" | "usage" | "stats" | "support" | "upgrade";
+type TabId = "profile" | "general" | "notifications" | "import" | "usage" | "stats" | "support" | "upgrade";
 type SocialProvider = "google" | "kakao" | "naver";
 
 const OAUTH_LINK_INTENT_KEY = "brainx_oauth_link_intent_v1";
@@ -50,6 +51,7 @@ const NAV_GROUPS: { label: string; items: { id: TabId; label: string; icon: Icon
   {
     label: "사용량 및 분석",
     items: [
+      { id: "import", label: "가져오기", icon: "import" },
       { id: "usage", label: "AI 토큰 사용량", icon: "bolt" },
       { id: "stats", label: "노트 통계", icon: "dash" }
     ]
@@ -66,6 +68,7 @@ const MOBILE_TABS: { id: TabId; label: string }[] = [
   { id: "profile", label: "프로필" },
   { id: "general", label: "일반" },
   { id: "notifications", label: "알림" },
+  { id: "import", label: "가져오기" },
   { id: "usage", label: "AI 토큰 사용량" },
   { id: "stats", label: "노트 통계" },
   { id: "support", label: "문의하기" },
@@ -623,7 +626,7 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
           </div>
 
           <div className="scroll flex-1 overflow-y-auto px-8 pb-12 pt-11 md:px-[51px]">
-            <div className={cx("mx-auto max-w-[622px]", (tab === "upgrade" || tab === "support") && "max-w-[630px]")}>
+            <div className={cx("mx-auto max-w-[622px]", (tab === "upgrade" || tab === "support") && "max-w-[630px]", tab === "import" && "max-w-[1180px]")}>
               {tab === "profile" ? (
                 <ProfilePanel
                   email={email}
@@ -664,6 +667,7 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
                 />
               ) : null}
               {tab === "notifications" ? <NotificationsPanel /> : null}
+              {tab === "import" ? <ImportScreen /> : null}
               {tab === "usage" ? <UsagePanel /> : null}
               {tab === "stats" ? <StatsPanel /> : null}
               {tab === "support" ? <SupportPanel /> : null}
