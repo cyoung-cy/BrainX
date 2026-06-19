@@ -20,23 +20,33 @@ export function OrbitEdge({
   const isSelected = data?.isSelected as boolean | undefined;
   const isDimmed = data?.isDimmed as boolean | undefined;
   const theme = data?.theme as '2d' | 'universe' | undefined;
+  const sourceColor = data?.sourceColor as string | null | undefined;
+  const activeColor = data?.activeColor as string | null | undefined;
   const is2D = theme === '2d';
 
-  const strokeColor = isBridge ? "rgb(var(--primary) / 0.35)" : "rgb(var(--border) / 0.6)";
-  const selectedStroke = "rgb(var(--primary))"; // primary accent color
+  // 2D 라이트: border가 너무 밝아 잘 안 보이므로 더 진한 중간 회색 사용
+  // 다크모드에서는 border(58 76 110)가 배경과 적당히 구분되므로 opacity 높임
+  const strokeColor = isBridge
+    ? "rgb(var(--primary) / 0.8)"
+    : "rgb(100 116 139 / 0.4)";  // slate-500 계열 고정색 (라이트/다크 모두 잘 보임)
+  // 선택/호버 시: 활성 노드 색상 사용, 없으면 기존 primary fallback
+  const selectedStroke = activeColor ? `rgb(${activeColor})` : "rgb(var(--primary))";
   
-  const uniStrokeColor = isBridge ? "rgb(34 211 238 / 0.35)" : "rgb(148 163 184 / 0.18)";
-  const uniSelectedStroke = "rgb(165 126 255 / 0.8)";
+  const uniStrokeColor = isBridge ? "rgb(34 211 238 / 0.45)" : "rgb(148 163 184 / 0.35)";
+  const uniSelectedStroke = activeColor ? `rgb(${activeColor} / 0.9)` : "rgb(165 126 255 / 0.8)";
 
-  // 징검다리 강조 모드: 우주모드 선택과 동일한 스타일 (blur 없음)
-  const bridgeHighlightColor = "rgb(165 126 255)"; // uniSelectedStroke와 동일한 보라색
+  // 징검다리 강조 모드: 소스 노드 색상 사용 (없으면 fallback)
+  const bridgeHighlightColor = sourceColor
+    ? `rgb(${sourceColor})`
+    : "rgb(165 126 255)";
 
-  const strokeW = isSelected ? 2 : (isBridge ? 1.6 : 1);
+  // 선택 시 굵기 1px 줄임: 2 -> 1 / 기본 굵기: 1 -> 0.5 / bridge: 1.6 -> 0.6
+  const strokeW = isSelected ? 1 : (isBridge ? 0.8 : 0.5);
   const color = isSelected ? (is2D ? selectedStroke : uniSelectedStroke) : (is2D ? strokeColor : uniStrokeColor);
 
-  // 강조 모드일 때 덮어씀
+  // 강조 모드일 때 덮어씀 (굵기 1px 줄임: 2 -> 1)
   const finalColor = isBridgeHighlight ? bridgeHighlightColor : color;
-  const finalStrokeW = isBridgeHighlight ? 2 : strokeW;
+  const finalStrokeW = isBridgeHighlight ? 1 : strokeW;
   const finalDash = isBridgeHighlight ? '4 4' : (isBridge || isSelected ? '4 4' : 'none');
   const finalFilter = isBridgeHighlight
     ? 'none'
