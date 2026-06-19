@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -15,6 +16,16 @@ import { useBrainX } from "@/components/brainx-provider";
 import { Icon, type IconName } from "@/components/brainx-ui";
 import { ImportScreen } from "@/components/utility/import-screen";
 import { getOAuthAuthorization, logout, readAuthSession, type OAuthProvider } from "@/lib/auth-api";
+import {
+  cancelSubscription,
+  changeSubscriptionDemo,
+  getMySubscription,
+  getPlans,
+  isCommerceDemoSession,
+  PAYMENT_RESULT_MESSAGE_TYPE,
+  type Plan as CommercePlan,
+  type Subscription as CommerceSubscription
+} from "@/lib/commerce-api";
 import {
   AuthRequiredError,
   cancelAccountDeletion,
@@ -1344,7 +1355,107 @@ function SupportPanel() {
 }
 
 function UpgradePanel({ billing, onBillingChange }: { billing: "monthly" | "yearly"; onBillingChange: (value: "monthly" | "yearly") => void }) {
+  const { pushToast } = useBrainX();
+  const [plans, setPlans] = useState<CommercePlan[]>([]);
+  const [subscription, setSubscription] = useState<CommerceSubscription | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [planList, sub] = await Promise.all([getPlans(), getMySubscription()]);
+      setPlans(planList);
+      setSubscription(sub);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "요금제 정보를 불러오지 못했습니다.", "err");
+    } finally {
+      setLoading(false);
+    }
+  }, [pushToast]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    function handlePaymentMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== PAYMENT_RESULT_MESSAGE_TYPE) return;
+      setPendingPlanId(null);
+      if (event.data.success) {
+        pushToast(event.data.message ?? "결제가 완료되었습니다.", "ok");
+        void refresh();
+      } else {
+        pushToast(event.data.message ?? "결제가 취소되었습니다.", "err");
+      }
+    }
+
+    window.addEventListener("message", handlePaymentMessage);
+    return () => window.removeEventListener("message", handlePaymentMessage);
+  }, [pushToast, refresh]);
+
+  const startUpgrade = async (plan: CommercePlan) => {
+    if (pendingPlanId) return;
+    setPendingPlanId(plan.planId);
+
+    if (isCommerceDemoSession()) {
+      try {
+        await changeSubscriptionDemo(plan.planId);
+        pushToast(`${plan.name} 플랜으로 변경됐어요 (데모)`, "ok");
+        await refresh();
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : "플랜 변경에 실패했습니다.", "err");
+      } finally {
+        setPendingPlanId(null);
+      }
+      return;
+    }
+
+    const popup = window.open(
+      `/billing/checkout?planId=${encodeURIComponent(plan.planId)}`,
+      "brainx-payment",
+      "width=480,height=720,noopener=no,noreferrer=no"
+    );
+    if (!popup) {
+      pushToast("팝업이 차단되었습니다. 팝업 차단을 해제한 뒤 다시 시도해 주세요.", "err");
+      setPendingPlanId(null);
+      return;
+    }
+    // pendingPlanId는 결제 팝업이 postMessage로 결과를 알려줄 때(성공/실패 모두) 해제된다.
+    // 단, 사용자가 결제창의 "취소" 버튼이 아니라 팝업 자체를 직접 닫아버리면 fail 페이지로
+    // 리다이렉트되지 않아 postMessage가 오지 않으므로, 팝업이 닫혔는지 별도로 감시해서
+    // 그 경우에도 "취소되었습니다" 처리를 해 준다.
+    const watchClosed = window.setInterval(() => {
+      if (popup.closed) {
+        window.clearInterval(watchClosed);
+        setPendingPlanId((current) => {
+          if (current === plan.planId) {
+            pushToast("결제가 취소되었습니다.", "err");
+            return null;
+          }
+          return current;
+        });
+      }
+    }, 500);
+  };
+
+  const downgradeToFree = async () => {
+    if (pendingPlanId) return;
+    setPendingPlanId("free");
+    try {
+      await cancelSubscription(false);
+      pushToast("무료 플랜으로 변경됐어요", "ok");
+      await refresh();
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "플랜 변경에 실패했습니다.", "err");
+    } finally {
+      setPendingPlanId(null);
+    }
+  };
+
   const yearly = billing === "yearly";
+  const currentPlanId = subscription?.plan.planId ?? "free";
+
   return (
     <>
       <header className="mb-5">
@@ -1363,11 +1474,38 @@ function UpgradePanel({ billing, onBillingChange }: { billing: "monthly" | "year
           </button>
         ))}
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <PlanCard plan="무료" price="₩0" desc="평생 무료" button="기본 플랜" features={["노트 무제한", "AI 토큰 월 50,000", "기기 2대", "기본 검색"]} />
-        <PlanCard plan="Pro" price={yearly ? "₩9,900" : "₩12,900"} desc={yearly ? "연간 결제" : "월간 결제"} button="현재 플랜" badge="현재 플랜" active features={["AI 토큰 월 100만", "시맨틱 검색", "버전 기록 30일", "우선 처리"]} />
-        <PlanCard plan="Max" price={yearly ? "₩24,900" : "₩29,900"} desc={yearly ? "연간 결제" : "월간 결제"} button="Max로 업그레이드" badge="추천" primary features={["AI 토큰 무제한", "최신 모델 우선", "팀 공유", "우선 지원"]} />
-      </div>
+      {loading ? (
+        <p className="text-[13px] text-[#8c877f]">요금제 정보를 불러오는 중…</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-3">
+          {plans.map((plan) => {
+            const tier = Number(plan.entitlements.tier ?? 0);
+            const isCurrent = plan.planId === currentPlanId;
+            const isFree = plan.price === 0;
+            const primary = tier === Math.max(...plans.map((p) => Number(p.entitlements.tier ?? 0)));
+
+            let buttonLabel = isFree ? "기본 플랜으로 변경" : `${plan.name}로 업그레이드`;
+            if (isCurrent) buttonLabel = "현재 플랜";
+            if (pendingPlanId === plan.planId) buttonLabel = "처리 중…";
+
+            return (
+              <PlanCard
+                key={plan.planId}
+                plan={plan.name}
+                price={isFree ? "₩0" : `₩${(yearly ? Math.round(plan.price * 0.8) : plan.price).toLocaleString()}`}
+                desc={isFree ? "평생 무료" : yearly ? "연간 결제 (TEMP 테스트 가격)" : "월간 결제 (TEMP 테스트 가격)"}
+                button={buttonLabel}
+                badge={isCurrent ? "현재 플랜" : tier === 2 ? "추천" : undefined}
+                active={isCurrent}
+                primary={primary && !isCurrent}
+                disabled={isCurrent || pendingPlanId !== null}
+                features={plan.features}
+                onClick={() => (isFree ? downgradeToFree() : startUpgrade(plan))}
+              />
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
@@ -1380,7 +1518,9 @@ function PlanCard({
   features,
   active,
   primary,
-  badge
+  badge,
+  disabled,
+  onClick
 }: {
   plan: string;
   price: string;
@@ -1390,6 +1530,8 @@ function PlanCard({
   active?: boolean;
   primary?: boolean;
   badge?: string;
+  disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <div className={cx("rounded-[12px] border px-5 py-5", active ? "border-[#6c55f6]" : "border-[#e5e0d8]")}>
@@ -1402,7 +1544,15 @@ function PlanCard({
         {price !== "₩0" ? <span className="text-[12px] font-medium text-[#8c877f]"> / 월</span> : null}
       </div>
       <p className="mt-1 text-[12px] text-[#6d6861]">{desc}</p>
-      <button type="button" disabled className={cx("mt-4 h-8 w-full rounded-[7px] text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-75", primary ? "bg-[#6c55f6] text-white" : "border border-[#ded8cf] text-[#8c877f]")}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={cx(
+          "mt-4 h-8 w-full rounded-[7px] text-[12px] font-bold transition disabled:cursor-not-allowed disabled:opacity-75",
+          primary ? "bg-[#6c55f6] text-white hover:brightness-110" : "border border-[#ded8cf] text-[#6d6861] hover:bg-[#fbfaf8]"
+        )}
+      >
         {button}
       </button>
       <div className="mt-4 space-y-3">

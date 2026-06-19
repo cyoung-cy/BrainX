@@ -51,7 +51,9 @@ BrainX/
 ├─ brainX_front/          # 이전 Vite/React 프론트엔드 실험 코드
 ├─ brainX_back/           # Spring Boot MSA 백엔드 워크스페이스
 │  ├─ User-Service/       # 인증/사용자 서비스 (포트 8080)
-│  └─ Ingestion-Service/  # 가져오기/내보내기 서비스 (포트 8083) — 구현 중
+│  ├─ Ingestion-Service/  # 가져오기/내보내기 서비스 (포트 8083) — 구현 중
+│  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
+│  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
 ├─ contracts-v2/          # OpenAPI/AsyncAPI SSOT 계약 문서
 └─ BrainX-Design/         # Next.js + iframe 기반 디자인 프로토타입 (포트 3000)
                           # Notion 가져오기 UI 구현됨 (BrainX-Design 전용, brainx-next와 별도)
@@ -116,10 +118,15 @@ BrainX/
 - `lib/auth-api.ts`: 이메일 인증, 회원가입, 로그인, 로그아웃, 토큰 갱신, OAuth, 온보딩
 - `lib/support-api.ts`: 문의 목록/생성/상세 조회
 - `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API
+- `lib/ingestion-api.ts`: Notion OAuth 연결/콜백, 페이지 목록 조회, 가져오기 작업 생성/상태 조회
+- `lib/workspace-api.ts`: 노트 단건 조회 (Notion 가져오기 결과를 노트 데모에 반영하는 용도)
+- `lib/commerce-api.ts`: 플랜 목록/내 구독 조회, 결제 체크아웃 세션 생성, Toss 결제 승인 confirm, 구독 변경/취소
 
 새 프론트 API 코드는 화면 컴포넌트에 직접 fetch를 흩뿌리지 말고 `lib/*-api.ts` 계층에 먼저 둡니다.
 
-> **[미구현] Ingestion API**: `brainx-next`의 `/import` 화면(`components/utility/import-screen.tsx`)은 현재 완전 mock입니다. 실제 Notion/Obsidian import API 연동을 위해 `lib/ingestion-api.ts`가 필요합니다. Notion import는 현재 `BrainX-Design`에 별도로 구현되어 있습니다 (`public/legacy/app/ingestion.js`).
+> Notion 가져오기는 `components/utility/import-screen.tsx`에서 `lib/ingestion-api.ts`를 통해 실제 Ingestion-Service(`POST /api/v1/imports/notion/oauth/authorize` 등)와 연동되어 있습니다. OAuth는 팝업 창(`window.open` + `postMessage`)으로 처리하며 `app/notion-callback/page.tsx`가 콜백을 받아 부모 창에 결과를 알리고 스스로 닫힙니다.
+>
+> 요금제 업그레이드는 `components/utility/account-settings-modal.tsx`의 `UpgradePanel`에서 `lib/commerce-api.ts`를 통해 실제 Commerce-Service와 연동되어 있습니다. Toss Payments는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이라, 결제도 Notion OAuth와 동일하게 팝업 창(`app/billing/checkout/*`)으로 처리하고 `postMessage`로 결과를 알린 뒤 닫습니다.
 
 #### BrainX-Design 프론트 (별도 프로토타입)
 
@@ -150,7 +157,7 @@ BrainX/
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | 미구현 |
 | AI-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 미구현 |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
-| Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 미구현 |
+| Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 미구현 (brainX_back/knowledge-workspace-service는 제거 예정) |
 
 ### Service Boundary Rules
@@ -304,6 +311,28 @@ cd C:\Edu\Final\brainX_back\Ingestion-Service
 | POST | `/v1/imports/obsidian/jobs` | Obsidian vault 가져오기 |
 | GET  | `/v1/imports/{importJobId}` | 가져오기 작업 상태 조회 |
 
+### Backend: Commerce-Service (포트 8084)
+
+결제/구독/플랜 담당 서비스. PostgreSQL 16의 `brainx_commerce` 데이터베이스가 미리 생성되어 있어야 합니다. `application.yml`에 Toss Payments 샌드박스 테스트 키가 기본값으로 포함되어 있습니다.
+
+```powershell
+cd C:\Edu\Final\brainX_back\Commerce-Service
+.\gradlew.bat bootRun
+```
+
+주요 엔드포인트:
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET  | `/api/v1/plans` | 플랜 목록 조회 |
+| GET  | `/api/v1/users/me/subscription` | 내 구독 정보 조회 |
+| POST | `/api/v1/subscriptions/checkout-sessions` | 결제 체크아웃 세션 생성 (Toss SDK 구동에 필요한 clientKey/orderId/amount 반환) |
+| POST | `/api/v1/subscriptions/checkout-sessions/{id}/confirm` | Toss 결제 승인 confirm (서버 간 호출로 결제 확정, 성공 시 플랜 즉시 업그레이드) |
+| POST | `/api/v1/subscriptions/change` | 구독 플랜 변경 (결제 없이 즉시 변경 — 테스트/다운그레이드용) |
+| POST | `/api/v1/subscriptions/cancel` | 구독 취소 |
+
+자세한 결제 흐름과 DB 스키마는 `brainX_back/Commerce-Service/README.md`를 참고하세요.
+
 ### Frontend: BrainX-Design (포트 3000)
 
 ```powershell
@@ -348,13 +377,20 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 - `brainX_front`는 이전 Vite/React 구현으로 보이며, 신규 개발 기준은 `brainx-next`를 우선합니다.
 - `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 문서와 개발 계획에서는 제외합니다.
 - DB는 PostgreSQL 16.x를 기준으로 하지만, 현재 `User-Service`에는 H2/MySQL/PostgreSQL runtime dependency가 함께 들어 있습니다. 서비스별 운영 DB 확정 시 정리합니다.
-- **Ingestion-Service SSOT 불일치 현황 (2026-06-17 기준)**:
-  - URL prefix: SSOT는 `/api/v1/`이지만 서비스는 `/v1/`로 구현. BrainX-Design proxy(`/api/ingestion/*` → 8083)가 이를 보정.
+- **Ingestion-Service SSOT 불일치 현황 (2026-06-19 기준)**:
+  - 실제 구현 prefix는 `/api/v1/`로 SSOT와 일치 (컨트롤러 `@RequestMapping("/api/v1/imports")` 직접 확인).
   - `GET /api/v1/imports/notion/pages` 엔드포인트가 SSOT에 없었으나 추가 구현됨 → SSOT에 반영 완료.
   - Import job이 SSOT 계약상 async이나 현재 동기 처리 중. Kafka 이벤트(ImportJobRequested, ImportJobCompleted, IntegrationConnected) 미발행.
-  - 노트 생성이 `bulkCreateNotesInternal` 대신 구 `knowledge-workspace-service` `/v1/notes`를 직접 호출 중. Workspace-Service 정식 구현 후 전환 필요.
-  - `brainx-next` import 화면은 완전 mock. `lib/ingestion-api.ts` 미작성.
-  - Notion OAuth authorize 엔드포인트가 request body 없이 동작 (redirectUri는 application.yml에 고정) → SSOT에 반영 완료.
+  - 노트 생성이 `bulkCreateNotesInternal` 대신 신규 `Workspace-Service`의 `POST /api/v1/notes`를 직접 호출 중 (구 `knowledge-workspace-service`가 아님). 정식 internal API 전환 필요.
+  - `brainx-next` import 화면은 `lib/ingestion-api.ts`로 실제 API와 연동되어 있습니다 (더 이상 mock 아님). Notion OAuth는 팝업 + `postMessage` 방식.
+  - **TEMP**: 실제 로그인 연동 전까지 `/api/v1/imports/notion/**`, `/api/v1/imports/{importJobId}`(GET)를 인증 없이 허용하고(`SecurityConfig` permitAll), 인증이 없으면 고정 `dev-test-user`로 동작하도록 임시 우회되어 있습니다. 코드에 `TEMP` 주석으로 표시. 실제 로그인 연동 완료 후 제거 필요.
+- **Workspace-Service**: `POST /api/v1/notes`, `GET /api/v1/notes/{noteId}`도 위와 동일한 사유로 임시 인증 우회(`CurrentUser`가 인증 없으면 `dev-test-user` 반환) 적용 중. 같은 이유로 추후 제거 필요.
+- **Commerce-Service (신규, 2026-06-19 추가)**:
+  - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
+  - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.
+  - **TEMP**: 결제/등급 변경 동작 확인용으로 Pro 500원, Max 1000원으로 가격을 임시로 낮춰 두었습니다 (`Commerce-Service/src/main/java/.../service/PlanDataSeeder.java`). 실제 요금으로 전환 전 되돌려야 합니다.
+  - **TEMP**: `application.yml`의 Toss `client-key`/`secret-key`는 Toss Payments 공식 문서에 공개된 샌드박스 테스트 키입니다. 실서비스 전환 시 가맹점 본인의 키로 교체해야 합니다.
+  - 등급별 기능 제한(entitlement gating)은 이번 1차 구현 범위에 포함하지 않았습니다 — 결제 성공 시 구독 plan/tier가 정확히 바뀌는지까지만 구현했습니다.
 
 ## North Star
 

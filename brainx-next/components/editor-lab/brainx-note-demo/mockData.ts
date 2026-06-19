@@ -575,6 +575,49 @@ export const MOCK_FOLDERS = [
   { id: "backend", label: "Backend", noteCount: 1 },
 ];
 
+/* Notion 가져오기로 추가된 노트 — localStorage에 영속화하고 모듈 로드 시 복원한다. */
+export const NOTION_IMPORTED_FOLDER_LABEL = "Notion";
+const NOTION_IMPORTED_FOLDER_ID = "notion-imported";
+const IMPORTED_NOTES_STORAGE_KEY = "brainx_notedemo_imported_notes_v1";
+
+function loadPersistedImportedNotes(): NoteData[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(IMPORTED_NOTES_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as NoteData[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistImportedNotes(notes: NoteData[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(IMPORTED_NOTES_STORAGE_KEY, JSON.stringify(notes));
+}
+
+function ensureNotionFolder(noteCount: number) {
+  const folder = MOCK_FOLDERS.find((item) => item.id === NOTION_IMPORTED_FOLDER_ID);
+  if (folder) {
+    folder.noteCount = noteCount;
+    return;
+  }
+  MOCK_FOLDERS.push({ id: NOTION_IMPORTED_FOLDER_ID, label: NOTION_IMPORTED_FOLDER_LABEL, noteCount });
+}
+
+const persistedImportedNotes = loadPersistedImportedNotes();
+if (persistedImportedNotes.length > 0) {
+  MOCK_NOTES.push(...persistedImportedNotes);
+  ensureNotionFolder(persistedImportedNotes.length);
+}
+
+export function addImportedNote(note: NoteData) {
+  if (MOCK_NOTES.some((item) => item.id === note.id)) return;
+  MOCK_NOTES.push(note);
+  const allImported = [...loadPersistedImportedNotes(), note];
+  persistImportedNotes(allImported);
+  ensureNotionFolder(allImported.length);
+}
+
 /* Daily notes mock */
 export const DAILY_NOTE_DATES = [
   "2026-06-15",

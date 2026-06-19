@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Download, Upload, Clock, Share2 } from "lucide-react";
+import { X, Download, Upload, Clock, Share2, UploadCloud, FileSpreadsheet, FileText, AlignLeft, FileCode, CheckCircle2 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { exportNotes } from "./mockApi";
 
@@ -32,10 +32,12 @@ function ModalOverlay({
   isLight,
   onClose,
   children,
+  maxWidth = "max-w-lg",
 }: {
   isLight: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  maxWidth?: string;
 }) {
   return (
     <div
@@ -45,7 +47,8 @@ function ModalOverlay({
     >
       <div
         className={cx(
-          "w-full max-w-lg rounded-2xl border shadow-soft",
+          "w-full rounded-2xl border shadow-soft",
+          maxWidth,
           isLight ? "bg-white border-slate-200" : "bg-surface2 border-line/60"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -237,21 +240,25 @@ function ExportModal({
 }
 
 /* ── Import Modal ─────────────────────────────── */
+const IMPORT_FILE_TYPES = [
+  { id: "csv", label: "CSV", desc: "스프레드시트에서 구조화된 데이터 가져오기", icon: FileSpreadsheet },
+  { id: "pdf", label: "PDF", desc: "PDF 문서에서 콘텐츠 추출하기", icon: FileText },
+  { id: "text", label: "Text & Markdown", desc: "일반 텍스트 및 형식 있는 메모 가져오기", icon: AlignLeft },
+  { id: "html", label: "HTML", desc: "웹 페이지 및 구조화된 콘텐츠 가져오기", icon: FileCode },
+  { id: "word", label: "Word", desc: "Word 문서를 BrainX로 가져오기", icon: null },
+] as const;
+
 function ImportModal({ isLight, onClose }: { isLight: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<"browse" | "done">("browse");
   const [dragOver, setDragOver] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [done, setDone] = useState(false);
+  const [completed, setCompleted] = useState<{ id: string; name: string; time: string }[]>([]);
 
-  const sources = [
-    { id: "markdown", label: "Markdown 파일", icon: "#", accept: ".md" },
-    { id: "obsidian", label: "Obsidian Vault", icon: "⊙", accept: ".zip" },
-    { id: "notion", label: "Notion Export", icon: "N", accept: ".zip" },
-    { id: "text", label: "일반 텍스트", icon: "T", accept: ".txt" },
-  ];
-
-  function simulateImport() {
+  function simulateImport(name: string) {
+    if (importing) return;
     setImporting(true);
+    setProgress(0);
     const steps = [10, 30, 60, 90, 100];
     let i = 0;
     const interval = setInterval(() => {
@@ -259,82 +266,150 @@ function ImportModal({ isLight, onClose }: { isLight: boolean; onClose: () => vo
       i++;
       if (i >= steps.length) {
         clearInterval(interval);
-        setDone(true);
         setImporting(false);
+        setCompleted((cur) => [{ id: `${Date.now()}`, name, time: "방금" }, ...cur]);
       }
-    }, 600);
+    }, 500);
+  }
+
+  function handleFiles(files: FileList | null) {
+    if (!files || !files.length) return;
+    simulateImport(files[0].name);
+  }
+
+  function openFilePicker() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip,.csv,.pdf,.txt,.md,.html,.docx,.epub";
+    input.onchange = (e) => handleFiles((e.target as HTMLInputElement).files);
+    input.click();
   }
 
   return (
-    <ModalOverlay isLight={isLight} onClose={onClose}>
+    <ModalOverlay isLight={isLight} onClose={onClose} maxWidth="max-w-2xl">
       <ModalHeader title="가져오기" icon={Upload} isLight={isLight} onClose={onClose} />
 
-      <div className="p-5">
-        {/* Drop zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); simulateImport(); }}
-          className={cx(
-            "relative border-2 border-dashed rounded-xl p-8 text-center transition-all mb-4",
-            dragOver
-              ? "border-primary/60 bg-primary/5"
-              : isLight ? "border-slate-300 hover:border-slate-400" : "border-line/40 hover:border-line"
-          )}
-        >
-          <div className="text-3xl mb-2">📂</div>
-          <p className={cx("text-[13px] font-medium mb-1", isLight ? "text-slate-700" : "text-txt2")}>
-            파일을 여기에 드래그하거나 클릭하여 선택
-          </p>
-          <p className={cx("text-[11px]", isLight ? "text-slate-400" : "text-txt3")}>
-            .md, .zip (Obsidian/Notion), .txt 지원
-          </p>
-        </div>
+      {/* Tabs */}
+      <div className={cx("flex gap-1 px-5 pt-3 border-b", isLight ? "border-slate-200" : "border-line/40")}>
+        {[
+          { id: "browse" as const, label: "둘러보기" },
+          { id: "done" as const, label: "완료됨" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cx(
+              "-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors",
+              tab === t.id
+                ? isLight ? "border-slate-800 text-slate-800" : "border-txt text-txt"
+                : cx("border-transparent", isLight ? "text-slate-400 hover:text-slate-600" : "text-txt3 hover:text-txt2")
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Source buttons */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {sources.map((src) => (
-            <button
-              key={src.id}
-              onClick={simulateImport}
+      {tab === "browse" ? (
+        <div className="max-h-[70vh] overflow-y-auto p-5">
+          {/* Drop zone */}
+          <div className="mb-6">
+            <h3 className={cx("mb-1 text-[13px] font-semibold", isLight ? "text-slate-800" : "text-txt")}>콘텐츠 가져오기</h3>
+            <p className={cx("mb-3 text-[11.5px]", isLight ? "text-slate-400" : "text-txt3")}>
+              ZIP 파일을 가져오면 내부의 각 파일이 자체 페이지로 변환됩니다.
+            </p>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+              onClick={openFilePicker}
               className={cx(
-                "flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-[11px] transition-all",
-                isLight
-                  ? "border-slate-200 hover:border-slate-300 text-slate-600"
-                  : "border-line/40 hover:border-line text-txt2"
+                "cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-all",
+                dragOver
+                  ? "border-primary/60 bg-primary/5"
+                  : isLight ? "border-slate-300 bg-slate-50 hover:border-slate-400" : "border-line/40 bg-surface/40 hover:border-line"
               )}
             >
-              <span className="text-[18px]">{src.icon}</span>
-              <span>{src.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Progress */}
-        {(importing || done) && (
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className={cx("text-[12px]", isLight ? "text-slate-600" : "text-txt2")}>
-                {done ? "가져오기 완료!" : "가져오는 중..."}
-              </span>
-              <span className={cx("text-[12px] font-semibold", isLight ? "text-slate-700" : "text-txt")}>
-                {progress}%
-              </span>
-            </div>
-            <div className={cx("h-2 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-surface")}>
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            {done && (
-              <p className={cx("mt-2 text-[12px]", isLight ? "text-green-700" : "text-green-400")}>
-                ✓ 노트 6개를 성공적으로 가져왔습니다. (목업)
+              <UploadCloud size={28} className={cx("mx-auto mb-3", isLight ? "text-slate-300" : "text-txt3")} />
+              <p className={cx("mb-1.5 text-[13.5px] font-semibold", isLight ? "text-slate-700" : "text-txt")}>
+                BrainX로 콘텐츠 가져오기
               </p>
-            )}
+              <p className={cx("mb-1 text-[12px]", isLight ? "text-slate-500" : "text-txt3")}>
+                ZIP, CSV, PDF, 텍스트, Markdown, HTML을 드래그 &amp; 드롭 또는 파일을 선택하세요.
+              </p>
+              <p className={cx("text-[11px]", isLight ? "text-slate-400" : "text-txt3/70")}>ZIP 파일은 최대 5GB까지 가능합니다.</p>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* File-based import */}
+          <div>
+            <h3 className={cx("mb-1 text-[13px] font-semibold", isLight ? "text-slate-800" : "text-txt")}>파일 기반 가져오기</h3>
+            <p className={cx("mb-3 text-[11.5px]", isLight ? "text-slate-400" : "text-txt3")}>
+              DOCX, CSV, PDF, 텍스트, Markdown, HTML, EPUB 파일을 가져와 페이지로 변환합니다.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {IMPORT_FILE_TYPES.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => simulateImport(item.label)}
+                  disabled={importing}
+                  className={cx(
+                    "rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    isLight ? "border-slate-200 hover:bg-slate-50" : "border-line/40 hover:bg-surface2/60"
+                  )}
+                >
+                  <div className="mb-1.5 flex items-center gap-2">
+                    {item.icon ? (
+                      <item.icon size={16} className={isLight ? "text-slate-700" : "text-txt"} />
+                    ) : (
+                      <span className="flex h-4 w-4 items-center justify-center rounded-sm bg-[#2b579a] text-[9px] font-bold text-white">W</span>
+                    )}
+                    <span className={cx("text-[12.5px] font-semibold", isLight ? "text-slate-800" : "text-txt")}>{item.label}</span>
+                  </div>
+                  <p className={cx("text-[11px] leading-relaxed", isLight ? "text-slate-400" : "text-txt3")}>{item.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Progress */}
+          {importing && (
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className={cx("text-[12px]", isLight ? "text-slate-600" : "text-txt2")}>가져오는 중...</span>
+                <span className={cx("text-[12px] font-semibold", isLight ? "text-slate-700" : "text-txt")}>{progress}%</span>
+              </div>
+              <div className={cx("h-2 overflow-hidden rounded-full", isLight ? "bg-slate-200" : "bg-surface")}>
+                <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="max-h-[70vh] overflow-y-auto p-5">
+          {completed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <CheckCircle2 size={36} className={cx("mb-3 opacity-40", isLight ? "text-slate-400" : "text-txt3")} />
+              <p className={cx("text-[13px]", isLight ? "text-slate-400" : "text-txt3")}>완료된 가져오기가 없습니다.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {completed.map((job) => (
+                <div
+                  key={job.id}
+                  className={cx("flex items-center gap-3 rounded-lg border px-3 py-2.5", isLight ? "border-slate-200" : "border-line/40")}
+                >
+                  <CheckCircle2 size={16} className="shrink-0 text-green-500" />
+                  <div className="min-w-0 flex-1">
+                    <div className={cx("truncate text-[13px] font-medium", isLight ? "text-slate-700" : "text-txt")}>{job.name}</div>
+                    <div className={cx("text-[11px]", isLight ? "text-slate-400" : "text-txt3")}>{job.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </ModalOverlay>
   );
 }

@@ -19,10 +19,17 @@ public class ImportController {
 
     private final ImportService importService;
 
+    // TEMP: 로그인 없이 테스트할 때 쓰는 고정 사용자 ID. 실제 로그인 연동 완료 후 제거할 것.
+    private static final String DEV_TEST_USER_ID = "dev-test-user";
+
+    private static String resolveUserId(Authentication auth) {
+        return auth != null ? auth.getName() : DEV_TEST_USER_ID;
+    }
+
     // POST /api/v1/imports/notion/oauth/authorize
     @PostMapping("/notion/oauth/authorize")
     public ResponseEntity<ApiResponse<NotionAuthorizeResponse>> authorizeNotion(Authentication auth) {
-        NotionAuthorizeResponse data = importService.generateNotionOAuthUrl(auth.getName());
+        NotionAuthorizeResponse data = importService.generateNotionOAuthUrl(resolveUserId(auth));
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 연결 URL이 생성되었습니다."));
     }
 
@@ -31,7 +38,7 @@ public class ImportController {
     public ResponseEntity<ApiResponse<IntegrationConnectedResponse>> notionCallback(
             Authentication auth,
             @Valid @RequestBody NotionOAuthCallbackRequest request) {
-        IntegrationConnectedResponse data = importService.handleNotionCallback(auth.getName(), request);
+        IntegrationConnectedResponse data = importService.handleNotionCallback(resolveUserId(auth), request);
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 연동이 완료되었습니다."));
     }
 
@@ -41,7 +48,7 @@ public class ImportController {
             Authentication auth,
             @RequestParam String integrationAccountId) {
         NotionPageListResponse data = NotionPageListResponse.from(
-                importService.getNotionPages(auth.getName(), integrationAccountId));
+                importService.getNotionPages(resolveUserId(auth), integrationAccountId));
         return ResponseEntity.ok(ApiResponse.success(data, "Notion 페이지 목록 조회 성공"));
     }
 
@@ -52,7 +59,7 @@ public class ImportController {
             @Valid @RequestBody NotionImportJobRequest request,
             HttpServletRequest httpRequest) {
         String jwtToken = extractToken(httpRequest);
-        ImportJobCreatedResponse data = importService.createNotionImportJob(auth.getName(), request, jwtToken);
+        ImportJobCreatedResponse data = importService.createNotionImportJob(resolveUserId(auth), request, jwtToken);
         String message = "COMPLETED".equals(data.getStatus())
                 ? "Notion 페이지를 성공적으로 가져왔습니다."
                 : "FAILED".equals(data.getStatus())
@@ -77,7 +84,7 @@ public class ImportController {
     public ResponseEntity<ApiResponse<ImportJobStatusResponse>> getImportJobStatus(
             Authentication auth,
             @PathVariable String importJobId) {
-        ImportJobStatusResponse data = importService.getImportJobStatus(auth.getName(), importJobId);
+        ImportJobStatusResponse data = importService.getImportJobStatus(resolveUserId(auth), importJobId);
         return ResponseEntity.ok(ApiResponse.success(data, "가져오기 작업 조회 성공"));
     }
 

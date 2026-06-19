@@ -64,8 +64,13 @@ public class IngestionResponse {
         private List<Object> conflicts;
 
         public static ImportJobStatusResponse from(ImportJob job) {
+            // createdNoteIds/failedFiles는 콤마로 구분된 여러 ID를 담을 수 있으므로 분리해서 각각의 항목으로 변환한다.
             List<CreatedNoteItem> notes = job.getCreatedNoteIds() != null && !job.getCreatedNoteIds().isBlank()
-                    ? List.of(new CreatedNoteItem(job.getCreatedNoteIds(), "가져온 노트"))
+                    ? java.util.Arrays.stream(job.getCreatedNoteIds().split(","))
+                            .map(String::trim)
+                            .filter(id -> !id.isEmpty())
+                            .map(id -> new CreatedNoteItem(id, "가져온 노트"))
+                            .toList()
                     : List.of();
 
             List<FailedFileItem> failed = job.getFailedFiles() != null && !job.getFailedFiles().isBlank()
