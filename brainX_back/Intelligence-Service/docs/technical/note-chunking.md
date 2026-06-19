@@ -29,7 +29,7 @@
 - `keywordIds`: 현재는 note tag 목록
 - `markdownHash`, `version`: 재색인 대상 추적용 metadata
 
-Qdrant document id는 adapter에서 `userId::noteId::chunkIndex`로 만든다.
+Spring AI Qdrant store는 `Document.id`를 UUID로 파싱하므로, Qdrant 내부 document id는 `userId::noteId::chunkIndex`에서 만든 deterministic UUID를 사용한다. 사람이 읽는 logical chunk id는 metadata `chunkId`에 `noteId::chunkIndex` 형태로 저장한다.
 
 ## 기본값
 

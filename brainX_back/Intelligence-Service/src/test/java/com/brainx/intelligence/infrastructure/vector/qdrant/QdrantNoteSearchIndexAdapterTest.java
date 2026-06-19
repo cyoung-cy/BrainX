@@ -6,12 +6,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort.NoteChunkSearchQuery;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteSearchQuery;
@@ -21,7 +23,7 @@ import com.brainx.intelligence.exploration.domain.SearchMatchType;
 class QdrantNoteSearchIndexAdapterTest {
 
     private final FakeVectorStore vectorStore = new FakeVectorStore();
-    private final QdrantNoteSearchIndexAdapter adapter = new QdrantNoteSearchIndexAdapter(vectorStore);
+    private final QdrantNoteSearchIndexAdapter adapter = adapter(vectorStore);
 
     @Test
     void saveStoresDocumentContentAndMetadata() {
@@ -40,7 +42,7 @@ class QdrantNoteSearchIndexAdapterTest {
 
         assertThat(vectorStore.addedDocuments).hasSize(1);
         Document document = vectorStore.addedDocuments.getFirst();
-        assertThat(document.getId()).isEqualTo("user-1::note-1::2");
+        assertThat(UUID.fromString(document.getId())).isNotNull();
         assertThat(document.getText()).isEqualTo("full chunk text");
         assertThat(document.getMetadata())
             .containsEntry("userId", "user-1")
@@ -209,7 +211,9 @@ class QdrantNoteSearchIndexAdapterTest {
         assertThat(vectorStore.deletedFilters.getFirst()).contains("user-1").contains("note-1");
         assertThat(vectorStore.addedDocuments).hasSize(2);
         assertThat(vectorStore.addedDocuments).extracting(Document::getId)
-            .containsExactly("user-1::note-1::0", "user-1::note-1::1");
+            .allSatisfy(id -> assertThat(UUID.fromString(id)).isNotNull());
+        assertThat(vectorStore.addedDocuments).extracting(document -> document.getMetadata().get("chunkId"))
+            .containsExactly("note-1::0", "note-1::1");
     }
 
     @Test
@@ -253,5 +257,11 @@ class QdrantNoteSearchIndexAdapterTest {
         public <T> Optional<T> getNativeClient() {
             return Optional.empty();
         }
+    }
+
+    private static QdrantNoteSearchIndexAdapter adapter(VectorStore vectorStore) {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        beanFactory.registerSingleton("vectorStore", vectorStore);
+        return new QdrantNoteSearchIndexAdapter(beanFactory.getBeanProvider(VectorStore.class));
     }
 }

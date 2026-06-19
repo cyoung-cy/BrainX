@@ -1,5 +1,6 @@
 package com.brainx.intelligence.infrastructure.vector.qdrant;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -7,12 +8,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +28,6 @@ import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
 
 @Component
 @Primary
-@ConditionalOnBean(VectorStore.class)
 public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteChunkRetrievalPort {
 
     private static final String USER_ID = "userId";
@@ -42,15 +43,19 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     private static final int SEARCH_OVERFETCH_FACTOR = 4;
     private static final int MAX_SEARCH_TOP_K = 80;
 
-    private final VectorStore vectorStore;
+    private final ObjectProvider<VectorStore> vectorStoreProvider;
     private final FilterExpressionTextParser filterParser = new FilterExpressionTextParser();
 
-    public QdrantNoteSearchIndexAdapter(VectorStore vectorStore) {
-        this.vectorStore = vectorStore;
+    public QdrantNoteSearchIndexAdapter(ObjectProvider<VectorStore> vectorStoreProvider) {
+        this.vectorStoreProvider = vectorStoreProvider;
     }
 
     @Override
     public List<SemanticSearchResult> search(NoteSearchQuery query) {
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore == null) {
+            return List.of();
+        }
         SearchRequest searchRequest = SearchRequest.builder()
             .query(query.queryText())
             .topK(searchTopK(query.limit()))
@@ -74,6 +79,10 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     @Override
     public List<NoteChunkSearchResult> searchChunks(NoteChunkSearchQuery query) {
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore == null) {
+            return List.of();
+        }
         SearchRequest searchRequest = SearchRequest.builder()
             .query(query.queryText())
             .topK(query.topK())
@@ -90,13 +99,20 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     @Override
     public NoteSearchDocument save(NoteSearchDocument document) {
-        vectorStore.add(List.of(toVectorDocument(document)));
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore != null) {
+            vectorStore.add(List.of(toVectorDocument(document)));
+        }
         return document;
     }
 
     @Override
     public void replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
         deleteByUserIdAndNoteId(userId, noteId);
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore == null) {
+            return;
+        }
         if (chunks != null && !chunks.isEmpty()) {
             vectorStore.add(chunks.stream()
                 .map(QdrantNoteSearchIndexAdapter::toVectorDocument)
@@ -106,6 +122,10 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     @Override
     public void deleteByUserIdAndNoteId(String userId, String noteId) {
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore == null) {
+            return;
+        }
         vectorStore.delete(filterParser.parse(
             USER_ID + " == '" + escapeFilterValue(userId) + "' && "
                 + NOTE_ID + " == '" + escapeFilterValue(noteId) + "'"
@@ -132,7 +152,9 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     }
 
     private static String documentId(String userId, String noteId, int chunkIndex) {
-        return userId + "::" + noteId + "::" + chunkIndex;
+        return UUID.nameUUIDFromBytes((userId + "::" + noteId + "::" + chunkIndex)
+            .getBytes(StandardCharsets.UTF_8))
+            .toString();
     }
 
     private static int searchTopK(int limit) {

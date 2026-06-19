@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.stereotype.Component;
@@ -37,19 +38,16 @@ public class SampleRagApplicationRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
-        try {
-            switch (normalizedCommand()) {
-                case "ingest" -> writeJson(sampleRagService.ingest());
-                case "ask" -> ask();
-                case "ingest-and-ask" -> {
-                    writeJson(sampleRagService.ingest());
-                    ask();
-                }
-                default -> throw new IllegalArgumentException("Unsupported sample RAG command: " + properties.getCommand());
+        switch (normalizedCommand()) {
+            case "ingest" -> writeJson(sampleRagService.ingest());
+            case "ask" -> ask();
+            case "ingest-and-ask" -> {
+                writeJson(sampleRagService.ingest());
+                ask();
             }
-        } finally {
-            applicationContext.close();
+            default -> throw new IllegalArgumentException("Unsupported sample RAG command: " + properties.getCommand());
         }
+        exitSuccessfully();
     }
 
     private String normalizedCommand() {
@@ -80,5 +78,12 @@ public class SampleRagApplicationRunner implements ApplicationRunner {
 
     private void writeJson(Object value) throws IOException {
         System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value));
+    }
+
+    private void exitSuccessfully() {
+        System.out.flush();
+        System.err.flush();
+        int exitCode = SpringApplication.exit(applicationContext, () -> 0);
+        System.exit(exitCode);
     }
 }
