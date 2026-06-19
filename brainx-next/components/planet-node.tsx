@@ -26,9 +26,9 @@ export function PlanetNode({ data }: NodeProps) {
 
   // Selected glow
   const glow = selected || isDirect
-    ? `drop-shadow(0 0 ${selected ? 20 : 12}px rgb(${color})) drop-shadow(0 0 ${selected ? 40 : 20}px rgb(${color} / 0.5))`
+    ? `drop-shadow(0 0 ${selected ? 10 : 6}px rgb(${color})) drop-shadow(0 0 ${selected ? 20 : 10}px rgb(${color} / 0.5))`
     : 'none';
-  const strokeWidth = selected ? 2.5 : isDirect ? 2 : 1;
+  const strokeWidth = selected ? 1.5 : isDirect ? 1.2 : 1;
   const filterStyle = is2D ? grayscale : `${blur} saturate(1.4) ${glow}`;
 
   return (
@@ -38,61 +38,83 @@ export function PlanetNode({ data }: NodeProps) {
       tiltMaxAngleY={18}
       perspective={800}
       transitionSpeed={800}
-      scale={selected ? 1 : 1.08}
+      scale={1}
       className="cursor-pointer"
     >
       <motion.div
-        animate={{ opacity, filter: filterStyle, scale: selected ? 1.2 : 1 }}
-        transition={{ duration: 0.15 }}
+        animate={{ 
+          width: r * 2, 
+          height: r * 2, 
+          opacity, 
+          scale: selected ? 1.05 : 1 
+        }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
         style={{
-          width: r * 2,
-          height: r * 2,
           position: 'relative',
           '--node-color': color,
           '--stroke-width': `${strokeWidth}px`,
-          '--glow-size': `${selected ? 28 : 12}px`,
+          '--glow-size': `${selected ? 14 : 6}px`,
         } as React.CSSProperties}
       >
-        {/* 2D: halo ring */}
-        {is2D && (
-          <div className="absolute inset-0 rounded-full planet-halo" />
-        )}
+        <motion.div
+          animate={{ filter: filterStyle }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          {/* 2D: halo ring */}
+          {is2D && (
+            <div className="absolute inset-0 rounded-full planet-halo" />
+          )}
 
-        {/* Universe: 외곽 대기권 글로우 */}
-        {!is2D && (
+          {/* Universe: 외곽 대기권 글로우 */}
+          {!is2D && (
+            <div
+              className="absolute rounded-full pointer-events-none planet-atmosphere"
+              style={{
+                inset: `-${r * 0.45}px`,
+                opacity: selected ? 1 : isDirect ? 0.85 : 0.55,
+              }}
+            />
+          )}
+
           <div
-            className="absolute rounded-full pointer-events-none planet-atmosphere"
-            style={{
-              inset: `-${r * 0.45}px`,
-              opacity: selected ? 1 : isDirect ? 0.85 : 0.55,
-            }}
+            className={`absolute inset-0 rounded-full overflow-hidden ${is2D ? (selected || isDirect ? "planet-body-2d planet-body-2d-active" : "planet-body-2d") : "planet-body-universe"}`}
           />
-        )}
 
-        <div
-          className={`absolute inset-0 rounded-full overflow-hidden ${is2D ? (selected || isDirect ? "planet-body-2d planet-body-2d-active" : "planet-body-2d") : "planet-body-universe"}`}
-        />
+          {/* Universe: 상단 광택 하이라이트 */}
+          {!is2D && (
+            <div className="absolute rounded-full pointer-events-none planet-highlight" />
+          )}
 
-        {/* Universe: 상단 광택 하이라이트 */}
-        {!is2D && (
-          <div className="absolute rounded-full pointer-events-none planet-highlight" />
-        )}
-
-        {/* Universe: 하단 반사 림 라이트 */}
-        {!is2D && (
-          <div className="absolute rounded-full pointer-events-none planet-rim-light" />
-        )}
+          {/* Universe: 하단 반사 림 라이트 */}
+          {!is2D && (
+            <div className="absolute rounded-full pointer-events-none planet-rim-light" />
+          )}
+        </motion.div>
 
         {/* 노드 라벨 */}
         {layer !== 'back' && (
-          <div className="absolute top-full mt-2 w-max -translate-x-1/2 left-1/2 text-center pointer-events-none">
+          <div
+            className="absolute top-full mt-2 w-max -translate-x-1/2 left-1/2 text-center pointer-events-none"
+            style={{
+              // zoom 0.55 이하 → 완전 숨김, 0.85 이상 → 완전 표시, 그 사이 페이드
+              opacity: 'clamp(0, calc((var(--rf-zoom, 1) - 0.55) / 0.3), 1)',
+              transition: 'opacity 0.2s ease',
+              transform: 'translateX(-50%)',
+              left: '50%',
+            }}
+          >
             <span
-              className={is2D ? "text-[12px] font-medium text-txt2" : "text-[12.5px] font-semibold text-white"}
+              className={is2D ? "text-[9px] font-medium text-txt2" : "text-[9.5px] font-semibold text-white"}
               style={{
-                textShadow: is2D ? "none" : "0px 1px 6px rgba(0,0,0,1), 0px 2px 14px rgba(0,0,0,0.9)",
-                stroke: is2D ? "rgb(var(--bg))" : "none",
-                strokeWidth: is2D ? 3 : 0,
-                paintOrder: "stroke"
+                display: 'block',
+                WebkitFontSmoothing: 'antialiased',
+                MozOsxFontSmoothing: 'grayscale',
+                // 2D: text-shadow 다중값으로 배경색 아웃라인 효과 (SVG stroke 대체)
+                // universe: 가독성을 위한 그림자
+                textShadow: is2D
+                  ? `-1px -1px 0 rgb(var(--bg)), 1px -1px 0 rgb(var(--bg)), -1px 1px 0 rgb(var(--bg)), 1px 1px 0 rgb(var(--bg))`
+                  : "0px 1px 4px rgba(0,0,0,1), 0px 2px 10px rgba(0,0,0,0.9)",
               }}
             >
               {label.length > 12 ? label.slice(0, 11) + '…' : label}
@@ -100,9 +122,9 @@ export function PlanetNode({ data }: NodeProps) {
           </div>
         )}
 
-        {/* Handles placed at center so edges connect from the center */}
-        <Handle type="target" position={Position.Top} style={{ opacity: 0, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} />
-        <Handle type="source" position={Position.Bottom} style={{ opacity: 0, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} />
+        {/* Handles placed at center so edges connect from the exact center */}
+        <Handle type="target" position={Position.Top} style={{ opacity: 0, width: 0, height: 0, minWidth: 0, minHeight: 0, border: 'none', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} />
+        <Handle type="source" position={Position.Bottom} style={{ opacity: 0, width: 0, height: 0, minWidth: 0, minHeight: 0, border: 'none', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} />
       </motion.div>
     </Tilt>
   );
