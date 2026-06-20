@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
 import { useBrainX } from "@/components/brainx-provider";
@@ -138,12 +139,29 @@ function GraphCanvasFlow({
   bridgeMode: boolean;
   onSelect: (id: string | null) => void;
 }) {
-  const { setCenter, fitView, zoomTo } = useReactFlow();
+  const { setCenter, fitView, zoomTo, getViewport } = useReactFlow();
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<PlanetFlowNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<OrbitFlowEdge>([]);
+  const [hovered, setHovered] = useState<BrainXNote | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const positionsRef = useRef<Record<string, GraphNode>>(settleLayout(notes));
   const raf = useRef(0);
+
+  // Sync positionsRef with notes to handle async data loading
+  useEffect(() => {
+    let added = false;
+    const settled = settleLayout(notes);
+    notes.forEach(note => {
+      if (!positionsRef.current[note.id]) {
+        positionsRef.current[note.id] = settled[note.id];
+        added = true;
+      }
+    });
+    if (added && controls.current) {
+      controls.current.reheat();
+    }
+  }, [notes]);
 
   // Setup GraphControls ref
   useEffect(() => {
@@ -219,8 +237,8 @@ function GraphCanvasFlow({
     }
 
     if (layoutMode === 'tree') {
-      const xSpacing = 160;
-      const ySpacing = 80;
+      const xSpacing = 140;
+      const ySpacing = 50;
       layers.forEach((layer, depth) => {
         const x = depth * xSpacing;
         const totalHeight = (layer.length - 1) * ySpacing;
@@ -235,24 +253,37 @@ function GraphCanvasFlow({
         });
       });
     } else if (layoutMode === 'radial') {
-      const radiusStep = 140;
+      const minArcSpacing = 40;
+      let currentRadius = 0;
       layers.forEach((layer, depth) => {
         if (depth === 0) {
-          layer.forEach(id => {
-            const p = positionsRef.current[id];
+          if (layer.length === 1) {
+            const p = positionsRef.current[layer[0]];
             if (p) {
               p.tx = 0;
               p.ty = 0;
             }
-          });
+          } else {
+            currentRadius = Math.max(30, (layer.length * minArcSpacing) / (Math.PI * 2));
+            const angleStep = (Math.PI * 2) / layer.length;
+            layer.forEach((id, idx) => {
+              const p = positionsRef.current[id];
+              if (p) {
+                p.tx = Math.cos(angleStep * idx) * currentRadius;
+                p.ty = Math.sin(angleStep * idx) * currentRadius;
+              }
+            });
+          }
         } else {
-          const r = depth * radiusStep;
+          const minR = (layer.length * minArcSpacing) / (Math.PI * 2);
+          currentRadius = Math.max(currentRadius + 60, minR);
+          
           const angleStep = (Math.PI * 2) / layer.length;
           layer.forEach((id, idx) => {
             const p = positionsRef.current[id];
             if (p) {
-              p.tx = Math.cos(angleStep * idx) * r;
-              p.ty = Math.sin(angleStep * idx) * r;
+              p.tx = Math.cos(angleStep * idx) * currentRadius;
+              p.ty = Math.sin(angleStep * idx) * currentRadius;
             }
           });
         }
@@ -264,7 +295,7 @@ function GraphCanvasFlow({
   useEffect(() => {
     const step = () => {
       const pos = positionsRef.current;
-      const isStructured = notes.some(n => pos[n.id]?.tx !== null);
+      const isStructured = notes.some(n => pos[n.id] && pos[n.id].tx !== null);
 
       if (!isStructured) {
         for (let i = 0; i < notes.length; i += 1) {
@@ -379,11 +410,12 @@ function GraphCanvasFlow({
 
   // Sync data
   useEffect(() => {
+    const activeId = selectedId || hovered?.id;
     const direct = new Set<string>();
-    if (selectedId) {
+    if (activeId) {
       edges.forEach((e) => {
-        if (e.source === selectedId) direct.add(e.target);
-        if (e.target === selectedId) direct.add(e.source);
+        if (e.source === activeId) direct.add(e.target);
+        if (e.target === activeId) direct.add(e.source);
       });
     }
 
@@ -401,16 +433,16 @@ function GraphCanvasFlow({
     const newNodes = notes.map(note => {
       const cluster = clusterById(note.cluster);
       const linkCount = note.links.length;
-      const baseRadius = 7 + Math.min(8, linkCount * 1.5);
-      const selected = selectedId === note.id;
-      const isDirect = selectedId ? direct.has(note.id) : false;
-      const radius = selected ? baseRadius + 8 : (isDirect ? baseRadius + 3 : baseRadius);
+      const baseRadius = 3.5 + Math.min(4, linkCount * 0.75);
+      const selected = activeId === note.id;
+      const isDirect = activeId ? direct.has(note.id) : false;
+      const radius = selected ? baseRadius + 4 : (isDirect ? baseRadius + 1.5 : baseRadius);
       const dimmed = timeFilter !== "전체" && (ageRank[note.updated] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
       const hidden = hiddenClusters[note.cluster] ? true : false;
       
       let layer: 'front' | 'middle' | 'back' = 'middle';
-      if (selectedId) {
-        // 노드 선택 상태가 우선
+      if (activeId) {
+        // 노드 선택/호버 상태가 우선
         if (selected) layer = 'front';
         else if (isDirect) layer = 'middle';
         else layer = 'back';
@@ -426,6 +458,7 @@ function GraphCanvasFlow({
         id: note.id,
         type: 'planet',
         position: { x: positionsRef.current[note.id]?.x ?? 0, y: positionsRef.current[note.id]?.y ?? 0 },
+        origin: [0.5, 0.5] as [number, number],
         data: {
           label: note.title,
           color: cluster.color,
@@ -442,32 +475,37 @@ function GraphCanvasFlow({
     });
     
     const newEdges = edges.map(edge => {
-      const isSelected = selectedId && (edge.source === selectedId || edge.target === selectedId);
+      const isSelected = activeId && (edge.source === activeId || edge.target === activeId);
       // bridgeMode: bridge 아닌 엣지는 흐리게, bridge 엣지는 강조
-      const isDimmed = selectedId
+      const isDimmed = activeId
         ? !isSelected
         : (bridgeMode ? !edge.bridge : false);
+      // 소스 노드의 색상을 엣지에 전달
+      const sourceNote = notes.find(n => n.id === edge.source);
+      const sourceColor = sourceNote ? clusterById(sourceNote.cluster).color : null;
+      // 선택/호버된 활성 노드의 색상을 엣지에 전달
+      const activeNote = activeId ? notes.find(n => n.id === activeId) : null;
+      const activeColor = activeNote ? clusterById(activeNote.cluster).color : null;
       return {
         id: `${edge.source}-${edge.target}`,
         source: edge.source,
         target: edge.target,
         type: 'orbit',
         data: {
-          isBridge: edge.bridge,
-          isBridgeHighlight: bridgeMode && edge.bridge,
-          isSelected,
+          isBridge: !!edge.bridge,
+          isBridgeHighlight: !!(bridgeMode && edge.bridge),
+          isSelected: !!isSelected,
           isDimmed,
-          theme
+          theme,
+          sourceColor,
+          activeColor
         }
       };
     });
     
     setRfNodes(newNodes);
     setRfEdges(newEdges);
-  }, [notes, edges, selectedId, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme, bridgeMode]);
-
-  const [hovered, setHovered] = useState<BrainXNote | null>(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  }, [notes, edges, selectedId, hovered, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme, bridgeMode]);
 
   // Camera zoom on select
   useEffect(() => {
@@ -491,13 +529,16 @@ function GraphCanvasFlow({
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onSelect(selectedId === node.id ? null : node.id)}
         onPaneClick={() => onSelect(null)}
-        onNodeMouseEnter={(e, node) => {
+        onNodeMouseEnter={(_, node) => {
+          if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
           const note = notes.find(n => n.id === node.id);
-          if (note) {
-            setHovered(note);
-          }
+          if (note) setHovered(note);
         }}
-        onNodeMouseLeave={() => setHovered(null)}
+        onNodeMouseLeave={() => {
+          hoverTimeoutRef.current = setTimeout(() => {
+            setHovered(null);
+          }, 150);
+        }}
         onNodeDragStart={(_, node) => {
           const p = positionsRef.current[node.id];
           if (p) {
@@ -508,10 +549,21 @@ function GraphCanvasFlow({
         onNodeDrag={(_, node) => {
           const p = positionsRef.current[node.id];
           if (p) {
-            p.fx = node.position.x;
-            p.fy = node.position.y;
-            p.x = node.position.x;
-            p.y = node.position.y;
+            // 현재 뷰포트 기준으로 flow 좌표 경계 계산 후 클램핑
+            const { x: vpX, y: vpY, zoom } = getViewport();
+            const containerEl = document.querySelector('.react-flow') as HTMLElement;
+            const w = containerEl?.clientWidth ?? window.innerWidth;
+            const h = containerEl?.clientHeight ?? window.innerHeight;
+            const minX = -vpX / zoom;
+            const minY = -vpY / zoom;
+            const maxX = (w - vpX) / zoom;
+            const maxY = (h - vpY) / zoom;
+            const clampedX = Math.max(minX, Math.min(maxX, node.position.x));
+            const clampedY = Math.max(minY, Math.min(maxY, node.position.y));
+            p.fx = clampedX;
+            p.fy = clampedY;
+            p.x = clampedX;
+            p.y = clampedY;
           }
         }}
         onNodeDragStop={(_, node) => {
@@ -522,51 +574,124 @@ function GraphCanvasFlow({
           }
         }}
         fitView
+        autoPanOnNodeDrag={false}
         minZoom={0.2}
         maxZoom={3}
         proOptions={{ hideAttribution: true }}
+        onInit={(instance) => {
+          // 초기 줌 레벨 CSS 변수 설정
+          const { zoom } = instance.getViewport();
+          document.documentElement.style.setProperty('--rf-zoom', String(zoom));
+        }}
+        onMove={(_, viewport) => {
+          // 줌 변경 시 CSS 변수 업데이트 (React 재렌더 없이 CSS만 변경)
+          document.documentElement.style.setProperty('--rf-zoom', String(viewport.zoom));
+        }}
       />
       
       {/* AI Summary Tooltip */}
-      {hovered && !selectedId && <TooltipOverlay hovered={hovered} theme={theme} />}
+      {hovered && !selectedId && (
+        <TooltipOverlay 
+          hovered={hovered} 
+          onMouseEnter={() => {
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+          }}
+          onMouseLeave={() => {
+            hoverTimeoutRef.current = setTimeout(() => {
+              setHovered(null);
+            }, 150);
+          }}
+        />
+      )}
     </>
   );
 }
 
-function TooltipOverlay({ hovered, theme }: { hovered: BrainXNote | null; theme: string }) {
+function TooltipOverlay({ hovered, onMouseEnter, onMouseLeave }: { hovered: BrainXNote, onMouseEnter: () => void, onMouseLeave: () => void }) {
   const { getNode, flowToScreenPosition } = useReactFlow();
-  if (!hovered) return null;
+
   const node = getNode(hovered.id);
   if (!node) return null;
-  
+
   const radius = (node.data?.radius as number) || 10;
-  
-  // node.position is top-left, we want top-center
-  const pos = flowToScreenPosition({ 
-    x: node.position.x + radius, 
-    y: node.position.y 
+
+  // 노드가 origin: [0.5, 0.5] 이므로 position이 정중앙입니다.
+  // y축에서 radius만큼 빼서 노드의 맨 위를 가리키게 합니다.
+  const pos = flowToScreenPosition({
+    x: node.position.x,
+    y: node.position.y - radius,
   });
 
-  return (
-    <div className="pointer-events-none absolute left-0 top-0 z-40 w-full h-full overflow-hidden">
-      <div 
-        className="fade-up absolute border backdrop-blur-md w-64 rounded-xl p-3 shadow-2xl bg-surface/80 border-line/30"
+  const clusterColor = `rgb(${clusterById(hovered.cluster).color})`;
+
+  // createPortal: [data-route]의 transform 애니메이션이 position:fixed를
+  // 깨므로, transform이 없는 document.body에 직접 렌더링
+  return createPortal(
+    <div
+      className="pointer-events-auto"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      style={{
+        position: 'fixed',
+        left: pos.x,
+        top: pos.y,
+        // 화살표 팁 및 노드와 툴팁 사이의 간격을 커버하도록 패딩 사용
+        transform: 'translate(-50%, -100%)',
+        paddingBottom: '19px',
+        zIndex: 9999,
+      }}
+    >
+      <div
+        className="fade-up rounded-xl p-3 shadow-2xl"
         style={{
-          left: pos.x,
-          top: pos.y,
-          transform: 'translate(-50%, calc(-100% - 16px))'
+          background: 'rgb(var(--surface) / 0.92)',
+          border: '1px solid rgb(var(--border) / 0.35)',
+          backdropFilter: 'blur(16px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+          width: 256,
+          position: 'relative',
         }}
       >
+        {/* 내용 */}
         <div className="mb-1.5 flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: `rgb(${clusterById(hovered.cluster).color})` }} />
+          <span className="h-2 w-2 rounded-full" style={{ background: clusterColor }} />
           <span className="text-[13px] text-txt2">
             {clusterById(hovered.cluster).label} · AI 요약
           </span>
         </div>
         <div className="mb-1 text-[15px] font-semibold leading-snug text-txt">{hovered.title}</div>
         <p className="line-clamp-3 text-[13.5px] leading-relaxed text-txt3">{hovered.summary}</p>
+
+        {/* 역삼각형 말풍선 화살표 */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -9,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0,
+            height: 0,
+            borderLeft: '9px solid transparent',
+            borderRight: '9px solid transparent',
+            borderTop: '9px solid rgb(var(--border) / 0.35)',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -7,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0,
+            height: 0,
+            borderLeft: '8px solid transparent',
+            borderRight: '8px solid transparent',
+            borderTop: '8px solid rgb(var(--surface) / 0.92)',
+          }}
+        />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -654,9 +779,47 @@ function GraphScreenInner() {
             </button>
             <div className="mx-1 h-6 w-px bg-line/40" />
             <div className="flex rounded-lg p-0.5 bg-surface2/50">
-              <button type="button" onClick={() => setLayoutMode('force')} className={cx("px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors", layoutMode === 'force' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>네트워크</button>
-              <button type="button" onClick={() => setLayoutMode('tree')} className={cx("px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors", layoutMode === 'tree' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>가로 트리</button>
-              <button type="button" onClick={() => setLayoutMode('radial')} className={cx("px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors", layoutMode === 'radial' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>방사형</button>
+              {/* 네트워크 (force): 노드 3개와 연결선 */}
+              <button type="button" onClick={() => setLayoutMode('force')} title="네트워크 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'force' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+                <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="8.5" cy="3.5" r="2" />
+                  <circle cx="3" cy="13" r="2" />
+                  <circle cx="14" cy="13" r="2" />
+                  <line x1="8.5" y1="5.5" x2="3" y2="11" />
+                  <line x1="8.5" y1="5.5" x2="14" y2="11" />
+                  <line x1="3" y1="13" x2="14" y2="13" />
+                </svg>
+              </button>
+              {/* 가로 트리: 계층형 트리 */}
+              <button type="button" onClick={() => setLayoutMode('tree')} title="가로 트리 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'tree' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+                <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="2.5" cy="8.5" r="1.8" />
+                  <circle cx="9" cy="4" r="1.8" />
+                  <circle cx="9" cy="13" r="1.8" />
+                  <circle cx="15" cy="1.8" r="1.5" />
+                  <circle cx="15" cy="6.5" r="1.5" />
+                  <circle cx="15" cy="10.5" r="1.5" />
+                  <circle cx="15" cy="15.2" r="1.5" />
+                  <line x1="4.3" y1="8.5" x2="7.2" y2="4" />
+                  <line x1="4.3" y1="8.5" x2="7.2" y2="13" />
+                  <line x1="10.8" y1="4" x2="13.5" y2="1.8" />
+                  <line x1="10.8" y1="4" x2="13.5" y2="6.5" />
+                  <line x1="10.8" y1="13" x2="13.5" y2="10.5" />
+                  <line x1="10.8" y1="13" x2="13.5" y2="15.2" />
+                </svg>
+              </button>
+              {/* 방사형: 동심원 */}
+              <button type="button" onClick={() => setLayoutMode('radial')} title="방사형 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'radial' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+                <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="8.5" cy="8.5" r="1.8" />
+                  <circle cx="8.5" cy="8.5" r="5" />
+                  <circle cx="8.5" cy="8.5" r="1.8" fill="currentColor" fillOpacity="0.15" />
+                  <line x1="8.5" y1="3.5" x2="8.5" y2="1.5" />
+                  <line x1="8.5" y1="13.5" x2="8.5" y2="15.5" />
+                  <line x1="3.5" y1="8.5" x2="1.5" y2="8.5" />
+                  <line x1="13.5" y1="8.5" x2="15.5" y2="8.5" />
+                </svg>
+              </button>
             </div>
             <div className="mx-1 h-6 w-px bg-line/40" />
             <button

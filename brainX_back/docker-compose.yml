@@ -1,0 +1,78 @@
+services:
+  user-postgres:
+    image: postgres:16-alpine
+    container_name: brainx-user-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME:-brainx_user}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    ports:
+      - "5432:5432"
+    volumes:
+      - brainx_user_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  workspace-postgres:
+    image: postgres:16-alpine
+    container_name: brainx-workspace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WORKSPACE_DB_NAME:-brainx_workspace}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    ports:
+      - "5433:5432"
+    volumes:
+      - brainx_workspace_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ingestion-postgres:
+    image: postgres:16-alpine
+    container_name: brainx-ingestion-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${INGESTION_DB_NAME:-brainx_ingestion}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    ports:
+      - "5434:5432"
+    volumes:
+      - brainx_ingestion_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  commerce-postgres:
+    image: postgres:16-alpine
+    container_name: brainx-commerce-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${COMMERCE_DB_NAME:-brainx_commerce}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    ports:
+      - "5435:5432"
+    volumes:
+      - brainx_commerce_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  brainx_user_postgres_data:
+  brainx_workspace_postgres_data:
+  brainx_ingestion_postgres_data:
+  brainx_commerce_postgres_data:

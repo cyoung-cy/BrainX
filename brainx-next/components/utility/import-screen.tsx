@@ -1,14 +1,33 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { cx, createId } from "@/lib/utils";
 
 import { useBrainX } from "@/components/brainx-provider";
 
-import { Badge, Btn, Card, Icon } from "@/components/brainx-ui";
+import { Badge, Icon } from "@/components/brainx-ui";
 
-import { SectionCard, Stat } from "@/components/utility/utility-shared";
+import {
+  clearNotionIntegration,
+  connectNotionDemo,
+  getImportJobStatus,
+  importNotionPage,
+  isNotionDemoSession,
+  listNotionPages,
+  NOTION_OAUTH_MESSAGE_TYPE,
+  readNotionIntegration,
+  startNotionOAuth,
+  type NotionIntegration,
+  type NotionPage
+} from "@/lib/ingestion-api";
+import { getNote } from "@/lib/workspace-api";
+import { addImportedNote, NOTION_IMPORTED_FOLDER_LABEL, type NoteData } from "@/components/editor-lab/brainx-note-demo/mockData";
+
+type ImportedNote = {
+  id: string;
+  title: string;
+};
 
 type ImportJob = {
   id: string;
@@ -18,20 +37,13 @@ type ImportJob = {
   when: string;
 };
 
-const IMPORT_SOURCES = [
-  { id: "notion", label: "Notion", sub: "페이지 · DB · 체크리스트", icon: "notes" as const, color: "59 130 246", files: "24개 항목" },
-  { id: "obsidian", label: "Obsidian", sub: "Markdown · 백링크", icon: "doc" as const, color: "139 92 246", files: "51개 항목" },
-  { id: "pdf", label: "PDF", sub: "강의자료 · 리포트", icon: "pdf" as const, color: "34 211 238", files: "8개 파일" },
-  { id: "web", label: "Web Clip", sub: "기사 · 하이라이트", icon: "globe" as const, color: "52 211 153", files: "16개 항목" },
-  { id: "docs", label: "Google Docs", sub: "문서 · 회의록", icon: "upload" as const, color: "244 114 182", files: "12개 파일" }
+const FILE_TYPES = [
+  { id: "csv", label: "CSV", desc: "스프레드시트에서 구조화된 데이터 가져오기", icon: "csv" as const },
+  { id: "pdf", label: "PDF", desc: "PDF 문서에서 콘텐츠 추출하기", icon: "pdf" as const },
+  { id: "text", label: "Text & Markdown", desc: "일반 텍스트 및 형식 있는 메모 가져오기", icon: "doc" as const },
+  { id: "html", label: "HTML", desc: "웹 페이지 및 구조화된 콘텐츠 가져오기", icon: "html" as const },
+  { id: "word", label: "Word", desc: "Word 문서를 BrainX로 가져오기", icon: "doc" as const }
 ] as const;
-
-const IMPORT_STEPS = [
-  { title: "구조 분석", desc: "헤더, 표, 체크리스트, 코드블록을 파싱합니다." },
-  { title: "주제 분류", desc: "노트를 5개 클러스터로 자동 분류합니다." },
-  { title: "백링크 복원", desc: "중복 링크를 정리하고 연결 그래프를 다시 만듭니다." },
-  { title: "AI 요약", desc: "각 노트의 핵심을 3줄로 압축합니다." }
-];
 
 const IMPORT_HISTORY: ImportJob[] = [
   { id: "job-1", source: "Notion", files: "24개 항목", status: "완료", when: "오늘 10:12" },
@@ -40,203 +52,384 @@ const IMPORT_HISTORY: ImportJob[] = [
 ];
 
 export function ImportScreen() {
-  const { notes, pushToast } = useBrainX();
-  const [source, setSource] = useState<(typeof IMPORT_SOURCES)[number]["id"]>("notion");
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(12);
+  const { pushToast } = useBrainX();
+  const [tab, setTab] = useState<"browse" | "done">("browse");
+  const [dragOver, setDragOver] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [history, setHistory] = useState<ImportJob[]>(IMPORT_HISTORY);
-  const completionRef = useRef<string | null>(null);
 
-  const selectedSource = useMemo(
-    () => IMPORT_SOURCES.find((item) => item.id === source) ?? IMPORT_SOURCES[0],
-    [source]
-  );
+  const [notionIntegration, setNotionIntegration] = useState<NotionIntegration | null>(() => readNotionIntegration());
+  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
+  const [notionConnecting, setNotionConnecting] = useState(false);
+  const [notionLoadingPages, setNotionLoadingPages] = useState(false);
+  const [notionImportingId, setNotionImportingId] = useState<string | null>(null);
+  const [importedNotionNotes, setImportedNotionNotes] = useState<ImportedNote[]>([]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!notionIntegration) return;
+    void loadNotionPages(notionIntegration.integrationAccountId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function handleOAuthMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== NOTION_OAUTH_MESSAGE_TYPE) return;
+
+      if (!event.data.success) {
+        pushToast("Notion 연결에 실패했습니다.", "err");
+        return;
+      }
+
+      const integration = readNotionIntegration();
+      setNotionIntegration(integration);
+      pushToast("Notion 워크스페이스에 연결됐어요", "ok");
+      if (integration) void loadNotionPages(integration.integrationAccountId);
+    }
+
+    window.addEventListener("message", handleOAuthMessage);
+    return () => window.removeEventListener("message", handleOAuthMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!importing) return;
 
     const interval = window.setInterval(() => {
-      setProgress((current) => {
-        const next = Math.min(current + (current < 40 ? 16 : current < 80 ? 10 : 6), 100);
-        if (next === 100) {
-          window.clearInterval(interval);
-          setRunning(false);
-          completionRef.current = selectedSource.id;
-        }
-        return next;
-      });
+      setProgress((current) => Math.min(current + (current < 40 ? 16 : current < 80 ? 10 : 6), 100));
     }, 150);
 
     return () => window.clearInterval(interval);
-  }, [running, selectedSource.id]);
+  }, [importing]);
 
   useEffect(() => {
-    if (progress !== 100 || !completionRef.current) return;
-    const finished = IMPORT_SOURCES.find((item) => item.id === completionRef.current) ?? IMPORT_SOURCES[0];
-    completionRef.current = null;
-    setHistory((current) => [
-      {
-        id: createId("job"),
-        source: finished.label,
-        files: finished.files,
-        status: "완료",
-        when: "방금"
-      },
-      ...current.slice(0, 3)
-    ]);
-    pushToast(`${finished.label} 가져오기를 완료했어요`, "ok");
-  }, [progress, pushToast]);
+    if (progress !== 100) return;
+    setImporting(false);
+  }, [progress]);
 
-  const startImport = () => {
-    if (running) return;
-    setProgress(12);
-    setRunning(true);
+  const startImport = (name: string) => {
+    if (importing) return;
+    setProgress(4);
+    setImporting(true);
+    window.setTimeout(() => {
+      setHistory((current) => [{ id: createId("job"), source: name, files: "1개 파일", status: "완료", when: "방금" }, ...current.slice(0, 4)]);
+      pushToast(`${name} 가져오기를 완료했어요`, "ok");
+    }, 1700);
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || !files.length) return;
+    startImport(files[0].name);
+  };
+
+  const openFilePicker = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip,.csv,.pdf,.txt,.md,.html,.docx,.epub";
+    input.onchange = (event) => handleFiles((event.target as HTMLInputElement).files);
+    input.click();
+  };
+
+  const loadNotionPages = async (integrationAccountId: string) => {
+    setNotionLoadingPages(true);
+    try {
+      const pages = await listNotionPages(integrationAccountId);
+      setNotionPages(pages);
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Notion 페이지 목록을 가져오지 못했습니다.", "err");
+    } finally {
+      setNotionLoadingPages(false);
+    }
+  };
+
+  const connectNotion = async () => {
+    if (notionConnecting) return;
+    setNotionConnecting(true);
+    try {
+      if (isNotionDemoSession()) {
+        const integration = connectNotionDemo();
+        setNotionIntegration(integration);
+        await loadNotionPages(integration.integrationAccountId);
+        pushToast("Notion 워크스페이스에 연결됐어요 (데모)", "ok");
+        return;
+      }
+      const { authorizationUrl } = await startNotionOAuth();
+      const popup = window.open(
+        authorizationUrl,
+        "brainx-notion-oauth",
+        "width=480,height=720,noopener=no,noreferrer=no"
+      );
+      if (!popup) {
+        pushToast("팝업이 차단되었습니다. 팝업 차단을 해제한 뒤 다시 시도해 주세요.", "err");
+      }
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Notion 연결에 실패했습니다.", "err");
+    } finally {
+      setNotionConnecting(false);
+    }
+  };
+
+  const disconnectNotion = () => {
+    clearNotionIntegration();
+    setNotionIntegration(null);
+    setNotionPages([]);
+  };
+
+  const importNotion = async (page: NotionPage) => {
+    if (!notionIntegration || notionImportingId) return;
+    setNotionImportingId(page.id);
+    try {
+      const result = await importNotionPage(notionIntegration.integrationAccountId, page.id);
+      if (result.status === "FAILED") {
+        pushToast(`${page.title} 가져오기에 실패했습니다.`, "err");
+        return;
+      }
+      setHistory((current) => [
+        { id: createId("job"), source: `Notion · ${page.title}`, files: "1개 페이지", status: "완료", when: "방금" },
+        ...current.slice(0, 4)
+      ]);
+      setImportedNotionNotes((current) => [{ id: createId("note"), title: page.title }, ...current]);
+      pushToast(`${page.title} 가져오기를 완료했어요`, "ok");
+
+      try {
+        const jobStatus = await getImportJobStatus(result.importJobId);
+        const noteIds = jobStatus.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
+        let addedCount = 0;
+        for (const noteId of noteIds) {
+          const note = await getNote(noteId);
+          const demoNote: NoteData = {
+            id: note.noteId,
+            title: note.title,
+            folder: NOTION_IMPORTED_FOLDER_LABEL,
+            tags: note.tags.length ? note.tags : ["notion"],
+            aliases: [],
+            status: "active",
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            content: note.markdown,
+            backlinks: [],
+            outgoingLinks: [],
+            aiSummary: "",
+            aiSuggestions: []
+          };
+          addImportedNote(demoNote);
+          addedCount += 1;
+        }
+        if (addedCount > 0) {
+          pushToast(`노트 ${addedCount}개를 노트 데모에서도 볼 수 있어요`, "ok");
+        }
+      } catch (error) {
+        pushToast(error instanceof Error ? error.message : "노트 데모에 추가하지 못했습니다.", "err");
+      }
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "Notion 가져오기에 실패했습니다.", "err");
+    } finally {
+      setNotionImportingId(null);
+    }
   };
 
   return (
-    <div data-route className="mx-auto max-w-[1180px] px-6 py-7 md:px-8">
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Badge color="34 211 238" dot className="mb-2.5">
-            가져오기 · 노트 동기화
-          </Badge>
-          <h1 className="text-[29px] font-bold tracking-tight">외부 지식 가져오기</h1>
-          <p className="mt-1.5 max-w-2xl text-[16px] text-txt2">
-            Notion, Obsidian, PDF, 웹 클립을 BrainX 노트로 변환합니다. 현재 로컬 미리보기 기준으로 동작합니다.
-          </p>
-        </div>
-        <Btn variant="primary" icon="upload" onClick={startImport} disabled={running}>
-          {running ? "가져오는 중…" : "가져오기 시작"}
-        </Btn>
+    <div data-route className="mx-auto max-w-[900px]">
+      <div className="mb-6">
+        <h1 className="text-[26px] font-bold tracking-tight text-txt">가져오기</h1>
+        <p className="mt-1.5 text-[14px] text-txt3">다른 앱과 파일에서 BrainX로 데이터를 가져오세요.</p>
       </div>
 
-      <div className="mb-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card glow className="overflow-hidden p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[14px] text-txt3">선택된 소스</div>
-              <div className="mt-1 flex items-center gap-2 text-[20px] font-bold tracking-tight">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: `rgb(${selectedSource.color})` }} />
-                {selectedSource.label}
-              </div>
-            </div>
-            <Badge color={selectedSource.color} dot>
-              {selectedSource.files}
-            </Badge>
-          </div>
-          <div className="grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
-            <div className="rounded-2xl border border-line/60 bg-surface2/40 p-4">
-              <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-txt3">
-                <Icon name="upload" size={14} />
-                업로드 대기열
-              </div>
-              <div className="space-y-2">
-                {IMPORT_SOURCES.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSource(item.id)}
-                    className={cx(
-                      "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
-                      source === item.id ? "border-primary/50 bg-primary/[0.10]" : "border-line/50 bg-surface2/40 hover:border-primary/35"
-                    )}
-                  >
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `rgb(${item.color} / 0.14)`, color: `rgb(${item.color})` }}>
-                      <Icon name={item.icon} size={18} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[15px] font-medium text-txt">{item.label}</span>
-                      <span className="block truncate text-[13.5px] text-txt3">{item.sub}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+      <div className="mb-7 flex gap-1 border-b border-line/60">
+        {[
+          { id: "browse" as const, label: "둘러보기" },
+          { id: "done" as const, label: "완료됨" }
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cx(
+              "-mb-px border-b-2 px-4 py-2 text-[14px] font-medium transition-colors",
+              tab === t.id ? "border-txt text-txt" : "border-transparent text-txt3 hover:text-txt2"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-            <div className="rounded-2xl border border-line/60 bg-surface2/40 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-[14px] font-semibold text-txt3">진행 상태</div>
-                <span className="text-[14px] font-mono text-txt2">{progress}%</span>
+      {tab === "browse" ? (
+        <>
+          <div className="mb-9">
+            <h2 className="mb-1 text-[15px] font-semibold text-txt">Notion 가져오기</h2>
+            <p className="mb-3.5 text-[13px] text-txt3">Notion 워크스페이스를 연결하면 페이지를 골라서 BrainX 노트로 가져올 수 있습니다.</p>
+
+            {!notionIntegration ? (
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-line/60 bg-surface2/30 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#191919] text-[14px] font-bold text-white">N</span>
+                  <div>
+                    <div className="text-[14px] font-semibold text-txt">Notion 워크스페이스 연결</div>
+                    <div className="text-[12px] text-txt3">OAuth로 안전하게 연결하고 가져올 페이지를 선택하세요.</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={connectNotion}
+                  disabled={notionConnecting}
+                  className="shrink-0 rounded-lg bg-txt px-3.5 py-2 text-[13px] font-semibold text-bg transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {notionConnecting ? "연결 중…" : "연결하기"}
+                </button>
               </div>
-              <div className="mb-3 h-3 rounded-full bg-surface2">
+            ) : (
+              <div className="rounded-xl border border-line/60 bg-surface2/30 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#191919] text-[14px] font-bold text-white">N</span>
+                    <div>
+                      <div className="text-[14px] font-semibold text-txt">Notion 워크스페이스 연결됨</div>
+                      <div className="text-[12px] text-txt3">가져올 페이지를 선택하세요.</div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => loadNotionPages(notionIntegration.integrationAccountId)}
+                      disabled={notionLoadingPages}
+                      className="grid h-8 w-8 place-items-center rounded-lg text-txt3 transition-colors hover:bg-surface2 hover:text-txt disabled:cursor-not-allowed disabled:opacity-50"
+                      title="새로고침"
+                    >
+                      <Icon name="refresh" size={15} className={notionLoadingPages ? "animate-spin" : undefined} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={disconnectNotion}
+                      className="rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-txt3 transition-colors hover:bg-surface2 hover:text-txt"
+                    >
+                      연결 해제
+                    </button>
+                  </div>
+                </div>
+
+                {notionLoadingPages ? (
+                  <p className="px-1 py-3 text-[13px] text-txt3">페이지 목록을 불러오는 중…</p>
+                ) : notionPages.length === 0 ? (
+                  <p className="px-1 py-3 text-[13px] text-txt3">가져올 수 있는 페이지가 없습니다.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {notionPages.map((page) => (
+                      <div key={page.id} className="flex items-center gap-3 rounded-lg border border-line/40 bg-surface/40 px-3 py-2">
+                        <span className="w-5 shrink-0 text-center text-[15px]">{page.icon ?? "📄"}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13.5px] text-txt">{page.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => importNotion(page)}
+                          disabled={notionImportingId !== null}
+                          className="shrink-0 rounded-md border border-line/60 px-2.5 py-1 text-[12px] font-medium text-txt2 transition-colors hover:border-primary/35 hover:text-txt disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {notionImportingId === page.id ? "가져오는 중…" : "가져오기"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {importedNotionNotes.length > 0 && (
+                  <div className="mt-3 border-t border-line/40 pt-3">
+                    <div className="mb-1.5 text-[12px] font-semibold text-txt3">가져온 노트</div>
+                    <div className="space-y-1.5">
+                      {importedNotionNotes.map((note) => (
+                        <div key={note.id} className="flex items-center gap-2 rounded-lg bg-surface/40 px-3 py-1.5">
+                          <Icon name="check" size={14} className="shrink-0 text-cyan" />
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-txt2">{note.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-9">
+            <h2 className="mb-1 text-[15px] font-semibold text-txt">콘텐츠 가져오기</h2>
+            <p className="mb-3.5 text-[13px] text-txt3">ZIP 파일을 가져오면 내부의 각 파일이 자체 페이지로 변환됩니다.</p>
+            <div
+              onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(event) => { event.preventDefault(); setDragOver(false); handleFiles(event.dataTransfer.files); }}
+              onClick={openFilePicker}
+              className={cx(
+                "cursor-pointer rounded-xl border-2 border-dashed px-6 py-12 text-center transition-all",
+                dragOver ? "border-primary/60 bg-primary/5" : "border-line/60 bg-surface2/30 hover:border-primary/35"
+              )}
+            >
+              <Icon name="upload" size={28} className="mx-auto mb-3.5 text-txt3" />
+              <p className="mb-1.5 text-[15px] font-semibold text-txt">BrainX로 콘텐츠 가져오기</p>
+              <p className="mb-1 text-[13px] text-txt3">
+                ZIP, CSV, PDF, 텍스트, Markdown, HTML을 드래그 &amp; 드롭 또는 파일을 선택하세요.
+              </p>
+              <p className="text-[12px] text-txt3/70">ZIP 파일은 최대 5GB까지 가능합니다.</p>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="mb-1 text-[15px] font-semibold text-txt">파일 기반 가져오기</h2>
+            <p className="mb-3.5 text-[13px] text-txt3">DOCX, CSV, PDF, 텍스트, Markdown, HTML, EPUB 파일을 가져와 페이지로 변환합니다.</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {FILE_TYPES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => startImport(item.label)}
+                  disabled={importing}
+                  className="rounded-xl border border-line/60 bg-surface2/30 p-3.5 text-left transition-colors hover:border-primary/35 hover:bg-surface2/60 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <Icon name={item.icon} size={16} className="text-txt2" />
+                    <span className="text-[14px] font-semibold text-txt">{item.label}</span>
+                  </div>
+                  <p className="text-[12px] leading-relaxed text-txt3">{item.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {importing && (
+            <div className="mt-6 rounded-xl border border-line/60 bg-surface2/30 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[13px] text-txt2">가져오는 중입니다…</span>
+                <span className="font-mono text-[13px] text-txt2">{progress}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-surface2">
                 <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-300" style={{ width: `${progress}%` }} />
               </div>
-              <p className="text-[15px] leading-relaxed text-txt2">
-                {running
-                  ? "분석 중입니다. 헤더 구조와 연결, 요약을 차례대로 생성하는 중이에요."
-                  : "준비가 완료되면 가져오기를 눌러 로컬 미리보기를 갱신합니다."}
-              </p>
-
-              <div className="mt-4 space-y-2">
-                {IMPORT_STEPS.map((step, index) => (
-                  <div key={step.title} className="flex items-start gap-3 rounded-xl bg-surface/50 p-3">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/15 text-[14px] font-semibold text-primary">
-                      {index + 1}
-                    </div>
-                    <div>
-                      <div className="text-[15px] font-medium text-txt">{step.title}</div>
-                      <div className="mt-0.5 text-[13.5px] leading-relaxed text-txt3">{step.desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
-          </div>
-        </Card>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <Stat label="현재 노트" value={String(notes.length)} desc="로컬 저장된 문서" icon="doc" color="59 130 246" />
-          <Stat label="평균 연결" value={`${Math.round(notes.reduce((acc, note) => acc + note.links.length, 0) / Math.max(notes.length, 1))}`} desc="노트당 링크 수" icon="link" color="139 92 246" />
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard title="지원 형식" sub="드래그 앤 드롭 대신 소스별 파이프라인을 선택하는 구조입니다.">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {IMPORT_SOURCES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSource(item.id)}
-                className={cx(
-                  "rounded-2xl border p-4 text-left transition-all",
-                  source === item.id ? "border-primary/50 bg-primary/[0.08] shadow-soft" : "border-line/50 bg-surface2/40 hover:border-primary/35"
-                )}
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: `rgb(${item.color} / 0.14)`, color: `rgb(${item.color})` }}>
-                    <Icon name={item.icon} size={18} />
+          )}
+        </>
+      ) : (
+        <div>
+          {history.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Icon name="check" size={36} className="mb-3.5 text-txt3 opacity-40" />
+              <p className="text-[14px] text-txt3">완료된 가져오기가 없습니다.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {history.map((job) => (
+                <div key={job.id} className="flex items-center gap-3 rounded-xl border border-line/50 bg-surface2/40 px-3 py-2.5">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan/15 text-cyan">
+                    <Icon name="import" size={17} />
                   </div>
-                  <Icon name="chevR" size={16} className="text-txt3" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-medium text-txt">{job.source}</div>
+                    <div className="text-[13.5px] text-txt3">{job.files} · {job.when}</div>
+                  </div>
+                  <Badge className="!h-5">{job.status}</Badge>
                 </div>
-                <div className="text-[16px] font-semibold text-txt">{item.label}</div>
-                <div className="mt-1 text-[13.5px] leading-relaxed text-txt3">{item.sub}</div>
-              </button>
-            ))}
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="최근 가져오기"
-          sub="완료 내역은 로컬 미리보기에서만 갱신됩니다."
-          action={<Btn variant="soft" size="sm" icon="refresh" onClick={() => pushToast("가져오기 기록을 새로 고쳤어요")}>새로고침</Btn>}
-        >
-          <div className="space-y-2.5">
-            {history.map((job) => (
-              <div key={job.id} className="flex items-center gap-3 rounded-xl border border-line/50 bg-surface2/40 px-3 py-2.5">
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan/15 text-cyan">
-                  <Icon name="import" size={17} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15px] font-medium text-txt">{job.source}</div>
-                  <div className="text-[13.5px] text-txt3">{job.files} · {job.when}</div>
-                </div>
-                <Badge className="!h-5">{job.status}</Badge>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

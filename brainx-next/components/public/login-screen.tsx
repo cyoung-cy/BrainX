@@ -9,12 +9,17 @@ import { Btn } from "@/components/brainx-ui";
 import { AuthShell, Field, SocialButtons } from "@/components/public/auth-shared";
 
 type ResetStep = "idle" | "sent" | "verified";
+type LoginFieldErrors = {
+  email?: string;
+  password?: string;
+};
 
 export function LoginScreen() {
   const router = useRouter();
   const { pushToast } = useBrainX();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
   const [resetEmail, setResetEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
@@ -29,6 +34,7 @@ export function LoginScreen() {
 
   const handleLogin = async () => {
     if (!canSubmit) return;
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const data = await loginLocal(email.trim(), password);
@@ -39,7 +45,16 @@ export function LoginScreen() {
       pushToast("로그인 성공", "ok");
       router.push(data.next === "ONBOARDING" ? "/onboarding" : "/home");
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : "로그인에 실패했습니다.", "err");
+      const message = error instanceof Error ? error.message : "로그인에 실패했습니다.";
+      if (message.includes("존재하지 않는 이메일")) {
+        setFieldErrors({ email: "이메일이 존재하지 않습니다." });
+        return;
+      }
+      if (message.includes("비밀번호")) {
+        setFieldErrors({ password: "올바른 비밀번호를 입력하세요." });
+        return;
+      }
+      pushToast(message, "err");
     } finally {
       setSubmitting(false);
     }
@@ -107,18 +122,26 @@ export function LoginScreen() {
         type="email"
         placeholder="you@brainx.app"
         value={email}
-        onChange={(event) => setEmail(event.target.value)}
+        onChange={(event) => {
+          setEmail(event.target.value);
+          if (fieldErrors.email) setFieldErrors((current) => ({ ...current, email: undefined }));
+        }}
         autoComplete="email"
         disabled={submitting}
+        error={fieldErrors.email}
       />
       <Field
         label="비밀번호"
         type="password"
         placeholder="비밀번호 입력"
         value={password}
-        onChange={(event) => setPassword(event.target.value)}
+        onChange={(event) => {
+          setPassword(event.target.value);
+          if (fieldErrors.password) setFieldErrors((current) => ({ ...current, password: undefined }));
+        }}
         autoComplete="current-password"
         disabled={submitting}
+        error={fieldErrors.password}
         right={
           <button type="button" onClick={openReset} className="text-[14px] font-normal text-primary">
             비밀번호 찾기

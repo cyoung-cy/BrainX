@@ -88,7 +88,10 @@ public class WorkspaceService {
     public NoteDetailData getNote(String userId, String noteId) {
         Note note = note(userId, noteId);
         FolderRef folder = folderRef(userId, note.getFolderId());
-        return new NoteDetailData(note.getNoteId(), note.getTitle(), note.getMarkdown(), folder, note.getTags(), note.getVersion(),
+        // tags는 지연 로딩 컬렉션이라 트랜잭션 안에서 복사해 둬야 세션이 닫힌 뒤 직렬화할 때
+        // LazyInitializationException이 나지 않는다.
+        List<String> tags = new ArrayList<>(note.getTags());
+        return new NoteDetailData(note.getNoteId(), note.getTitle(), note.getMarkdown(), folder, tags, note.getVersion(),
                 note.getCreatedAt(), note.getUpdatedAt(), new Permissions(true, true));
     }
 

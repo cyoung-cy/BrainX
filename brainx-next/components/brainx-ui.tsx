@@ -11,10 +11,12 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Code2,
   Copy,
   CreditCard,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   FileText,
   FileUp,
   Filter,
@@ -100,7 +102,9 @@ export type IconName =
   | "shield"
   | "refresh"
   | "trash"
-  | "globe";
+  | "globe"
+  | "csv"
+  | "html";
 
 const ICONS: Record<IconName, ComponentType<{ size?: number; className?: string; strokeWidth?: number; fill?: string }>> = {
   home: Home,
@@ -150,7 +154,9 @@ const ICONS: Record<IconName, ComponentType<{ size?: number; className?: string;
   shield: ShieldCheck,
   refresh: RefreshCw,
   trash: Trash2,
-  globe: Globe
+  globe: Globe,
+  csv: FileSpreadsheet,
+  html: Code2
 };
 
 export function Icon({

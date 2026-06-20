@@ -19,29 +19,9 @@ const NAV = [
   { id: "notes", labelKey: "nav.notes" as const, icon: "notes" as const, path: "/notes" },
   { id: "graph", labelKey: "nav.graph" as const, icon: "graph" as const, path: "/graph" },
   { id: "chat", labelKey: "nav.chat" as const, icon: "chat" as const, path: "/chat" },
-  { id: "import", labelKey: "nav.import" as const, icon: "import" as const, path: "/import" },
-  { id: "mypage", labelKey: "nav.mypage" as const, icon: "dash" as const, path: "/mypage" },
 ];
 
 const NAV2 = [
-  {
-    id: "billing",
-    labelKey: "nav.billing" as const,
-    icon: "bill" as const,
-    path: "/billing",
-  },
-  {
-    id: "settings",
-    labelKey: "nav.settings" as const,
-    icon: "settings" as const,
-    path: "/settings",
-  },
-  {
-    id: "support",
-    labelKey: "nav.support" as const,
-    icon: "chat" as const,
-    path: "/support",
-  },
   {
     id: "admin",
     labelKey: "nav.admin" as const,
@@ -426,8 +406,6 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     { label: t("nav.notes"), icon: "notes" as const, path: "/notes" },
     { label: t("nav.graph"), icon: "graph" as const, path: "/graph" },
     { label: t("nav.chat"), icon: "chat" as const, path: "/chat" },
-    { label: t("nav.import"), icon: "import" as const, path: "/import" },
-    { label: t("nav.mypage"), icon: "dash" as const, path: "/mypage" },
   ];
 
   return (
