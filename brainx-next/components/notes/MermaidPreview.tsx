@@ -21,8 +21,20 @@ type RenderState =
 
 /** 코드(mermaid 소스)를 SVG로 렌더링한다. 실패해도 이 컴포넌트 안에서만 에러를 보여주고
     예외를 던지지 않는다 — 에디터 전체가 깨지면 안 되기 때문(노트 전체가 코드블록 하나의
-    잘못된 문법 때문에 멈추는 사고를 방지). */
-export function MermaidPreview({ code, fitWidth }: { code: string; fitWidth: boolean }) {
+    잘못된 문법 때문에 멈추는 사고를 방지).
+    targetWidthPx: 부모(CodeBlockView)가 BlockControls의 비율 계산으로 정한 최종 목표
+    px("맞춤"이면 null → 100%). naturalWidth는 이 컴포넌트만 SVG의 viewBox/width 속성에서
+    바로 알 수 있어 onNaturalWidth로 부모에 보고하고, 부모는 그 값으로 targetWidthPx를
+    다시 계산해 내려준다(원본/비율 모두 같은 측정값 하나를 공유). */
+export function MermaidPreview({
+  code,
+  targetWidthPx,
+  onNaturalWidth,
+}: {
+  code: string;
+  targetWidthPx: number | null;
+  onNaturalWidth?: (px: number) => void;
+}) {
   const [state, setState] = useState<RenderState>({ status: "loading" });
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -68,24 +80,23 @@ export function MermaidPreview({ code, fitWidth }: { code: string; fitWidth: boo
     };
   }, [code]);
 
-  // 렌더된 SVG가 컨테이너 폭에 맞게(또는 원본 크기 그대로) 보이도록 직접 스타일을 적용한다 —
-  // mermaid가 만든 SVG는 자체 width/height(px)를 갖고 있어 그대로 두면 컨테이너를 무시한다.
+  // 렌더된 SVG가 목표 px(또는 컨테이너 폭 100%)로 보이도록 직접 스타일을 적용한다 — mermaid가
+  // 만든 SVG는 자체 width/height(px)를 갖고 있어 그대로 두면 컨테이너를 무시한다. naturalWidth는
+  // 매 패스마다 부모에 보고해 두고(같은 렌더 결과일 땐 부모가 동일 값으로 setState해 추가
+  // 리렌더를 만들지 않는다), 그걸로 부모가 계산해 내려준 targetWidthPx를 그대로 적용한다.
   useLayoutEffect(() => {
     if (state.status !== "ok") return;
     const svgEl = containerRef.current?.querySelector("svg");
     if (!svgEl) return;
-    if (fitWidth) {
-      svgEl.style.width = "100%";
-      svgEl.style.height = "auto";
-      svgEl.style.maxWidth = "none";
-    } else {
-      const viewBoxWidth = svgEl.viewBox?.baseVal?.width;
-      const attrWidth = Number.parseFloat(svgEl.getAttribute("width") ?? "");
-      const naturalWidth = viewBoxWidth || (Number.isFinite(attrWidth) ? attrWidth : 0);
-      svgEl.style.width = naturalWidth > 0 ? `${naturalWidth}px` : "auto";
-      svgEl.style.height = "auto";
-      svgEl.style.maxWidth = "none";
-    }
+
+    const viewBoxWidth = svgEl.viewBox?.baseVal?.width;
+    const attrWidth = Number.parseFloat(svgEl.getAttribute("width") ?? "");
+    const naturalWidth = viewBoxWidth || (Number.isFinite(attrWidth) ? attrWidth : 0);
+    if (naturalWidth > 0) onNaturalWidth?.(naturalWidth);
+
+    svgEl.style.width = targetWidthPx != null ? `${targetWidthPx}px` : "100%";
+    svgEl.style.height = "auto";
+    svgEl.style.maxWidth = "none";
     svgEl.style.display = "block";
     // widthMode만 바뀌어 부모 NodeView가 다시 그려질 때 dangerouslySetInnerHTML이 원본 SVG의
     // max-width를 복구할 수 있다. 매 렌더 직후 다시 보정해야 원본 → 75/125% 같은 연속 전환도

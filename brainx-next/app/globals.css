@@ -693,56 +693,21 @@ html.light .aurora b {
   text-align: left;
 }
 
-.tiptap-note-content .ProseMirror table.note-table tr:hover > :is(td, th) {
-  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.035);
-}
-
+/* 이전에는 hover된 셀의 행 전체 + 열 전체(:has() + :nth-child 20열 분량)가 함께 강조되어
+   과한 시각 효과였다 — 현재 셀 하나만 옅게 표시하는 것으로 단순화했다. */
 .tiptap-note-content .ProseMirror table.note-table :is(td, th):hover {
-  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.085);
-}
-
-/* :has()로 hover된 셀의 열을 찾는다. 표 입력 상한(20열)까지 지원한다. */
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(1):hover) :is(td, th):nth-child(1),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(2):hover) :is(td, th):nth-child(2),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(3):hover) :is(td, th):nth-child(3),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(4):hover) :is(td, th):nth-child(4),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(5):hover) :is(td, th):nth-child(5),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(6):hover) :is(td, th):nth-child(6),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(7):hover) :is(td, th):nth-child(7),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(8):hover) :is(td, th):nth-child(8),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(9):hover) :is(td, th):nth-child(9),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(10):hover) :is(td, th):nth-child(10),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(11):hover) :is(td, th):nth-child(11),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(12):hover) :is(td, th):nth-child(12),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(13):hover) :is(td, th):nth-child(13),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(14):hover) :is(td, th):nth-child(14),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(15):hover) :is(td, th):nth-child(15),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(16):hover) :is(td, th):nth-child(16),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(17):hover) :is(td, th):nth-child(17),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(18):hover) :is(td, th):nth-child(18),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(19):hover) :is(td, th):nth-child(19),
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):nth-child(20):hover) :is(td, th):nth-child(20) {
   box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.05);
 }
 
-.tiptap-note-content .ProseMirror table.note-table:has(:is(td, th):hover) :is(td, th):hover {
-  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.1);
-}
-
-/* 표 전체 크기. 확대한 폭은 .tableWrapper 안에서만 스크롤된다. */
+/* 표 전체 크기. "맞춤"/"원본"은 순수 CSS로 처리한다. 50/75/125/150%·사용자 지정은 표에
+   <img>의 naturalWidth 같은 고정값이 없어 CSS만으로 "원본 폭 기준 비율"을 계산할 수
+   없으므로, BrainXTableView(NoteEditor.tsx)가 원본 폭을 측정해 인라인 style.width/minWidth로
+   직접 적용한다 — 그래서 percent 프리셋용 규칙은 여기 없다. 확대한 폭은 .tableWrapper
+   안에서만 스크롤된다. */
 .tiptap-note-content .ProseMirror table.note-table[data-width-mode="fit"] { width: 100%; }
 .tiptap-note-content .ProseMirror table.note-table[data-width-mode="original"] {
   width: max-content !important;
   min-width: max-content !important;
-}
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="50"] { width: 50% !important; min-width: 50% !important; }
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="75"] { width: 75% !important; min-width: 75% !important; }
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="100"] { width: 100% !important; min-width: 100% !important; }
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="125"] { width: 125% !important; min-width: 125% !important; }
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="150"] { width: 150% !important; min-width: 150% !important; }
-.tiptap-note-content .ProseMirror table.note-table[data-width-mode="custom"] {
-  width: var(--brainx-table-width, 100%) !important;
-  min-width: var(--brainx-table-width, 100%) !important;
 }
 
 .tiptap-note-content .ProseMirror .tableWrapper:has(table.note-table[data-align="center"]) table.note-table { margin-inline: auto; }
@@ -759,6 +724,20 @@ html.light .aurora b {
 .tiptap-note-content .ProseMirror table.note-table[data-table-color="amber"] th { background: rgb(245 158 11 / 0.16); }
 .tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] td { background: rgb(244 63 94 / 0.055); }
 .tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] th { background: rgb(244 63 94 / 0.16); }
+
+/* 셀 단위 배경색·정렬. 표 전체 색([data-table-color])과 같은 specificity라 소스 순서상
+   이 블록을 더 뒤에 둬서 셀 지정이 표 전체 색을 이기게 한다. */
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="yellow"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="yellow"] { background: rgb(234 179 8 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="green"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="green"] { background: rgb(16 185 129 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="blue"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="blue"] { background: rgb(59 130 246 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="gray"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="gray"] { background: rgb(148 163 184 / 0.26); }
+
+.tiptap-note-content .ProseMirror table.note-table :is(td, th)[data-cell-align="center"] { text-align: center; }
+.tiptap-note-content .ProseMirror table.note-table :is(td, th)[data-cell-align="right"] { text-align: right; }
 
 .tiptap-note-content .ProseMirror table.note-table .selectedCell {
   background: rgb(var(--primary) / 0.12);

@@ -24,24 +24,45 @@ export function blockWidthPercent(widthMode: BlockWidthMode, widthPercent: numbe
   return Number(widthMode);
 }
 
-/** 블록 바깥 프레임 폭. 100%를 넘는 확대는 프레임을 본문 폭에 고정하고, 안쪽 콘텐츠만
-    확대해 스크롤이 노트 전체가 아닌 이 프레임 안에 생기게 한다. */
-export function blockWidthStyle(widthMode: BlockWidthMode, widthPercent: number | null): React.CSSProperties {
-  const percent = blockWidthPercent(widthMode, widthPercent);
-  return { width: `${Math.min(percent, 100)}%`, maxWidth: "100%" };
+/** 비율 프리셋·사용자 지정 비율을 "원본(자연) 픽셀 크기" 기준으로 환산한 목표 너비(px).
+    "맞춤"은 컨테이너에 맞추는 모드라 고정 px가 없으므로 null. naturalWidthPx를 아직 모르면
+    (이미지 로딩 전 등) 계산할 수 없어 역시 null을 반환한다 — 호출 쪽에서는 이 경우 "맞춤"과
+    동일하게 폴백 처리하면 되고, 측정이 끝나는 즉시 정확한 값으로 다시 그려진다. */
+export function blockTargetPx(
+  widthMode: BlockWidthMode,
+  widthPercent: number | null,
+  naturalWidthPx: number | null
+): number | null {
+  if (widthMode === "fit") return null;
+  if (naturalWidthPx == null) return null;
+  if (widthMode === "original") return naturalWidthPx;
+  return naturalWidthPx * (blockWidthPercent(widthMode, widthPercent) / 100);
 }
 
-/** 프레임 안쪽 실제 콘텐츠 폭. 원본은 자연 크기를 유지하고, 100% 초과 프리셋은 이 요소만
-    확대한다. 50/75%는 바깥 프레임 자체가 줄어들기 때문에 안쪽은 항상 프레임의 100%다. */
-export function blockContentWidthStyle(
+/** 블록 바깥 프레임. 목표 px를 모르면(맞춤 포함) 컨테이너 폭에 맞추고, 알면 그 px로 고정해
+    정렬(블록 justify)이 실제 콘텐츠 크기를 기준으로 동작하게 한다. 목표 px가 컨테이너보다
+    크면 maxWidth가 프레임을 컨테이너 폭으로 캡핑하고, 안쪽 콘텐츠(blockContentStyle)가 그
+    안에서 가로 스크롤된다. */
+export function blockFrameStyle(
   widthMode: BlockWidthMode,
-  widthPercent: number | null
+  widthPercent: number | null,
+  naturalWidthPx: number | null
 ): React.CSSProperties {
-  if (widthMode === "original") return { width: "max-content", maxWidth: "none" };
-  const percent = blockWidthPercent(widthMode, widthPercent);
-  return percent > 100
-    ? { width: `${percent}%`, maxWidth: "none" }
-    : { width: "100%", maxWidth: "100%" };
+  const px = blockTargetPx(widthMode, widthPercent, naturalWidthPx);
+  if (px == null) return { width: "100%", maxWidth: "100%" };
+  return { width: `${px}px`, maxWidth: "100%" };
+}
+
+/** 프레임 안쪽 실제 콘텐츠 폭 — 항상 프레임과 같은 px여야 프레임이 컨테이너 폭으로
+    캡핑된 뒤에도 콘텐츠가 목표 크기를 유지한 채 프레임 안에서만 스크롤된다. */
+export function blockContentStyle(
+  widthMode: BlockWidthMode,
+  widthPercent: number | null,
+  naturalWidthPx: number | null
+): React.CSSProperties {
+  const px = blockTargetPx(widthMode, widthPercent, naturalWidthPx);
+  if (px == null) return { width: "100%", maxWidth: "100%" };
+  return { width: `${px}px`, maxWidth: "none", flexShrink: 0 };
 }
 
 export function blockJustify(align: BlockAlign): React.CSSProperties["justifyContent"] {
@@ -50,12 +71,13 @@ export function blockJustify(align: BlockAlign): React.CSSProperties["justifyCon
   return "center";
 }
 
+// 100%는 "원본"과 결과가 항상 같아(둘 다 자연 크기) 중복이라 프리셋에서 제외했다 — 50/150을
+// 기준으로 양쪽에 75/125를 더해 4단계로 단순화.
 const WIDTH_PRESETS: { mode: BlockWidthMode; label: string }[] = [
   { mode: "fit", label: "맞춤" },
   { mode: "original", label: "원본" },
   { mode: "50", label: "50%" },
   { mode: "75", label: "75%" },
-  { mode: "100", label: "100%" },
   { mode: "125", label: "125%" },
   { mode: "150", label: "150%" },
 ];
@@ -160,6 +182,11 @@ function CustomPercentInput({
       aria-label="사용자 지정 크기 비율"
       value={draft}
       placeholder="%"
+      // 부모 BlockSizeToolbar의 onMouseDown={e=>e.preventDefault()}가 버블링되어 이 input의
+      // 기본 포커스 동작까지 막아버려서(버튼은 onClick만 있으면 되니 문제 없었지만, 타이핑이
+      // 필요한 input은 실제로 클릭해도 포커스가 전혀 잡히지 않았다) 사용자 지정 비율을 입력할
+      // 수 없는 버그가 있었다 — stopPropagation으로 그 mousedown이 부모까지 가지 않게 한다.
+      onMouseDown={(e) => e.stopPropagation()}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => {
         if (value.widthMode !== "custom") setDraft(String(value.widthPercent ?? 100));

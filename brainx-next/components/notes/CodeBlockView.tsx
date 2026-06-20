@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import { NodeViewWrapper, NodeViewContent, type NodeViewProps } from "@tiptap/react";
-import { Copy, Check, ChevronDown, Search, FileText, Eye } from "lucide-react";
+import { Copy, Check, ChevronDown, Search, FileText, Eye, Code2 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MermaidPreview } from "./MermaidPreview";
 import {
   BlockSizeToolbar,
-  blockContentWidthStyle,
-  blockWidthStyle,
+  blockContentStyle,
+  blockFrameStyle,
   blockJustify,
+  blockTargetPx,
   type BlockAlign,
   type BlockWidthMode,
 } from "./BlockControls";
@@ -97,6 +98,13 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
   const [focusIdx, setFocusIdx]           = useState(0);
   const [isEditingFile, setIsEditingFile] = useState(false);
   const [fileDraft, setFileDraft]         = useState("");
+  // Mermaid SVG의 원본(자연) 픽셀 너비 — MermaidPreview가 측정해 보고하면 여기서 받아 비율
+  // 프리셋(50/75/125/150%, 사용자 지정)을 "원본 기준"으로 계산하는 데 쓴다(BlockControls의
+  // blockTargetPx 참고). 같은 값이면 setState가 무시되므로 추가 리렌더는 생기지 않는다.
+  const [mermaidNaturalWidth, setMermaidNaturalWidth] = useState<number | null>(null);
+  const handleMermaidNaturalWidth = useCallback((px: number) => {
+    setMermaidNaturalWidth((prev) => (prev === px ? prev : px));
+  }, []);
 
   const dropRef          = useRef<HTMLDivElement>(null);
   const searchRef        = useRef<HTMLInputElement>(null);
@@ -418,6 +426,22 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </button>
+
+            {/* Mermaid 보기/편집 토글 — 이전에는 미리보기 호버 툴바(우상단)와 코드뷰 하단
+                버튼으로 위치가 서로 달라 어색했다. Obsidian처럼 항상 같은 자리(헤더 우측)에
+                두어 보기↔편집 전환이 위치 이동 없이 일어나게 한다. */}
+            {isMermaid && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => updateAttributes({ preview: !effectivePreview })}
+                title={effectivePreview ? "코드 편집" : "다이어그램 보기"}
+                aria-label={effectivePreview ? "Mermaid 코드 편집" : "Mermaid 다이어그램 보기"}
+                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-txt2 transition-colors hover:bg-surface/70 hover:text-txt"
+              >
+                {effectivePreview ? <Code2 size={12} /> : <Eye size={12} />}
+                <span>{effectivePreview ? "코드" : "미리보기"}</span>
+              </button>
+            )}
           </div>
 
         </div>
@@ -438,23 +462,16 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
             <BlockSizeToolbar
               value={{ align, widthMode, widthPercent }}
               onChange={(next) => updateAttributes(next)}
-              extra={
-                <button
-                  type="button"
-                  title="코드 편집"
-                  aria-label="Mermaid 코드 편집"
-                  onClick={() => updateAttributes({ preview: false })}
-                  className="ml-0.5 grid h-6 min-w-8 place-items-center rounded px-1 font-mono text-[10px] font-semibold text-txt2 transition-colors hover:bg-surface2/70 hover:text-txt"
-                >
-                  <span aria-hidden="true">&lt;/&gt;</span>
-                </button>
-              }
             />
           </div>
           <div className="flex px-4 py-4" style={{ justifyContent: blockJustify(align) }}>
-            <div style={{ ...blockWidthStyle(widthMode, widthPercent), overflowX: "auto" }}>
-              <div style={blockContentWidthStyle(widthMode, widthPercent)}>
-                <MermaidPreview code={node.textContent} fitWidth={widthMode !== "original"} />
+            <div style={{ ...blockFrameStyle(widthMode, widthPercent, mermaidNaturalWidth), overflowX: "auto" }}>
+              <div style={blockContentStyle(widthMode, widthPercent, mermaidNaturalWidth)}>
+                <MermaidPreview
+                  code={node.textContent}
+                  targetWidthPx={blockTargetPx(widthMode, widthPercent, mermaidNaturalWidth)}
+                  onNaturalWidth={handleMermaidNaturalWidth}
+                />
               </div>
             </div>
           </div>
@@ -477,20 +494,6 @@ export function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
       >
         <NodeViewContent />
       </pre>
-
-      {isMermaid && !effectivePreview && (
-        <div contentEditable={false} className="flex justify-end px-2 py-1.5" style={{ background: "rgb(var(--surface2) / 0.25)" }}>
-          <button
-            type="button"
-            title="다이어그램 보기"
-            aria-label="Mermaid 다이어그램 보기"
-            onClick={() => updateAttributes({ preview: true })}
-            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-txt2 transition-colors hover:bg-surface2/70 hover:text-txt"
-          >
-            <Eye size={12} /> 다이어그램 보기
-          </button>
-        </div>
-      )}
     </NodeViewWrapper>
   );
 }

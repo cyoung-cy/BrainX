@@ -15,7 +15,7 @@ import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import { createLowlight, all } from "lowlight";
-import { Link2, Highlighter, Sparkles, Wand2 } from "lucide-react";
+import { Link2, Highlighter, Sparkles, Wand2, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
@@ -24,7 +24,9 @@ import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
 import { ImageBlock, insertImageBlockFromFile } from "./ImageBlockNode";
+import { blockWidthPercent, type BlockAlign, type BlockWidthMode } from "./BlockControls";
 import { TableToolbar } from "./TableToolbar";
+import { activeCellAttrs, updateSelectedCellsAttrs } from "./tableUtils";
 import EditorContextMenu, { type EditorContextTarget } from "./EditorContextMenu";
 
 export type EditMode = "read" | "edit";
@@ -788,6 +790,61 @@ function BubbleToolbar({
   );
 }
 
+/** 표 안에서 텍스트/셀을 선택했을 때 뜨는 전용 버블 툴바. 일반 BubbleToolbar는 형광펜·AI
+    동작까지 포함해 표 안에서는 과한 기능이라 별도로 둔다 — Bold/Italic/Strike/글자색/정렬만
+    제공한다(형광펜 제외는 요청 사항). 셀 정렬은 단일 셀 텍스트 선택뿐 아니라 드래그로 만든
+    다중 셀 CellSelection에도 동작하도록 TableToolbar와 같은 updateSelectedCellsAttrs를 쓴다. */
+function TableBubbleToolbar({ editor }: { editor: Editor }) {
+  const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
+  const cellAlign = activeCellAttrs(editor).align;
+
+  return (
+    <div
+      className="flex items-center gap-0.5 rounded-lg border border-line/60 px-1 py-1"
+      style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 20px -4px rgba(2,6,23,0.35)", zIndex: 2000 }}
+    >
+      <BubbleBtn active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="굵게">
+        <span className="text-[13px] font-bold leading-none">B</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} title="기울임">
+        <span className="text-[13px] italic leading-none">I</span>
+      </BubbleBtn>
+      <BubbleBtn active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()} title="취소선">
+        <span className="text-[13px] leading-none line-through">S</span>
+      </BubbleBtn>
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      <span
+        className="grid h-[26px] w-[16px] shrink-0 place-items-center text-[13px] font-bold leading-none"
+        style={{ color: currentTextColor ?? undefined }}
+        aria-hidden
+      >
+        A
+      </span>
+      <QuickSwatchRow
+        swatches={TEXT_COLOR_QUICK}
+        currentValue={currentTextColor}
+        shape="circle"
+        onSelect={(color) => editor.chain().focus().setColor(color).run()}
+      />
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      {(["left", "center", "right"] as BlockAlign[]).map((a) => (
+        <BubbleBtn
+          key={a}
+          active={cellAlign === a}
+          onClick={() => updateSelectedCellsAttrs(editor, { cellAlign: a })}
+          title={a === "left" ? "셀 왼쪽 정렬" : a === "center" ? "셀 가운데 정렬" : "셀 오른쪽 정렬"}
+        >
+          {a === "left" ? <AlignLeft size={13} /> : a === "center" ? <AlignCenter size={13} /> : <AlignRight size={13} />}
+        </BubbleBtn>
+      ))}
+    </div>
+  );
+}
+
 /* ── 공통 Editor Extensions ────────────────────────────────────────────
    PaneLeafView마다 동일한 extensions 배열을 새로 만들면 StarterKit이 내장한
    link/underline과 별도 import가 다시 섞여 "Duplicate extension names" 경고가
@@ -815,12 +872,37 @@ class BrainXTableView extends TableView {
 
   private syncDisplayAttributes(node: ProseMirrorNode) {
     this.table.dataset.align = String(node.attrs.align ?? "center");
-    this.table.dataset.widthMode = String(node.attrs.widthMode ?? "fit");
+    const widthMode = (String(node.attrs.widthMode ?? "fit") as BlockWidthMode);
+    this.table.dataset.widthMode = widthMode;
     this.table.dataset.tableColor = String(node.attrs.tableColor ?? "default");
     this.table.dataset.borderWidth = String(node.attrs.borderWidth ?? 1);
-    const widthPercent = Number(node.attrs.widthPercent) || 100;
-    this.table.dataset.widthPercent = String(widthPercent);
-    this.table.style.setProperty("--brainx-table-width", `${widthPercent}%`);
+
+    if (widthMode === "fit" || widthMode === "original") {
+      // 두 모드는 순수 CSS([data-width-mode] 선택자, globals.css)로 처리된다 — 인라인
+      // 스타일이 남아 있으면 그게 우선 적용되어 충돌하므로 비워둔다.
+      this.table.style.width = "";
+      this.table.style.minWidth = "";
+      return;
+    }
+
+    // 비율 프리셋/사용자 지정은 "원본(자연) 폭" 기준으로 계산해야 한다(컨테이너 폭 기준
+    // 계산이 이번 수정의 대상 버그였다). 표는 <img>의 naturalWidth 같은 고정값이 없으므로,
+    // 이미 검증되어 있는 "원본" 모드와 동일한 CSS 상태(max-content)로 한 프레임 동안
+    // 강제했다가 scrollWidth로 그 폭을 읽는다 — 강제→측정→복원이 같은 동기 구간에서 끝나
+    // 화면에 중간 상태가 그려지지 않는다(레이아웃만 강제될 뿐 paint는 일어나지 않음).
+    const prevWidth = this.table.style.width;
+    const prevMinWidth = this.table.style.minWidth;
+    this.table.style.width = "max-content";
+    this.table.style.minWidth = "max-content";
+    const naturalPx = this.table.scrollWidth;
+    this.table.style.width = prevWidth;
+    this.table.style.minWidth = prevMinWidth;
+
+    const widthPercent = (node.attrs.widthPercent as number | null) ?? null;
+    const percent = blockWidthPercent(widthMode, widthPercent);
+    const targetPx = naturalPx * (percent / 100);
+    this.table.style.width = `${targetPx}px`;
+    this.table.style.minWidth = `${targetPx}px`;
   }
 }
 
@@ -864,6 +946,41 @@ const BrainXTable = Table.extend({
   resizable: true,
   View: BrainXTableView,
   HTMLAttributes: { class: "note-table" },
+});
+
+/** 셀 단위 배경색·정렬 — 표 전체(BrainXTable) 색과 별개로, 선택한 셀(들)에만 적용된다.
+    TableCell/TableHeader 둘 다 같은 속성 세트가 필요해 공통 팩토리로 둔다. */
+function cellDisplayAttributes() {
+  return {
+    cellBackground: {
+      default: "none",
+      parseHTML: (el: HTMLElement) => el.getAttribute("data-cell-bg") ?? "none",
+      renderHTML: (attrs: Record<string, unknown>) =>
+        attrs.cellBackground && attrs.cellBackground !== "none"
+          ? { "data-cell-bg": String(attrs.cellBackground) }
+          : {},
+    },
+    cellAlign: {
+      default: "left",
+      parseHTML: (el: HTMLElement) => el.getAttribute("data-cell-align") ?? "left",
+      renderHTML: (attrs: Record<string, unknown>) =>
+        attrs.cellAlign && attrs.cellAlign !== "left"
+          ? { "data-cell-align": String(attrs.cellAlign) }
+          : {},
+    },
+  };
+}
+
+const BrainXTableCell = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellDisplayAttributes() };
+  },
+});
+
+const BrainXTableHeader = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellDisplayAttributes() };
+  },
 });
 
 const NOTE_EDITOR_EXTENSIONS = [
@@ -975,8 +1092,8 @@ const NOTE_EDITOR_EXTENSIONS = [
   ImageBlock,
   BrainXTable,
   TableRow,
-  TableHeader,
-  TableCell,
+  BrainXTableHeader,
+  BrainXTableCell,
 ];
 
 export interface NoteEditorHandle {
@@ -1181,7 +1298,11 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         zIndex: 2000,
       }}
     >
-      <BubbleToolbar editor={editor} onAiAction={onAiAction} />
+      {editor.isActive("table") ? (
+        <TableBubbleToolbar editor={editor} />
+      ) : (
+        <BubbleToolbar editor={editor} onAiAction={onAiAction} />
+      )}
     </div>,
     document.body
   );

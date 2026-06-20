@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Node, mergeAttributes, nodeInputRule } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import type { EditorView } from "@tiptap/pm/view";
@@ -8,8 +8,8 @@ import { ImageOff } from "lucide-react";
 import { cx } from "@/lib/utils";
 import {
   BlockSizeToolbar,
-  blockContentWidthStyle,
-  blockWidthStyle,
+  blockContentStyle,
+  blockFrameStyle,
   blockJustify,
   type BlockAlign,
   type BlockWidthMode,
@@ -54,6 +54,28 @@ function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const widthMode    = (node.attrs.widthMode as BlockWidthMode) ?? "fit";
   const widthPercent = (node.attrs.widthPercent as number | null) ?? null;
 
+  // 50/75/125/150% 같은 비율 프리셋은 "원본 픽셀 크기"를 알아야 계산할 수 있다(컨테이너
+  // 폭 기준 계산이 이번 수정의 대상 버그였다) — <img>의 naturalWidth를 측정해 둔다.
+  // "원본"/"맞춤" 모드는 이 값과 무관하게 순수 CSS(아래 frameStyle/contentStyle)로 처리되어
+  // 측정 전에도 깜빡임 없이 항상 정확하다.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [naturalWidthPx, setNaturalWidthPx] = useState<number | null>(null);
+
+  useEffect(() => setNaturalWidthPx(null), [src]);
+
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) setNaturalWidthPx(img.naturalWidth);
+  }, [src]);
+
+  const isOriginal = widthMode === "original";
+  const frameStyle = isOriginal
+    ? { width: "100%", maxWidth: "100%" }
+    : blockFrameStyle(widthMode, widthPercent, naturalWidthPx);
+  const contentStyle = isOriginal
+    ? { width: "max-content", maxWidth: "none" }
+    : blockContentStyle(widthMode, widthPercent, naturalWidthPx);
+
   return (
     <NodeViewWrapper className="split-image-block group/img-block relative my-3" data-drag-handle>
       <div
@@ -71,13 +93,13 @@ function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
       </div>
       <div className="flex" style={{ justifyContent: blockJustify(align) }}>
         <div
-          style={{ ...blockWidthStyle(widthMode, widthPercent), overflowX: "auto" }}
+          style={{ ...frameStyle, overflowX: "auto" }}
           className={cx(
             "rounded-lg",
             selected && "outline outline-2 outline-offset-2 outline-primary/60"
           )}
         >
-          <div style={blockContentWidthStyle(widthMode, widthPercent)}>
+          <div style={contentStyle}>
             {broken || !src ? (
               <div className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-line/60 text-txt3">
                 <ImageOff size={18} />
@@ -85,14 +107,16 @@ function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
               </div>
             ) : (
               <img
+                ref={imgRef}
                 src={src}
                 alt={alt}
+                onLoad={(e) => setNaturalWidthPx(e.currentTarget.naturalWidth)}
                 onError={() => setBroken(true)}
                 draggable={false}
                 style={{
                   display: "block",
-                  width: widthMode === "original" ? "auto" : "100%",
-                  maxWidth: widthMode === "original" ? "none" : "100%",
+                  width: isOriginal ? "auto" : "100%",
+                  maxWidth: isOriginal ? "none" : "100%",
                   height: "auto",
                   borderRadius: "0.5rem",
                 }}

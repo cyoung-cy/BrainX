@@ -8,14 +8,28 @@ import {
   ArrowDownToLine,
   ArrowLeftToLine,
   ArrowRightToLine,
-  Rows3,
-  Columns3,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   Plus,
   Trash2,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MAX_BLOCK_PERCENT, MIN_BLOCK_PERCENT, type BlockWidthMode } from "./BlockControls";
-import { activeTableDisplayAttrs, updateActiveTableAttrs } from "./tableUtils";
+import { MAX_BLOCK_PERCENT, MIN_BLOCK_PERCENT, type BlockAlign, type BlockWidthMode } from "./BlockControls";
+import {
+  activeCellAttrs,
+  activeTableDisplayAttrs,
+  updateActiveTableAttrs,
+  updateSelectedCellsAttrs,
+  type CellColorPreset,
+} from "./tableUtils";
+
+const CELL_COLOR_SWATCHES: { value: CellColorPreset; label: string; dot: string }[] = [
+  { value: "yellow", label: "노랑", dot: "rgb(234 179 8)" },
+  { value: "green", label: "초록", dot: "rgb(16 185 129)" },
+  { value: "blue", label: "파랑", dot: "rgb(59 130 246)" },
+  { value: "gray", label: "회색", dot: "rgb(148 163 184)" },
+];
 
 function ToolbarBtn({
   title,
@@ -116,6 +130,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
 
   const run = (fn: () => boolean) => () => { fn(); updateAnchor(); };
   const tableAttrs = activeTableDisplayAttrs(editor);
+  const cellAttrs = activeCellAttrs(editor);
   const commitCustomWidth = () => {
     const next = Number(customDraft);
     if (!Number.isFinite(next) || customDraft.trim() === "") {
@@ -156,7 +171,6 @@ export function TableToolbar({ editor }: { editor: Editor }) {
             <option value="original">원본</option>
             <option value="50">50%</option>
             <option value="75">75%</option>
-            <option value="100">100%</option>
             <option value="125">125%</option>
             <option value="150">150%</option>
             <option value="custom">사용자 지정</option>
@@ -186,8 +200,8 @@ export function TableToolbar({ editor }: { editor: Editor }) {
           <ToolbarBtn title="아래에 행 추가" onClick={run(() => editor.chain().focus().addRowAfter().run())}>
             <ArrowDownToLine size={13} />
           </ToolbarBtn>
-          <ToolbarBtn title="행 삭제" onClick={run(() => editor.chain().focus().deleteRow().run())}>
-            <Rows3 size={13} />
+          <ToolbarBtn danger title="행 삭제" onClick={run(() => editor.chain().focus().deleteRow().run())}>
+            <Trash2 size={13} />
           </ToolbarBtn>
 
           <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
@@ -198,9 +212,48 @@ export function TableToolbar({ editor }: { editor: Editor }) {
           <ToolbarBtn title="오른쪽에 열 추가" onClick={run(() => editor.chain().focus().addColumnAfter().run())}>
             <ArrowRightToLine size={13} />
           </ToolbarBtn>
-          <ToolbarBtn title="열 삭제" onClick={run(() => editor.chain().focus().deleteColumn().run())}>
-            <Columns3 size={13} />
+          <ToolbarBtn danger title="열 삭제" onClick={run(() => editor.chain().focus().deleteColumn().run())}>
+            <Trash2 size={13} />
           </ToolbarBtn>
+
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+          {/* 셀 정렬 — 단일 셀 커서/텍스트 선택, 드래그로 만든 다중 셀 CellSelection 모두 지원 */}
+          {(["left", "center", "right"] as BlockAlign[]).map((a) => (
+            <ToolbarBtn
+              key={a}
+              title={a === "left" ? "셀 왼쪽 정렬" : a === "center" ? "셀 가운데 정렬" : "셀 오른쪽 정렬"}
+              onClick={run(() => updateSelectedCellsAttrs(editor, { cellAlign: a }))}
+            >
+              <span className={cellAttrs.align === a ? "text-primary" : undefined}>
+                {a === "left" ? <AlignLeft size={13} /> : a === "center" ? <AlignCenter size={13} /> : <AlignRight size={13} />}
+              </span>
+            </ToolbarBtn>
+          ))}
+
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+          {/* 셀 배경색 — 표 전체 색(tableColor)과 별개로 선택한 셀(들)에만 적용 */}
+          {CELL_COLOR_SWATCHES.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              title={s.label}
+              aria-label={`셀 배경색 ${s.label}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={run(() =>
+                updateSelectedCellsAttrs(editor, {
+                  cellBackground: cellAttrs.background === s.value ? "none" : s.value,
+                })
+              )}
+              className={cx(
+                "grid h-[26px] w-[26px] place-items-center rounded transition-colors",
+                cellAttrs.background === s.value ? "bg-primary/15 ring-1 ring-primary/50" : "hover:bg-surface2/70"
+              )}
+            >
+              <span className="block h-3 w-3 rounded-full" style={{ background: s.dot }} />
+            </button>
+          ))}
 
           <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
 
