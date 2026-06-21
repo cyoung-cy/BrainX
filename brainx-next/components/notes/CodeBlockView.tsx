@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import { NodeViewWrapper, NodeViewContent, type NodeViewProps } from "@tiptap/react";
-import { Copy, Check, ChevronDown, Search, FileText, Eye, Code2 } from "lucide-react";
+import { Copy, Check, ChevronDown, Search, FileText } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MermaidPreview } from "./MermaidPreview";
 import {
@@ -112,6 +112,12 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   const listRef          = useRef<HTMLDivElement>(null);
   const fileRef          = useRef<HTMLTextAreaElement>(null);
   const posAtStartRef    = useRef(false);  // auto-extension 삽입 시 커서를 맨 앞으로
+  // 크기 툴바(BlockSizeToolbar)가 document.body에 portal로 뜨므로(Split View 좁은 패널에서
+  // 글자가 세로로 깨지는 문제 방지) CSS group-hover 대신 다이어그램 영역의 실제 hover를 JS
+  // 상태로 추적해 anchor로 넘긴다. "</>" 버튼은 이 블록 안에 그대로 있어 기존 CSS group-hover로
+  // 충분하다(텍스트 줄바꿈 위험이 없는 아이콘 한 글자뿐).
+  const mermaidPreviewRef = useRef<HTMLDivElement>(null);
+  const [mermaidHovered, setMermaidHovered] = useState(false);
 
   const lang      = (node.attrs.language as string) || "";
   const filename  = (node.attrs.filename  as string) || "";
@@ -444,47 +450,56 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
       </div>
 
       {/* ── Mermaid 작성/미리보기 영역 ────────────────────────────────────
-          보기↔편집 전환 버튼은 헤더(파일명/언어/복사 옆)가 아니라 이 작성칸 자체의 우상단에
-          항상 같은 위치로 띄운다 — 코드 모드든 다이어그램 모드든 같은 좌표(이 relative 컨테이너
-          기준 absolute right-2 top-2)라서 전환해도 버튼이 이동하지 않는다. <pre>/NodeViewContent는
-          isMermaid 여부와 무관하게 항상 이 자리 그대로 렌더링하고(언어를 mermaid로 바꿔도
-          remount되지 않게), 버튼·여백만 isMermaid일 때 조건부로 추가한다. */}
+          코드 편집 상태: 작성칸 우상단에 "보기" 버튼이 항상 떠 있다(기존 코드블록 UX와 동일한
+          톤 유지, paddingTop으로 자리 확보).
+          다이어그램 보기 상태: 기본은 버튼 없이 다이어그램만 깔끔하게 보이고, 블록에 hover할
+          때만 우상단에 "</>" 아이콘 버튼이 오버레이로 페이드인한다 — 레이아웃을 밀어내지
+          않도록 별도 paddingTop/툴바 공간을 만들지 않는다(Obsidian 스타일, 요구사항). 오버레이가
+          이 블록의 진짜 DOM 자손이어야 group-hover가 실제 마우스 호버로 정확히 동작하고, 버튼
+          위로 마우스를 옮겨도 같은 그룹 안이라 hover가 끊기지 않는다.
+          코드 편집 상태에는 더 이상 "보기" 토글 버튼을 두지 않는다(요청 사항) — Esc(키맵)와
+          포커스 아웃(NoteEditor.tsx의 MermaidAutoPreview 확장 + blur 핸들러)만으로 다이어그램
+          보기로 돌아간다. 크기 비율 툴바(BlockSizeToolbar)는 원래도 보기 상태에서만 의미가
+          있어(코드 편집 중엔 보여줄 다이어그램이 없음) 그대로 유지된다 — 제거 대상이 아니다. */}
       <div className="relative">
-        {isMermaid && (
-          <div
-            contentEditable={false}
-            className="absolute right-2 top-2 z-10 flex items-center gap-1.5"
-          >
-            {effectivePreview && (
-              <div className="pointer-events-none opacity-0 transition-opacity group-hover/cb-mermaid:pointer-events-auto group-hover/cb-mermaid:opacity-100">
-                <BlockSizeToolbar
-                  value={{ align, widthMode, widthPercent }}
-                  onChange={(next) => updateAttributes(next)}
-                />
-              </div>
-            )}
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => updateAttributes({ preview: !effectivePreview })}
-              title={effectivePreview ? "코드 편집" : "다이어그램 보기"}
-              aria-label={effectivePreview ? "Mermaid 코드 편집" : "Mermaid 다이어그램 보기"}
-              className="flex items-center gap-1 rounded-md border border-line/50 px-2 py-1 text-[11px] font-medium text-txt2 shadow-soft transition-colors hover:bg-surface2/80 hover:text-txt"
-              style={{ background: "rgb(var(--surface) / 0.92)" }}
-            >
-              {effectivePreview ? <Code2 size={12} /> : <Eye size={12} />}
-              <span>{effectivePreview ? "코드" : "보기"}</span>
-            </button>
-          </div>
-        )}
-
-        {/* 다이어그램 미리보기(렌더링) — 버튼과 안 겹치도록 pt-12로 상단 여유 확보 */}
         {effectivePreview && (
           <div
-            className="group/cb-mermaid"
+            ref={mermaidPreviewRef}
+            className="group/cb-mermaid relative"
             style={{ background: "rgb(var(--surface2) / 0.25)", borderRadius: "0 0 0.75rem 0.75rem" }}
+            onMouseEnter={() => setMermaidHovered(true)}
+            onMouseLeave={() => setMermaidHovered(false)}
           >
-            <div className="flex px-4 pb-4 pt-12" style={{ justifyContent: blockJustify(align) }}>
+            {/* "</>" 버튼을 BlockSizeToolbar와 별도의 absolute 오버레이로 두면, 크기 툴바가
+                portal로 같은 우상단 좌표에 뜰 때(z-index 2000, document.body 자손) 이 로컬
+                오버레이(z-10)를 덮어버려 버튼이 가려지는 문제가 있었다 — 위치 계산이 둘로
+                나뉘어 있었던 게 근본 원인. `extra`로 같은 portal 한 줄에 합쳐서 항상 같은
+                위치·같은 stacking context에 뜨게 했다(가려질 일이 구조적으로 없어짐). */}
+            <BlockSizeToolbar
+              value={{ align, widthMode, widthPercent }}
+              onChange={(next) => updateAttributes(next)}
+              anchorRef={mermaidPreviewRef}
+              visible={mermaidHovered}
+              extra={
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => updateAttributes({ preview: false })}
+                  title="코드 편집"
+                  aria-label="코드 편집"
+                  className="grid h-6 w-7 shrink-0 place-items-center rounded font-mono text-[11px] font-semibold transition-colors hover:bg-surface2/70 hover:text-txt"
+                >
+                  <span aria-hidden="true">&lt;/&gt;</span>
+                </button>
+              }
+            />
+            {/* 더블클릭으로도 코드 편집 진입 가능(Obsidian류 임베드 UX) — 다이어그램 자체에는
+                클릭 가능한 네이티브 인터랙션이 없어 오동작 위험이 낮다. */}
+            <div
+              className="flex px-4 py-4"
+              style={{ justifyContent: blockJustify(align) }}
+              onDoubleClick={() => updateAttributes({ preview: false })}
+            >
               <div style={{ ...blockFrameStyle(widthMode, widthPercent, mermaidNaturalWidth), overflowX: "auto" }}>
                 <div style={blockContentStyle(widthMode, widthPercent, mermaidNaturalWidth)}>
                   <MermaidPreview
@@ -499,13 +514,12 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
         )}
 
         {/* 코드 내용(원본 소스) — NodeViewContent는 항상 DOM에 유지해야 ProseMirror가 내용을
-            추적할 수 있으므로 지우지 않고 display:none으로만 감춘다. Mermaid일 때만 위 버튼과
-            겹치지 않게 paddingTop을 늘린다. */}
+            추적할 수 있으므로 지우지 않고 display:none으로만 감춘다. 코드 편집 상태에 더 이상
+            버튼이 없어 paddingTop을 따로 늘릴 필요가 없다. */}
         <pre
           style={{
             margin: 0,
             padding: "1rem 1.25rem",
-            paddingTop: isMermaid ? "3rem" : "1rem",
             overflowX: "auto",
             background: "rgb(var(--surface2) / 0.4)",
             lineHeight: 1.75,

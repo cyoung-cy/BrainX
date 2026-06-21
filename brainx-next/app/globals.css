@@ -538,7 +538,10 @@ html.light .aurora b {
   outline: none;
   min-height: 300px;
   max-width: 72ch;
-  font-size: 0.9375rem;
+  /* 문서 전체 타이포그래피 설정(--note-fs-*)이 지정되지 않으면 기존 고정값으로 그대로 폴백 —
+     기본값(설정 안 한 노트)은 기존과 100% 동일한 모양을 유지한다 */
+  font-size: var(--note-fs-body, 0.9375rem);
+  font-family: var(--note-font-family, inherit);
   line-height: 1.8;
   color: rgb(var(--txt2));
 }
@@ -553,7 +556,9 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h1 {
-  font-size: 1.8em;
+  /* --note-fs-h1이 설정되면 절대 px값(예: "38px")으로 덮어쓰고, 아니면 본문(em 기준) 대비
+     기존 비율(1.8배)을 그대로 유지 — 본문 font-size가 바뀌면 em 단위라 자동으로 같이 커진다 */
+  font-size: var(--note-fs-h1, 1.8em);
   font-weight: 700;
   margin-top: 1.4em;
   margin-bottom: 0.2em;
@@ -562,7 +567,7 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h2 {
-  font-size: 1.35em;
+  font-size: var(--note-fs-h2, 1.35em);
   font-weight: 600;
   margin-top: 1.2em;
   margin-bottom: 0.15em;
@@ -570,7 +575,7 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h3 {
-  font-size: 1.1em;
+  font-size: var(--note-fs-h3, 1.1em);
   font-weight: 600;
   margin-top: 1em;
   color: rgb(var(--txt));
@@ -806,7 +811,11 @@ html.light .tiptap-note-content .ProseMirror table.note-table :is(td, th) {
 .split-pane-editor.tiptap-note-content .ProseMirror {
   min-height: 0;
   max-width: none;
-  font-size: 0.8125rem;  /* 13px — ReadMarkdown과 동일 */
+  /* 이 셀렉터가 .tiptap-note-content .ProseMirror보다 specificity가 높아 그냥 font-size를
+     박아두면 문서 기본 타이포그래피(--note-fs-body)가 적용돼도 항상 13px로 덮어써진다 —
+     여기도 같은 var()로 맞춰 폴백(0.8125rem, 기존과 동일)은 유지하면서 설정값이 있으면
+     반영되게 한다 */
+  font-size: var(--note-fs-body, 0.8125rem);  /* 13px — ReadMarkdown과 동일 */
   line-height: 1.85;
 }
 

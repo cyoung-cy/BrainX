@@ -68,6 +68,12 @@ function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
     if (img && img.complete && img.naturalWidth > 0) setNaturalWidthPx(img.naturalWidth);
   }, [src]);
 
+  // 크기 툴바는 이제 document.body에 portal로 뜬다(Split View 좁은 패널에서 글자가 세로로
+  // 깨지거나 잘리는 문제 방지, BlockControls.tsx 참고) — 그래서 CSS group-hover 대신 이
+  // wrapper의 실제 hover를 JS 상태로 추적해 anchor로 넘긴다.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+
   const isOriginal = widthMode === "original";
   const frameStyle = isOriginal
     ? { width: "100%", maxWidth: "100%" }
@@ -77,51 +83,53 @@ function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
     : blockContentStyle(widthMode, widthPercent, naturalWidthPx);
 
   return (
-    <NodeViewWrapper className="split-image-block group/img-block relative my-3" data-drag-handle>
+    <NodeViewWrapper className="split-image-block my-3" data-drag-handle>
+      {/* NodeViewWrapper는 forwardRef가 아니라 ref를 직접 못 받는다 — hover 감지/위치 측정용
+          ref는 이 안쪽 div에 둔다. */}
       <div
-        contentEditable={false}
-        className={cx(
-          "absolute right-2 top-2 z-10 pointer-events-none opacity-0 transition-opacity",
-          "group-hover/img-block:pointer-events-auto group-hover/img-block:opacity-100",
-          selected && "pointer-events-auto opacity-100"
-        )}
+        ref={wrapperRef}
+        className="relative"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         <BlockSizeToolbar
           value={{ align, widthMode, widthPercent }}
           onChange={(next) => updateAttributes(next)}
+          anchorRef={wrapperRef}
+          visible={hovered || selected}
         />
-      </div>
-      <div className="flex" style={{ justifyContent: blockJustify(align) }}>
-        <div
-          style={{ ...frameStyle, overflowX: "auto" }}
-          className={cx(
-            "rounded-lg",
-            selected && "outline outline-2 outline-offset-2 outline-primary/60"
-          )}
-        >
-          <div style={contentStyle}>
-            {broken || !src ? (
-              <div className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-line/60 text-txt3">
-                <ImageOff size={18} />
-                <span className="text-[11px]">이미지를 불러올 수 없습니다</span>
-              </div>
-            ) : (
-              <img
-                ref={imgRef}
-                src={src}
-                alt={alt}
-                onLoad={(e) => setNaturalWidthPx(e.currentTarget.naturalWidth)}
-                onError={() => setBroken(true)}
-                draggable={false}
-                style={{
-                  display: "block",
-                  width: isOriginal ? "auto" : "100%",
-                  maxWidth: isOriginal ? "none" : "100%",
-                  height: "auto",
-                  borderRadius: "0.5rem",
-                }}
-              />
+        <div className="flex" style={{ justifyContent: blockJustify(align) }}>
+          <div
+            style={{ ...frameStyle, overflowX: "auto" }}
+            className={cx(
+              "rounded-lg",
+              selected && "outline outline-2 outline-offset-2 outline-primary/60"
             )}
+          >
+            <div style={contentStyle}>
+              {broken || !src ? (
+                <div className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-line/60 text-txt3">
+                  <ImageOff size={18} />
+                  <span className="text-[11px]">이미지를 불러올 수 없습니다</span>
+                </div>
+              ) : (
+                <img
+                  ref={imgRef}
+                  src={src}
+                  alt={alt}
+                  onLoad={(e) => setNaturalWidthPx(e.currentTarget.naturalWidth)}
+                  onError={() => setBroken(true)}
+                  draggable={false}
+                  style={{
+                    display: "block",
+                    width: isOriginal ? "auto" : "100%",
+                    maxWidth: isOriginal ? "none" : "100%",
+                    height: "auto",
+                    borderRadius: "0.5rem",
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>

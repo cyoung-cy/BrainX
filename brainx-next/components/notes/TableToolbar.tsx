@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import {
@@ -11,11 +11,15 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  PaintBucket,
   Plus,
+  Rows3,
+  Columns3,
   Trash2,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MAX_BLOCK_PERCENT, MIN_BLOCK_PERCENT, type BlockAlign, type BlockWidthMode } from "./BlockControls";
+import { QuickSwatchRow, TEXT_COLOR_QUICK } from "./ColorPalette";
 import {
   activeCellAttrs,
   activeTableDisplayAttrs,
@@ -70,6 +74,13 @@ export function TableToolbar({ editor }: { editor: Editor }) {
   const [anchor, setAnchor] = useState<{ left: number; right: number; top: number; bottom: number } | null>(null);
   const [customDraft, setCustomDraft] = useState("100");
   const toolbarRef = useRef<HTMLDivElement>(null);
+  // 버튼이 계속 늘어나(서식+색상+행/열+정렬+셀배경+삭제) 더 이상 고정폭(기존 470px 가정)이
+  // 아니므로, 실제 렌더된 폭(overflow로 잘리기 전 scrollWidth)을 측정해 좌표 계산에 쓴다 —
+  // 안 그러면 폭을 과소 추정해서 안전 영역(safeRight) 밖으로 오른쪽 끝이 삐져나간다.
+  const [measuredWidth, setMeasuredWidth] = useState(470);
+  useLayoutEffect(() => {
+    if (toolbarRef.current) setMeasuredWidth(toolbarRef.current.scrollWidth);
+  });
 
   const updateAnchor = useCallback(() => {
     if (!editor.isEditable || !editor.isActive("table")) {
@@ -128,9 +139,22 @@ export function TableToolbar({ editor }: { editor: Editor }) {
 
   if (!anchor) return null;
 
+  // 우측 컨텍스트 패널(RightSidebar) 영역까지 툴바가 넘어가 오른쪽 끝 버튼들이 가려지는
+  // 문제가 있었다 — 기존엔 window.innerWidth로만 클램프해서, 컨텍스트 패널이 차지하는
+  // 폭을 고려하지 않았다. editor.view.dom(.ProseMirror)은 노트 작성 영역 자체의 DOM이라
+  // 그 bounding rect는 이미 컨텍스트 패널/사이드바를 제외한 실제 안전 영역과 일치한다.
+  const editorRect = editor.view.dom.getBoundingClientRect();
+  const safeLeft = editorRect.left;
+  const safeRight = editorRect.right;
+  const safeWidth = Math.max(80, safeRight - safeLeft - 8);
+  // 실제(잘리기 전) 폭과 안전 영역 중 더 좁은 쪽을 기준으로 왼쪽 좌표를 잡아야, "왼쪽 좌표 +
+  // 렌더된 폭"이 항상 safeRight 이하로 맞아떨어진다(maxWidth와 같은 기준을 써야 모순이 없다).
+  const effectiveWidth = Math.min(measuredWidth, safeWidth);
+
   const run = (fn: () => boolean) => () => { fn(); updateAnchor(); };
   const tableAttrs = activeTableDisplayAttrs(editor);
   const cellAttrs = activeCellAttrs(editor);
+  const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
   const commitCustomWidth = () => {
     const next = Number(customDraft);
     if (!Number.isFinite(next) || customDraft.trim() === "") {
@@ -148,10 +172,10 @@ export function TableToolbar({ editor }: { editor: Editor }) {
         ref={toolbarRef}
         style={{
           position: "fixed",
-          left: Math.max(4, Math.min(anchor.right - 470, window.innerWidth - 478)),
+          left: Math.max(safeLeft + 4, Math.min(anchor.right - effectiveWidth, safeRight - effectiveWidth)),
           top: Math.max(anchor.top - 38, 4),
           zIndex: 1900,
-          maxWidth: "calc(100vw - 8px)",
+          maxWidth: safeWidth,
           overflowX: "auto",
         }}
       >
@@ -159,6 +183,37 @@ export function TableToolbar({ editor }: { editor: Editor }) {
           className="flex w-max items-center gap-0.5 rounded-lg border border-line/60 px-1 py-1"
           style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 20px -4px rgba(2,6,23,0.35)" }}
         >
+          {/* 표 안 텍스트 서식 — 예전엔 선택한 텍스트 위에 별도의 표 전용 Bubble Toolbar가 떴는데,
+              이 항상-떠있는 TableToolbar와 동시에 보여서 두 툴바가 겹치는 문제가 있었다. 그
+              Bubble Toolbar를 없애고 서식 버튼을 여기로 합쳐 표 안에서는 툴바가 하나만
+              뜨도록 통일했다(CustomBubbleMenu의 분기 제거, NoteEditor.tsx 참고). */}
+          <ToolbarBtn title="굵게" onClick={run(() => editor.chain().focus().toggleBold().run())}>
+            <span className={cx("text-[13px] font-bold leading-none", editor.isActive("bold") && "text-primary")}>B</span>
+          </ToolbarBtn>
+          <ToolbarBtn title="기울임" onClick={run(() => editor.chain().focus().toggleItalic().run())}>
+            <span className={cx("text-[13px] italic leading-none", editor.isActive("italic") && "text-primary")}>I</span>
+          </ToolbarBtn>
+          <ToolbarBtn title="취소선" onClick={run(() => editor.chain().focus().toggleStrike().run())}>
+            <span className={cx("text-[13px] leading-none line-through", editor.isActive("strike") && "text-primary")}>S</span>
+          </ToolbarBtn>
+
+          {/* 텍스트 색상 — 아래 "셀 배경색"과 혼동되지 않도록 "A" 글자색 표시로 구분한다(요구사항). */}
+          <span
+            className="grid h-[26px] w-[14px] shrink-0 place-items-center text-[12px] font-bold leading-none"
+            style={{ color: currentTextColor ?? undefined }}
+            aria-hidden
+          >
+            A
+          </span>
+          <QuickSwatchRow
+            swatches={TEXT_COLOR_QUICK}
+            currentValue={currentTextColor}
+            shape="circle"
+            onSelect={(color) => editor.chain().focus().setColor(color).run()}
+          />
+
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
           <select
             aria-label="표 크기"
             title="표 크기"
@@ -200,8 +255,11 @@ export function TableToolbar({ editor }: { editor: Editor }) {
           <ToolbarBtn title="아래에 행 추가" onClick={run(() => editor.chain().focus().addRowAfter().run())}>
             <ArrowDownToLine size={13} />
           </ToolbarBtn>
+          {/* 행삭제/열삭제/표삭제가 전부 같은 Trash2라 구분이 안 된다는 피드백 — 행/열은 구조를
+              나타내는 기존 아이콘(Rows3/Columns3)을 danger 색으로 써서 서로 구분하고, "표 전체
+              삭제"만 진짜 Trash2로 남겨 의미 차이를 아이콘으로도 드러낸다. */}
           <ToolbarBtn danger title="행 삭제" onClick={run(() => editor.chain().focus().deleteRow().run())}>
-            <Trash2 size={13} />
+            <Rows3 size={13} />
           </ToolbarBtn>
 
           <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
@@ -213,7 +271,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
             <ArrowRightToLine size={13} />
           </ToolbarBtn>
           <ToolbarBtn danger title="열 삭제" onClick={run(() => editor.chain().focus().deleteColumn().run())}>
-            <Trash2 size={13} />
+            <Columns3 size={13} />
           </ToolbarBtn>
 
           <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
@@ -233,7 +291,9 @@ export function TableToolbar({ editor }: { editor: Editor }) {
 
           <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
 
-          {/* 셀 배경색 — 표 전체 색(tableColor)과 별개로 선택한 셀(들)에만 적용 */}
+          {/* 셀 배경색 — 표 전체 색(tableColor)과 별개로 선택한 셀(들)에만 적용. 채우기 아이콘으로
+              위 "A" 텍스트 색상과 구분한다(요구사항). */}
+          <PaintBucket size={13} className="shrink-0 text-txt3" aria-hidden />
           {CELL_COLOR_SWATCHES.map((s) => (
             <button
               key={s.value}

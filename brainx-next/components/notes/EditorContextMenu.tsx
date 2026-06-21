@@ -194,10 +194,11 @@ export default function EditorContextMenu({
           <div className="my-1 border-t border-line/30" />
           <MenuItem icon={<Rows3 size={13} />} label="행 추가" onClick={run(() => editor.chain().focus().addRowAfter().run())} />
           <MenuItem icon={<Columns3 size={13} />} label="열 추가" onClick={run(() => editor.chain().focus().addColumnAfter().run())} />
-          {/* Rows3/Columns3는 구조(행·열) 자체를 나타내는 아이콘이라 "삭제" 의도가 잘 드러나지
-              않았다(추가 버튼처럼 보인다는 피드백) — 삭제 의미가 명확한 Trash2 + danger로 변경. */}
-          <MenuItem icon={<Trash2 size={13} />} label="현재 행 삭제" danger onClick={run(() => editor.chain().focus().deleteRow().run())} />
-          <MenuItem icon={<Trash2 size={13} />} label="현재 열 삭제" danger onClick={run(() => editor.chain().focus().deleteColumn().run())} />
+          {/* 행삭제/열삭제/표삭제가 전부 같은 아이콘이면 구분이 안 된다는 피드백 — 행/열은 구조를
+              나타내는 기존 Rows3/Columns3을 danger 색으로(TableToolbar.tsx와 동일한 규칙),
+              "표 전체 삭제"만 Trash2로 남겨 의미 차이를 아이콘으로도 드러낸다. */}
+          <MenuItem icon={<Rows3 size={13} />} label="현재 행 삭제" danger onClick={run(() => editor.chain().focus().deleteRow().run())} />
+          <MenuItem icon={<Columns3 size={13} />} label="현재 열 삭제" danger onClick={run(() => editor.chain().focus().deleteColumn().run())} />
           <MenuItem icon={<Trash2 size={13} />} label="표 삭제" danger onClick={run(() => editor.chain().focus().deleteTable().run())} />
           <div className="my-1 border-t border-line/30" />
           <MenuItem icon={<Merge size={13} />} label="셀 병합" disabled={!canMerge} onClick={run(() => editor.chain().focus().mergeCells().run())} />

@@ -26,6 +26,7 @@ interface Props {
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
   onContentChange: (noteId: string, newContentHtml: string) => void;
+  onTypographyChange: (noteId: string, next: MockNote["typography"]) => void;
   onModeChange: (tabId: string, mode: EditMode) => void;
   onTabActivate: (paneId: string, tabId: string) => void;
   onTabClose: (paneId: string, tabId: string) => void;
@@ -60,6 +61,7 @@ export default function PaneTreeRenderer({
   onDrop,
   onTitleChange,
   onContentChange,
+  onTypographyChange,
   onModeChange,
   onTabActivate,
   onTabClose,
@@ -105,6 +107,7 @@ export default function PaneTreeRenderer({
         onDrop={(zone, noteId) => onDrop(node.id, zone, noteId)}
         onTitleChange={onTitleChange}
         onContentChange={onContentChange}
+        onTypographyChange={onTypographyChange}
         onTabActivate={(tabId) => onTabActivate(node.id, tabId)}
         onTabClose={(tabId) => onTabClose(node.id, tabId)}
         onNewTab={() => onNewTab(node.id)}
@@ -151,6 +154,7 @@ export default function PaneTreeRenderer({
               onDrop={onDrop}
               onTitleChange={onTitleChange}
               onContentChange={onContentChange}
+              onTypographyChange={onTypographyChange}
               onModeChange={onModeChange}
               onTabActivate={onTabActivate}
               onTabClose={onTabClose}
