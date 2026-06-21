@@ -31,6 +31,8 @@ Thumbs.db
 brainX_back/.env
 brainX_back/env/*.env
 !brainX_back/env/*.env.example
+brainX_back/**/*.env
+!brainX_back/**/*.env.example
 application-local.yml
 **/application-local.yml
 # Build outputs
