@@ -1,10 +1,125 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Search, Star, ChevronDown, ChevronRight, FileText, Folder, Check, Clock, Plus } from "lucide-react";
+import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus } from "lucide-react";
+import { CollapseChevron } from "./CollapseChevron";
+import { HoverInfoCard } from "./HoverInfoCard";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, SortOption } from "@/lib/notes/noteTypes";
+import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
 import FolderTree from "./FolderTree";
+
+/** 즐겨찾기 섹션의 노트 행 — FolderTree.tsx의 NoteRow와 별개 렌더링 경로라 hover 카드도
+    똑같이 따로 달아준다(요구사항: 탐색기 어디서든 hover 정보가 보여야 함). */
+function FavNoteRow({
+  note,
+  isActive,
+  onNoteClick,
+  onDragStart,
+  onDragEnd,
+  onToggleFavorite,
+}: {
+  note: MockNote;
+  isActive: boolean;
+  onNoteClick: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onToggleFavorite: (id: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={rowRef}
+      draggable
+      onClick={() => onNoteClick(note.id)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", note.id);
+        e.dataTransfer.effectAllowed = "copy";
+        onDragStart(note.id);
+      }}
+      onDragEnd={onDragEnd}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cx(
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+      )}
+      style={{ background: isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
+    >
+      <FileText size={11} className="shrink-0" style={{ color: "#f59e0b" }} />
+      <span className="flex-1 truncate">{note.title}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite(note.id); }}
+        className="shrink-0 p-0.5 opacity-100"
+      >
+        <Star size={10} className="fill-yellow-400 text-yellow-400" />
+      </button>
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered}>
+        <p className="mb-1 truncate font-semibold text-txt">{note.title}</p>
+        <p className="text-txt3">마지막 수정</p>
+        <p className="mb-1.5 text-txt2">{formatRelativeTime(note.updatedAt)}</p>
+        <p className="text-txt3">생성일</p>
+        <p className="text-txt2">{formatAbsoluteDateTime(note.createdAt)}</p>
+      </HoverInfoCard>
+    </div>
+  );
+}
+
+/** 즐겨찾기 섹션의 폴더 행. */
+function FavFolderRow({
+  folder,
+  childFolderCount,
+  childNoteCount,
+  isSelected,
+  onSelectFolder,
+  onToggleFavorite,
+}: {
+  folder: MockFolder;
+  childFolderCount: number;
+  childNoteCount: number;
+  isSelected: boolean;
+  onSelectFolder: (id: string) => void;
+  onToggleFavorite: (id: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={rowRef}
+      onClick={() => onSelectFolder(folder.id)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={cx(
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+        isSelected ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+      )}
+      style={{ background: isSelected ? "rgb(var(--primary) / 0.12)" : undefined }}
+    >
+      <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
+      <span className="flex-1 truncate">{folder.name}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite(folder.id); }}
+        className="shrink-0 p-0.5 opacity-100"
+        title="즐겨찾기 해제"
+      >
+        <Star size={10} className="fill-yellow-400 text-yellow-400" />
+      </button>
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered}>
+        <p className="mb-1.5 flex items-center gap-1.5 truncate font-semibold text-txt">
+          <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
+          {folder.name}
+        </p>
+        <p className="text-txt2">{childFolderCount}개의 폴더</p>
+        <p className="text-txt2">{childNoteCount}개의 노트</p>
+      </HoverInfoCard>
+    </div>
+  );
+}
 
 /* ── 정렬 옵션 ─────────────────────────────────────── */
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -291,10 +406,7 @@ export default function NotesExplorer({
                   onClick={() => setFavExpanded((v) => !v)}
                   className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-surface2/40"
                 >
-                  {favExpanded
-                    ? <ChevronDown size={11} className="shrink-0 text-txt3" />
-                    : <ChevronRight size={11} className="shrink-0 text-txt3" />
-                  }
+                  <CollapseChevron expanded={favExpanded} size={11} />
                   <Star size={11} className="shrink-0 fill-yellow-400 text-yellow-400" />
                   <span className="flex-1 text-[11px] font-semibold text-txt">즐겨찾기</span>
                   <span className="text-[10px] text-txt3">{favNotes.length + favFolders.length}</span>
@@ -303,52 +415,26 @@ export default function NotesExplorer({
                 {favExpanded && (
                   <div className="mt-0.5 pl-3">
                     {favFolders.map((folder) => (
-                      <div
+                      <FavFolderRow
                         key={folder.id}
-                        onClick={() => onSelectFolder(folder.id)}
-                        className={cx(
-                          "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
-                          selectedFolderId === folder.id ? "font-medium text-txt" : "text-txt2 hover:text-txt"
-                        )}
-                        style={{ background: selectedFolderId === folder.id ? "rgb(var(--primary) / 0.12)" : undefined }}
-                      >
-                        <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
-                        <span className="flex-1 truncate">{folder.name}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onToggleFolderFavorite(folder.id); }}
-                          className="shrink-0 p-0.5 opacity-100"
-                          title="즐겨찾기 해제"
-                        >
-                          <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                        </button>
-                      </div>
+                        folder={folder}
+                        childFolderCount={folders.filter((f) => f.parentFolderId === folder.id).length}
+                        childNoteCount={notes.filter((n) => n.folderId === folder.id).length}
+                        isSelected={selectedFolderId === folder.id}
+                        onSelectFolder={onSelectFolder}
+                        onToggleFavorite={onToggleFolderFavorite}
+                      />
                     ))}
                     {favNotes.map((note) => (
-                      <div
+                      <FavNoteRow
                         key={note.id}
-                        draggable
-                        onClick={() => onNoteClick(note.id)}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", note.id);
-                          e.dataTransfer.effectAllowed = "copy";
-                          onDragStart(note.id);
-                        }}
+                        note={note}
+                        isActive={note.id === activeNoteId}
+                        onNoteClick={onNoteClick}
+                        onDragStart={onDragStart}
                         onDragEnd={onDragEnd}
-                        className={cx(
-                          "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
-                          note.id === activeNoteId ? "font-medium text-txt" : "text-txt2 hover:text-txt"
-                        )}
-                        style={{ background: note.id === activeNoteId ? "rgb(var(--primary) / 0.12)" : undefined }}
-                      >
-                        <FileText size={11} className="shrink-0" style={{ color: "#f59e0b" }} />
-                        <span className="flex-1 truncate">{note.title}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); toggleFavorite(note.id); }}
-                          className="shrink-0 p-0.5 opacity-100"
-                        >
-                          <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                        </button>
-                      </div>
+                        onToggleFavorite={toggleFavorite}
+                      />
                     ))}
                   </div>
                 )}

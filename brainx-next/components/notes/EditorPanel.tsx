@@ -8,6 +8,7 @@ import TabBar from "./TabBar";
 import NoteEditor, { type EditMode, type AiActionType, type NoteEditorHandle } from "./NoteEditor";
 import EmptyNoteStartPage from "./EmptyNoteStartPage";
 import QuickSwitcher from "./QuickSwitcher";
+import { TypographyPopover } from "./TypographyPopover";
 
 interface Props {
   node: PaneLeaf;
@@ -25,6 +26,7 @@ interface Props {
   onDrop: (zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
   onContentChange: (noteId: string, newContentHtml: string) => void;
+  onTypographyChange: (noteId: string, next: MockNote["typography"]) => void;
   onTabActivate: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
@@ -63,6 +65,7 @@ export default function EditorPanel({
   onDrop,
   onTitleChange,
   onContentChange,
+  onTypographyChange,
   onTabActivate,
   onTabClose,
   onNewTab,
@@ -223,46 +226,56 @@ export default function EditorPanel({
               if (isEdit && e.target === e.currentTarget) editorRef.current?.focusEnd();
             }}
           >
-            {/* 노트 제목: 편집 모드에서는 클릭 → 인라인 input */}
-            {isEdit && isEditingTitle ? (
-              <input
-                ref={titleInputRef}
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={() => commitTitle()}
-                onKeyDown={(e) => {
-                  // IME(한글 등) 조합 중 Enter는 조합 확정용이므로 제목 커밋을 건너뜀
-                  if (e.nativeEvent.isComposing || e.key === "Process") return;
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    commitTitle(true);
-                  }
-                  if (e.key === "Escape") { cancelTitle(); }
-                }}
-                onClick={(e) => { e.stopPropagation(); onActivate(); }}
-                className="mb-1.5 w-full bg-transparent text-[22px] font-bold leading-tight tracking-tight text-txt outline-none"
-                placeholder="제목 입력..."
-              />
-            ) : (
-              <h1
-                className={cx(
-                  "mb-1.5 text-[22px] font-bold leading-tight tracking-tight text-txt",
-                  isEdit && "cursor-text hover:text-primary/90 transition-colors"
-                )}
-                onClick={(e) => {
-                  // 읽기 모드에서는 stopPropagation을 하지 않으므로 클릭이 그대로 버블링되어
-                  // 바깥 wrapper의 onClick={onActivate}가 자연스럽게 패널을 활성화한다.
-                  if (!isEdit) return;
-                  e.stopPropagation();
-                  onActivate();
-                  setTitleDraft(note.title);
-                  setIsEditingTitle(true);
-                }}
-                title={isEdit ? "클릭하여 제목 편집" : undefined}
-              >
-                {note.title}
-              </h1>
-            )}
+            {/* 노트 제목: 편집 모드에서는 클릭 → 인라인 input. 우측의 "서식"은 이 노트 전체에
+                적용되는 문서 기본 타이포그래피(글꼴 크기 배율/개별 설정/글꼴) 패널 — 선택한
+                텍스트에만 적용되는 BubbleToolbar의 Aa(FontPopover)와는 별개다 */}
+            <div className="flex items-start justify-between gap-2">
+              {isEdit && isEditingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => commitTitle()}
+                  onKeyDown={(e) => {
+                    // IME(한글 등) 조합 중 Enter는 조합 확정용이므로 제목 커밋을 건너뜀
+                    if (e.nativeEvent.isComposing || e.key === "Process") return;
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitTitle(true);
+                    }
+                    if (e.key === "Escape") { cancelTitle(); }
+                  }}
+                  onClick={(e) => { e.stopPropagation(); onActivate(); }}
+                  className="mb-1.5 w-full bg-transparent text-[22px] font-bold leading-tight tracking-tight text-txt outline-none"
+                  placeholder="제목 입력..."
+                />
+              ) : (
+                <h1
+                  className={cx(
+                    "mb-1.5 min-w-0 flex-1 text-[22px] font-bold leading-tight tracking-tight text-txt",
+                    isEdit && "cursor-text hover:text-primary/90 transition-colors"
+                  )}
+                  onClick={(e) => {
+                    // 읽기 모드에서는 stopPropagation을 하지 않으므로 클릭이 그대로 버블링되어
+                    // 바깥 wrapper의 onClick={onActivate}가 자연스럽게 패널을 활성화한다.
+                    if (!isEdit) return;
+                    e.stopPropagation();
+                    onActivate();
+                    setTitleDraft(note.title);
+                    setIsEditingTitle(true);
+                  }}
+                  title={isEdit ? "클릭하여 제목 편집" : undefined}
+                >
+                  {note.title}
+                </h1>
+              )}
+              <div className="mt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <TypographyPopover
+                  typography={note.typography}
+                  onChange={(next) => onTypographyChange(note.id, next)}
+                />
+              </div>
+            </div>
 
             {note.tags.length > 0 && (
               <div className="mb-6 flex flex-wrap gap-1.5">
