@@ -82,7 +82,7 @@ BrainX/
 | `/` | Landing | BrainX 소개 및 진입 |
 | `/login`, `/signup`, `/onboarding` | Auth | 이메일 인증, 로그인, OAuth, 온보딩 UI |
 | `/home` | Home | 지식 통계, 즐겨찾기, 최근 노트, AI 추천 연결 |
-| `/notes/[id]` | Note Editor | 마크다운 노트 작성, `[[wiki link]]`, 목차, 백링크, 업로드/내보내기 mock |
+| `/notes`, `/notes/[id]` | Note Editor | TipTap 기반 리치 에디터. 표/Mermaid/이미지/위키링크/문서 타이포그래피, 폴더 드래그앤드롭을 지원. 본문 저장 포맷(HTML/JSON/Markdown)은 아직 설계 결정 대상 |
 | `/graph` | Graph | 노트 링크 기반 인터랙티브 지식 그래프, 클러스터/시간 필터 |
 | `/chat` | AI Chat | 노트 근거 기반 RAG 채팅 UX, 모델 전환 UI, source note 표시 |
 | `/import` | Import | 파일/외부 서비스 가져오기 UX |
@@ -90,7 +90,7 @@ BrainX/
 | `/settings` | Settings | 환경설정 UX |
 | `/support` | Support | 문의 생성/조회 API 연동 준비 |
 | `/admin` | Admin | 사용자/결제/토큰/문의 관리 화면 UX |
-| `/editor-lab` | Editor Lab | TipTap, BlockNote 등 에디터 비교 실험 |
+| `/editor-lab` | Editor Lab(테스트 전용) | 노트 기능 실험실, 실제 서비스 페이지 아님 |
 
 ### Frontend State Model
 

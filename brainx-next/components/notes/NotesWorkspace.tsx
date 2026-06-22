@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { Group, Panel, useGroupRef } from "react-resizable-panels";
+import { WikiLinkContext, resolveWikiLinkTitle, type WikiLinkContextValue } from "./WikiLinkContext";
 import { RotateCcw, ChevronLeft } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, PaneNode, PaneTabsState, Tab, NotesWorkspaceSession, DragPayload } from "@/lib/notes/noteTypes";
@@ -24,6 +26,8 @@ import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFold
 export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+const CONTEXT_PANEL_SIZE_KEY = "brainx_notes_context_panel_size_v1";
 
 function makeBlankNote(folderId?: string): MockNote {
   return {
@@ -114,6 +118,68 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const [paneTabs, setPaneTabs] = useState<Record<string, PaneTabsState>>(() => init.paneTabs);
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
   const [contextOpen, setContextOpen] = useState(true);
+  // 컨텍스트 패널 폭 — Split View(PaneTreeRenderer.tsx)와 동일한 react-resizable-panels
+  // Group/Panel/Separator를 재사용해 드래그로 조절 가능하게 한다. 마지막 폭은 localStorage에
+  // 저장해 새로고침 후에도 유지(요구사항).
+  //
+  // 첫 드래그만 마우스 이동량의 일부만 반영되고(실측: 100px 드래그 → 10px만 적용) 두 번째
+  // 드래그부터 정상화되는 버그가 있었다(Playwright로 재현). Split View 쪽 Group(같은
+  // 라이브러리, PaneTreeRenderer.tsx)은 동일 문제가 없었는데 — 그쪽은 사용자가 직접 분할할
+  // 때(이미 페이지가 안정된 뒤) 마운트되고, 이 컨텍스트 패널 Group은 페이지 로드 즉시
+  // 마운트된다는 차이뿐이었다.
+  //
+  // 원인을 좁혀보려고 시도한 것들(전부 효과 없었음, Playwright로 직접 검증):
+  //   - groupRef.setLayout()으로 마운트 직후 레이아웃 재적용
+  //   - window.dispatchEvent(new Event("resize"))(진짜/합성 둘 다)
+  //   - 패널 DOM에 1px 강제 리사이즈 후 원복
+  //   - separator에 합성(untrusted) PointerEvent로 "워밍업 제스처" 흘려보내기
+  // 유일하게 효과가 있었던 건 Playwright의 page.mouse.down/move/up(브라우저가 isTrusted:true로
+  // 인식하는 진짜 제스처)으로 한 번 드래그해 보는 것뿐이었다 — 즉 라이브러리의 내부 드래그
+  // 델타 계산이 "신뢰된(isTrusted) 포인터 제스처"가 한 번 있어야 기준점을 잡는 것으로 보이고,
+  // 스크립트로 dispatch한 합성 이벤트는 isTrusted:false라 그 기준점 보정이 일어나지 않는다.
+  // 페이지 코드에서 신뢰된 이벤트를 만들어낼 방법은 없으므로(보안상 당연히 막혀 있음), 이
+  // Separator만 라이브러리의 내장 드래그 대신 직접 만든 mousedown/mousemove 핸들러로 폭을
+  // 계산해 `groupRef.setLayout()`을 호출하는 방식으로 바꿔 라이브러리의 그 내부 계산 경로를
+  // 아예 타지 않게 했다 — 신뢰된 이벤트 여부와 무관하게 항상 실제 마우스 이동량만큼 반영된다.
+  const [contextPanelSize, setContextPanelSize] = useState<number>(() => {
+    if (typeof window === "undefined") return 22;
+    const saved = Number(window.localStorage.getItem(CONTEXT_PANEL_SIZE_KEY));
+    return Number.isFinite(saved) && saved >= 16 && saved <= 42 ? saved : 22;
+  });
+  const contextGroupElRef = useRef<HTMLDivElement>(null);
+  const contextGroupRef = useGroupRef();
+
+  const handleContextSeparatorMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const groupEl = contextGroupElRef.current;
+    if (!groupEl) return;
+    const startX = e.clientX;
+    const groupWidth = groupEl.getBoundingClientRect().width;
+    const startLayout = contextGroupRef.current?.getLayout();
+    const startContext = startLayout?.["notes-context-panel"] ?? contextPanelSize;
+    let latest = startContext;
+
+    const onMove = (ev: MouseEvent) => {
+      const deltaPercent = ((ev.clientX - startX) / groupWidth) * 100;
+      latest = Math.min(42, Math.max(16, startContext - deltaPercent));
+      contextGroupRef.current?.setLayout({
+        "notes-main-panel": 100 - latest,
+        "notes-context-panel": latest,
+      });
+      setContextPanelSize(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try {
+        window.localStorage.setItem(CONTEXT_PANEL_SIZE_KEY, String(latest));
+      } catch {
+        // localStorage 접근 불가(프라이빗 모드 등) — 이번 세션 폭만 유지
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [contextPanelSize, contextGroupRef]);
   // MOCK_NOTES를 가변 상태로 복사 → 제목 수정/새 노트 생성 시 사이드바/헤더/컨텍스트 패널 즉시 반영
   const [notes, setNotes] = useState<MockNote[]>(() => [...MOCK_NOTES]);
   const [folders, setFolders] = useState<MockFolder[]>(() => [...MOCK_FOLDERS]);
@@ -328,6 +394,15 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     );
   }, []);
 
+  /* 노트 전체 타이포그래피(기본 글꼴 크기 배율/레벨별 개별 크기/문서 기본 글꼴) 변경 — 선택
+     텍스트 전용 BubbleToolbar 설정과 별개로 노트 단위로 저장한다. undefined면 커스터마이징
+     해제(기본값으로 되돌리기) */
+  const handleTypographyChange = useCallback((noteId: string, next: MockNote["typography"]) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === noteId ? { ...n, typography: next, updatedAt: Date.now() } : n))
+    );
+  }, []);
+
   /* D&D drop → 항상 분할, 새 패널에 탭 1개로 초기화 */
   const handleDrop = useCallback((paneId: string, zone: DropZone, noteId: string) => {
     const newLeafId = uid();
@@ -377,9 +452,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     });
   }, [paneTabs, closePaneOrRevertToStart]);
 
-  /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성), 지정한 패널의 새 탭으로 연다 */
-  const createNote = useCallback((folderId: string | undefined, paneId: string) => {
+  /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성), 지정한 패널의 새 탭으로 연다.
+     title을 주면(위키링크에서 생성하는 경우) 그 제목으로 바로 생성한다. */
+  const createNote = useCallback((folderId: string | undefined, paneId: string, title?: string) => {
     const newNote = makeBlankNote(folderId);
+    if (title) newNote.title = title;
     const newTabId = uid();
     setNotes((prev) => [...prev, newNote]);
     setPaneTabs((prev) => {
@@ -710,7 +787,63 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [state.activeId, paneTabs, requestNewNote, requestQuickSwitcher, handleManualSave]);
 
+  // 위키링크([[노트]]) 기능에 필요한 컨텍스트 — 노트 목록 조회/존재 확인/이동/생성을 에디터
+  // 깊숙이(NoteEditor → CodeBlockView 같은 중첩 단계 없이도) 어디서든 쓸 수 있게 한다.
+  const wikiLinkNoteRefs = useMemo(() => notes.map((n) => ({ id: n.id, title: n.title })), [notes]);
+  const wikiLinkValue = useMemo<WikiLinkContextValue>(
+    () => ({
+      notes: wikiLinkNoteRefs,
+      resolveTitle: (title) => resolveWikiLinkTitle(wikiLinkNoteRefs, title),
+      onNavigate: (title) => {
+        const found = resolveWikiLinkTitle(wikiLinkNoteRefs, title);
+        if (found) handleNoteClick(found.id);
+      },
+      onCreate: (title) => {
+        createNote(undefined, state.activeId, title);
+      },
+    }),
+    [wikiLinkNoteRefs, handleNoteClick, createNote, state.activeId]
+  );
+
+  const paneTree = (
+    <PaneTreeRenderer
+      node={state.root}
+      notes={notes}
+      activeId={state.activeId}
+      dragPayload={dragPayload}
+      tabMode={tabMode}
+      paneTabs={paneTabs}
+      quickSwitcher={quickSwitcher}
+      saveSignal={saveSignal}
+      onActivate={handleActivate}
+      onDrop={handleDrop}
+      onTitleChange={handleTitleChange}
+      onContentChange={handleContentChange}
+      onTypographyChange={handleTypographyChange}
+      onModeChange={handleModeChange}
+      onTabActivate={handleTabActivate}
+      onTabClose={handleTabClose}
+      onNewTab={handleNewTab}
+      onAiAction={handleAiAction}
+      onCreateNoteInTab={(paneId) => requestNewNote(paneId)}
+      onOpenQuickSwitcher={(paneId, tabId) => requestQuickSwitcher(paneId, tabId)}
+      onQuickSwitcherSelect={handleQuickSwitcherSelect}
+      onQuickSwitcherClose={() => setQuickSwitcher(null)}
+      onReplaceActiveTab={handleReplaceActiveTab}
+      onAddNoteTab={handleAddNoteTab}
+      onReorderTab={handleReorderTab}
+      onMoveTabToPane={handleMoveTabToPane}
+      onTabDragStart={handleTabDragStart}
+      onTabDragEnd={handleDragEnd}
+      onCloseOtherTabs={handleCloseOtherTabs}
+      onCloseAllTabs={handleCloseAllTabs}
+      onTogglePinTab={handleTogglePinTab}
+      onSplitTab={handleSplitTab}
+    />
+  );
+
   return (
+    <WikiLinkContext.Provider value={wikiLinkValue}>
     <SplitThemeContext.Provider value={AUTO_THEME}>
       <div className="flex h-full overflow-hidden">
 
@@ -762,66 +895,87 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
             </button>
           </div>
 
-          {/* 에디터 + 우측 컨텍스트 패널 */}
+          {/* 에디터 + 우측 컨텍스트 패널 — 컨텍스트 패널은 고정 폭이었는데, Split View
+              (PaneTreeRenderer.tsx)가 패널 사이 리사이즈에 쓰는 것과 같은
+              Group/Panel/Separator(react-resizable-panels)를 그대로 재사용해 드래그로 폭을
+              조절할 수 있게 했다 — 새 리사이즈 로직을 따로 만들지 않아 동작이 이미 검증된
+              컴포넌트를 그대로 쓴다. */}
           <div className="flex flex-1 overflow-hidden">
-            <div className="flex-1 overflow-hidden">
-              <PaneTreeRenderer
-                node={state.root}
-                notes={notes}
-                activeId={state.activeId}
-                dragPayload={dragPayload}
-                tabMode={tabMode}
-                paneTabs={paneTabs}
-                quickSwitcher={quickSwitcher}
-                saveSignal={saveSignal}
-                onActivate={handleActivate}
-                onDrop={handleDrop}
-                onTitleChange={handleTitleChange}
-                onContentChange={handleContentChange}
-                onModeChange={handleModeChange}
-                onTabActivate={handleTabActivate}
-                onTabClose={handleTabClose}
-                onNewTab={handleNewTab}
-                onAiAction={handleAiAction}
-                onCreateNoteInTab={(paneId) => requestNewNote(paneId)}
-                onOpenQuickSwitcher={(paneId, tabId) => requestQuickSwitcher(paneId, tabId)}
-                onQuickSwitcherSelect={handleQuickSwitcherSelect}
-                onQuickSwitcherClose={() => setQuickSwitcher(null)}
-                onReplaceActiveTab={handleReplaceActiveTab}
-                onAddNoteTab={handleAddNoteTab}
-                onReorderTab={handleReorderTab}
-                onMoveTabToPane={handleMoveTabToPane}
-                onTabDragStart={handleTabDragStart}
-                onTabDragEnd={handleDragEnd}
-                onCloseOtherTabs={handleCloseOtherTabs}
-                onCloseAllTabs={handleCloseAllTabs}
-                onTogglePinTab={handleTogglePinTab}
-                onSplitTab={handleSplitTab}
-              />
-            </div>
-
             {contextOpen ? (
-              <RightSidebar
-                key={activeNoteId ?? "start"}
-                activeNote={activeNote}
-                allNotes={notes}
-                onCollapse={() => setContextOpen(false)}
-                pendingAiRequest={aiRequest}
-                onAiRequestHandled={() => setAiRequest(null)}
-              />
+              <Group elementRef={contextGroupElRef} groupRef={contextGroupRef} orientation="horizontal" style={{ flex: 1, overflow: "hidden" }}>
+                <Panel id="notes-main-panel" defaultSize={100 - contextPanelSize} minSize="40%" style={{ overflow: "hidden" }}>
+                  {paneTree}
+                </Panel>
+
+                {/* 라이브러리 내장 Separator 대신 직접 만든 드래그 핸들 — 위 주석 참고(첫 드래그가
+                    실제 마우스 이동량의 일부만 반영되던 버그를 라이브러리의 내부 드래그 경로를
+                    타지 않는 방식으로 피했다). 키보드 접근성(좌우 화살표로 미세 조절)은 직접
+                    구현해 라이브러리 Separator가 제공하던 것을 동등하게 유지한다. */}
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-valuenow={Math.round(contextPanelSize)}
+                  aria-valuemin={16}
+                  aria-valuemax={42}
+                  tabIndex={0}
+                  onMouseDown={handleContextSeparatorMouseDown}
+                  onKeyDown={(e) => {
+                    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                    e.preventDefault();
+                    const next = Math.min(42, Math.max(16, contextPanelSize + (e.key === "ArrowLeft" ? 2 : -2)));
+                    contextGroupRef.current?.setLayout({ "notes-main-panel": 100 - next, "notes-context-panel": next });
+                    setContextPanelSize(next);
+                    try {
+                      window.localStorage.setItem(CONTEXT_PANEL_SIZE_KEY, String(next));
+                    } catch {
+                      // localStorage 접근 불가 — 이번 세션 폭만 유지
+                    }
+                  }}
+                  style={{
+                    width: 4,
+                    background: "rgb(var(--line) / 0.35)",
+                    cursor: "col-resize",
+                    flexShrink: 0,
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgb(var(--primary) / 0.45)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgb(var(--line) / 0.35)"; }}
+                />
+
+                <Panel
+                  id="notes-context-panel"
+                  defaultSize={contextPanelSize}
+                  minSize="16%"
+                  maxSize="42%"
+                  style={{ overflow: "hidden" }}
+                >
+                  <RightSidebar
+                    key={activeNoteId ?? "start"}
+                    activeNote={activeNote}
+                    allNotes={notes}
+                    onCollapse={() => setContextOpen(false)}
+                    pendingAiRequest={aiRequest}
+                    onAiRequestHandled={() => setAiRequest(null)}
+                  />
+                </Panel>
+              </Group>
             ) : (
-              <button
-                type="button"
-                onClick={() => setContextOpen(true)}
-                title="컨텍스트 패널 열기"
-                className="flex w-6 shrink-0 flex-col items-center justify-center border-l border-line/50 bg-bg2/30 text-txt3 transition-colors hover:bg-surface2/50 hover:text-txt"
-              >
-                <ChevronLeft size={13} />
-              </button>
+              <>
+                <div className="flex-1 overflow-hidden">{paneTree}</div>
+                <button
+                  type="button"
+                  onClick={() => setContextOpen(true)}
+                  title="컨텍스트 패널 열기"
+                  className="flex w-6 shrink-0 flex-col items-center justify-center border-l border-line/50 bg-bg2/30 text-txt3 transition-colors hover:bg-surface2/50 hover:text-txt"
+                >
+                  <ChevronLeft size={13} />
+                </button>
+              </>
             )}
           </div>
         </div>
       </div>
     </SplitThemeContext.Provider>
+    </WikiLinkContext.Provider>
   );
 }

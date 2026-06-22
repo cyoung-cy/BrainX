@@ -3925,10 +3925,46 @@ components:
           nullable: true
         version:
           type: integer
+        typography:
+          $ref: '#/components/schemas/NoteTypography'
+        order:
+          type: integer
+          nullable: true
       required:
       - noteId
       - userId
       - version
+      additionalProperties: false
+    NoteTypography:
+      type: object
+      nullable: true
+      description: >-
+        노트 단위 타이포그래피 설정. OpenAPI NoteTypography와 동일한 구조(이벤트 payload용으로
+        AsyncAPI 문서에 별도 정의).
+      properties:
+        scalePercent:
+          type: integer
+          nullable: true
+        fontFamily:
+          type: string
+          nullable: true
+        overrides:
+          type: object
+          nullable: true
+          properties:
+            body:
+              type: integer
+              nullable: true
+            h1:
+              type: integer
+              nullable: true
+            h2:
+              type: integer
+              nullable: true
+            h3:
+              type: integer
+              nullable: true
+          additionalProperties: false
       additionalProperties: false
     NoteTrashedPayload:
       type: object
@@ -4017,6 +4053,9 @@ components:
           nullable: true
         parentFolderId:
           type: string
+          nullable: true
+        order:
+          type: integer
           nullable: true
       required:
       - folderId
@@ -4119,6 +4158,14 @@ components:
           enum:
           - MANUAL
           - AI_SUGGESTED
+        anchorText:
+          type: string
+          nullable: true
+          description: OpenAPI NoteLinkData.anchorText 참고.
+        headingAnchor:
+          type: string
+          nullable: true
+          description: OpenAPI NoteLinkData.headingAnchor 참고.
       required:
       - linkId
       - userId

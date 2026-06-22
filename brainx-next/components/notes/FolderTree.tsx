@@ -16,8 +16,6 @@ import {
   type MeasuringConfiguration,
 } from "@dnd-kit/core";
 import {
-  ChevronRight,
-  ChevronDown,
   Folder,
   FolderOpen,
   FileText,
@@ -34,6 +32,9 @@ import {
 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote } from "@/lib/notes/noteTypes";
+import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
+import { CollapseChevron } from "./CollapseChevron";
+import { HoverInfoCard } from "./HoverInfoCard";
 import {
   resolveDrop,
   type DragActiveData,
@@ -434,6 +435,7 @@ function FolderNode({
   const [renameDraft, setRenameDraft] = useState(item.folder.name);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   const dndId = `folder:${item.folder.id}`;
   const isBeingDragged = activeDrag?.dragType === "folder" && activeDrag.id === item.folder.id;
@@ -481,7 +483,7 @@ function FolderNode({
     <div>
       {/* 폴더 헤더 */}
       <div
-        ref={setDropRef}
+        ref={(el) => { setDropRef(el); rowRef.current = el; }}
         className="group relative flex h-7 cursor-pointer items-center gap-1 rounded-md pr-1 transition-colors hover:bg-surface2/40"
         style={{
           paddingLeft: indent,
@@ -517,7 +519,7 @@ function FolderNode({
           title={expanded ? "접기" : "펼치기"}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-txt3 transition-colors hover:bg-surface2/70"
         >
-          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          <CollapseChevron expanded={expanded} size={11} />
         </button>
 
         {renaming ? (
@@ -609,6 +611,15 @@ function FolderNode({
             )}
           </div>
         )}
+
+        <HoverInfoCard anchorRef={rowRef} hovered={hovered && !renaming && !menuOpen && !isBeingDragged}>
+          <p className="mb-1.5 flex items-center gap-1.5 truncate font-semibold text-txt">
+            <Folder size={11} className="shrink-0" style={{ color: folderColor }} />
+            {item.folder.name}
+          </p>
+          <p className="text-txt2">{item.children.length}개의 폴더</p>
+          <p className="text-txt2">{item.notes.length}개의 노트</p>
+        </HoverInfoCard>
       </div>
 
       {/* 자식 (하위 폴더 + 노트) */}
@@ -695,6 +706,7 @@ function NoteRow({
 }) {
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const indent = depth * 14 + 6 + 16;
 
   const dndId = `note:${note.id}`;
@@ -712,7 +724,7 @@ function NoteRow({
 
   return (
     <div
-      ref={setDropRef}
+      ref={(el) => { setDropRef(el); rowRef.current = el; }}
       draggable
       onClick={() => onNoteClick(note.id)}
       onMouseEnter={() => setHovered(true)}
@@ -768,6 +780,14 @@ function NoteRow({
         style={{ color: isActive ? "rgb(var(--primary))" : undefined }}
       />
       <span className="flex-1 truncate">{note.title}</span>
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !dragging}>
+        <p className="mb-1 truncate font-semibold text-txt">{note.title}</p>
+        <p className="text-txt3">마지막 수정</p>
+        <p className="mb-1.5 text-txt2">{formatRelativeTime(note.updatedAt)}</p>
+        <p className="text-txt3">생성일</p>
+        <p className="text-txt2">{formatAbsoluteDateTime(note.createdAt)}</p>
+      </HoverInfoCard>
     </div>
   );
 }

@@ -45,3 +45,13 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 ```
 
 브라우저에서 <http://127.0.0.1:18081/brainx-asyncapi.html>을 연다.
+
+## 노트(Notes) 기능 연동 계약 (2026-06-22 추가)
+
+`brainx-next`의 `/notes` 기능을 실제 백엔드와 연동하기 위해 이번에 추가한 계약 항목:
+
+- `NoteTypography`(노트별 타이포그래피 설정) — `NoteDetailData`/`NoteMetadataData`/`NoteMetadataPatchRequest`, AsyncAPI `NoteMetadataChangedPayload`
+- `NoteLinkData`/`NoteLinkCreateRequest`의 `anchorText`/`headingAnchor`(위키링크 별칭·헤딩 앵커) — AsyncAPI `NoteLinkCreatedPayload`
+- `order`(같은 부모 안 정렬 순서) — `FolderData`/`FolderPatchRequest`/`NoteMetadataData`/`NoteMetadataPatchRequest`, AsyncAPI `FolderChangedPayload`/`NoteMetadataChangedPayload`
+
+노트 본문 저장 포맷(TipTap JSON / HTML / Markdown)은 Workspace/AI/RAG/Import-Export/Version History 전반에 영향을 주는 별도 설계 결정 대상이라 이번 변경에 포함하지 않았다.

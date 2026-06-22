@@ -2,10 +2,12 @@
 
 import React, { useState, useRef, useLayoutEffect, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { CellSelection } from "@tiptap/pm/tables";
 import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
@@ -13,18 +15,33 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { createLowlight, all } from "lowlight";
-import { Link2, Highlighter, Sparkles, Wand2 } from "lucide-react";
+import { Link2, Highlighter, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink } from "lucide-react";
+import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
+import { typographyCssVars } from "@/lib/notes/typography";
 import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
+import { ImageBlock, insertImageBlockFromFile } from "./ImageBlockNode";
+import { blockWidthPercent, type BlockWidthMode } from "./BlockControls";
+import { FontSize, FontFamily, FONT_SIZE_PRESETS, FONT_FAMILY_PRESETS } from "./fontExtensions";
+import { WikiLink } from "./WikiLinkNode";
+import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
+import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
+import { useWikiLinkContext } from "./WikiLinkContext";
+// 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
+// Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
+// 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
+const TableToolbar = dynamic(() => import("./TableToolbar").then((mod) => mod.TableToolbar), {
+  ssr: false,
+});
+import EditorContextMenu, { type EditorContextTarget } from "./EditorContextMenu";
+import { lowlight } from "./lowlightSetup";
 
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
-
-const lowlight = createLowlight(all);
 
 /* ── Markdown → HTML (초기 로딩) ─────────────────────────────────────── */
 function escHtml(s: string) {
@@ -530,7 +547,12 @@ const MarkdownCodeFenceEnter = Extension.create({
         return this.editor
           .chain()
           .command(({ tr }) => {
-            tr.setNodeMarkup($from.before(), codeBlockType, { language: lang });
+            // preview:false — 막 fence를 입력한 직후라 내용이 비어있다. mermaid 블록은
+            // 기본 preview:true(렌더링 모드)인데, 그대로 두면 타이핑을 시작하는 순간(텍스트가
+            // 비어있지 않게 되는 순간) CodeBlockView가 편집 영역을 display:none으로 숨겨버려
+            // 포커스가 날아가고 이후 입력이 전부 사라지는 버그가 있었다(실측 확인). 새로 만든
+            // 블록은 항상 편집 모드로 시작해야 안전하다.
+            tr.setNodeMarkup($from.before(), codeBlockType, { language: lang, preview: false });
             tr.delete($from.pos - $from.parentOffset, $from.pos);
             return true;
           })
@@ -636,12 +658,332 @@ function BubbleBtn({
   );
 }
 
+/** 글자 크기/글꼴 — 기존 명세에 빠져 있던 기능. 상단 고정 툴바·슬래시 커맨드는 이 프로젝트에
+    아직 없고(NOTE_FEATURE_IMPLEMENTATION_STATUS.md 참고), 우클릭 메뉴는 표/이미지 삽입 같은
+    "삽입" 동작 전용이라 "선택한 텍스트에 적용"이라는 성격과 맞지 않다 — 텍스트 선택 시 바로
+    뜨는 Bubble Toolbar에 기존 글자색(MoreColorPopover)과 동일한 "토글 버튼 + 작은 패널"
+    패턴으로 추가하는 것이 가장 자연스럽고, 기존 UI 구조를 새로 만들지 않아도 된다. */
+function FontPopover({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const [customSize, setCustomSize] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const currentSize = (editor.getAttributes("textStyle").fontSize as string) ?? null;
+  const currentFamily = (editor.getAttributes("textStyle").fontFamily as string) ?? null;
+
+  const commitCustomSize = () => {
+    const n = Number(customSize);
+    if (Number.isFinite(n) && n > 0) {
+      editor.chain().focus().setFontSize(`${Math.min(Math.max(n, 6), 96)}px`).run();
+    }
+    setCustomSize("");
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+        title="글꼴 / 글자 크기"
+        aria-label="글꼴 및 글자 크기"
+        className={cx(
+          "grid h-[26px] w-[24px] shrink-0 place-items-center rounded text-[11px] font-semibold transition-colors",
+          open ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+        )}
+      >
+        Aa
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full z-50 mt-1.5 w-[190px] overflow-hidden rounded-lg border border-line/60 p-2.5"
+          style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 24px -4px rgba(2,6,23,0.45)" }}
+        >
+          <div className="mb-2 flex items-center justify-between px-0.5">
+            <span className="text-[11px] font-semibold text-txt2">글자 크기</span>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor.chain().focus().unsetFontSize().run()}
+              title="기본값으로 되돌리기"
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+            >
+              <RotateCcw size={10} />
+            </button>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-1 px-0.5">
+            {FONT_SIZE_PRESETS.map((size) => (
+              <button
+                key={size}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().setFontSize(size).run()}
+                title={`${parseInt(size, 10)}px`}
+                className={cx(
+                  "rounded px-1.5 py-0.5 text-[11px] transition-colors",
+                  currentSize === size ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+                )}
+              >
+                {parseInt(size, 10)}
+              </button>
+            ))}
+            <input
+              type="number"
+              placeholder="직접"
+              aria-label="사용자 지정 글자 크기(px)"
+              value={customSize}
+              onChange={(e) => setCustomSize(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitCustomSize(); } }}
+              onBlur={commitCustomSize}
+              className="h-6 w-12 rounded border border-line/50 bg-transparent px-1 text-[11px] text-txt outline-none"
+            />
+          </div>
+
+          <p className="mb-1.5 px-0.5 text-[11px] font-semibold text-txt2">글꼴</p>
+          <div className="flex flex-col gap-0.5">
+            {FONT_FAMILY_PRESETS.map((f) => {
+              const active = f.value === null ? !currentFamily : currentFamily === f.value;
+              return (
+                <button
+                  key={f.label}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (f.value === null) editor.chain().focus().unsetFontFamily().run();
+                    else editor.chain().focus().setFontFamily(f.value).run();
+                  }}
+                  style={{ fontFamily: f.value ?? undefined }}
+                  className={cx(
+                    "rounded px-2 py-1 text-left text-[12px] transition-colors",
+                    active ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+                  )}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 내부 노트 링크 href 스킴 — 실제 URL이 아니라 노트 id를 가리키는 표시일 뿐이다. 일반
+    href와 구분해 클릭 시 외부 이동이 아니라 앱 내 노트 이동(WikiLinkContext.onNavigate)으로
+    처리한다. WikiLink([[제목]])와 달리 "임의의 텍스트를 그대로 두고 그 텍스트에 노트로 가는
+    링크만 붙이는" 경우(앵커 텍스트 ≠ 노트 제목)를 위한 보완 기능 — 자세한 평가는 작업 보고 참조. */
+export const INTERNAL_LINK_PREFIX = "brainx-note://";
+
+function LinkPopover({
+  editor,
+  popoverOpenRef,
+}: {
+  editor: Editor;
+  popoverOpenRef: React.MutableRefObject<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"url" | "note">("url");
+  const [urlDraft, setUrlDraft] = useState("");
+  const [noteQuery, setNoteQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const wikiCtx = useWikiLinkContext();
+  /* 검색/URL input에 포커스를 주는 순간 selection이 바뀌므로(타이핑 도중 collapse될 수도
+     있음), 적용 시점이 아니라 팝오버를 "여는 시점"의 선택 범위를 미리 저장해뒀다가 적용
+     직전에 그 범위로 복원한다 — 노트를 고르거나 글을 입력하는 동안 원래 선택이 흔들려도
+     항상 처음 선택했던 텍스트에 링크가 걸린다. */
+  const savedRangeRef = useRef<{ from: number; to: number } | null>(null);
+
+  /* 검색/URL input에 포커스를 주면(클릭 또는 타이핑) 에디터 쪽 네이티브 selection 소유권이
+     사라져 CustomBubbleMenu가 툴바 전체를 숨기는데, 이 팝오버가 열려 있는 동안은 그 selection
+     상실을 무시하도록 popoverOpenRef를 동기화한다 — 닫히면 즉시 원래 동작으로 복귀. */
+  useEffect(() => {
+    popoverOpenRef.current = open;
+    return () => { popoverOpenRef.current = false; };
+  }, [open, popoverOpenRef]);
+
+  const currentHref = (editor.getAttributes("link").href as string) ?? "";
+  const isInternal = currentHref.startsWith(INTERNAL_LINK_PREFIX);
+
+  useEffect(() => {
+    if (!open) return;
+    savedRangeRef.current = { from: editor.state.selection.from, to: editor.state.selection.to };
+    setUrlDraft(isInternal ? "" : currentHref);
+    setTab(isInternal ? "note" : "url");
+    setNoteQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  /* range가 비어있지(collapsed) 않으면 적용 직전에 그 위치로 selection을 복원한다 — 팝오버를
+     연 시점에 선택했던 텍스트가 그대로 링크의 앵커가 된다(savedRangeRef 주석 참고). */
+  const restoreSavedRange = (chain: ReturnType<Editor["chain"]>) => {
+    const range = savedRangeRef.current;
+    if (range && range.from !== range.to) return chain.setTextSelection(range);
+    return chain;
+  };
+
+  const applyUrl = () => {
+    const trimmed = urlDraft.trim();
+    if (trimmed === "") editor.chain().focus().unsetLink().run();
+    else restoreSavedRange(editor.chain().focus()).extendMarkRange("link").setLink({ href: trimmed }).run();
+    setOpen(false);
+  };
+
+  const applyNoteLink = (noteId: string) => {
+    restoreSavedRange(editor.chain().focus()).extendMarkRange("link").setLink({ href: `${INTERNAL_LINK_PREFIX}${noteId}` }).run();
+    setOpen(false);
+  };
+
+  const removeLink = () => {
+    editor.chain().focus().unsetLink().run();
+    setOpen(false);
+  };
+
+  const filteredNotes = (wikiCtx?.notes ?? []).filter((n) =>
+    n.title.toLowerCase().includes(noteQuery.trim().toLowerCase())
+  ).slice(0, 8);
+
+  return (
+    <div ref={ref} className="relative">
+      <BubbleBtn active={editor.isActive("link")} onClick={() => setOpen((v) => !v)} title="링크">
+        <Link2 size={13} />
+      </BubbleBtn>
+
+      {open && (
+        <div
+          className="absolute left-0 top-full z-50 mt-1.5 w-[230px] overflow-hidden rounded-lg border border-line/60 p-2.5"
+          style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 24px -4px rgba(2,6,23,0.45)" }}
+        >
+          <div className="mb-2 flex items-center gap-1 rounded-md p-0.5" style={{ background: "rgb(var(--surface2) / 0.6)" }}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setTab("url")}
+              className={cx(
+                "flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition-colors",
+                tab === "url" ? "bg-primary/15 text-primary" : "text-txt3 hover:text-txt2"
+              )}
+            >
+              <ExternalLink size={11} /> 외부 URL
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setTab("note")}
+              className={cx(
+                "flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition-colors",
+                tab === "note" ? "bg-primary/15 text-primary" : "text-txt3 hover:text-txt2"
+              )}
+            >
+              <FileText size={11} /> 노트 연결
+            </button>
+          </div>
+
+          {tab === "url" ? (
+            <div className="flex flex-col gap-1.5">
+              <input
+                value={urlDraft}
+                onChange={(e) => setUrlDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyUrl(); } }}
+                placeholder="https://..."
+                className="h-7 w-full rounded border border-line/50 bg-transparent px-2 text-[11.5px] text-txt outline-none"
+              />
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={applyUrl}
+                  className="flex-1 rounded bg-primary/15 px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/20"
+                >
+                  적용
+                </button>
+                {currentHref && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={removeLink}
+                    className="rounded px-2 py-1 text-[11px] text-txt3 hover:bg-surface2/70 hover:text-txt"
+                  >
+                    제거
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <div className="relative">
+                <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-txt3" />
+                <input
+                  value={noteQuery}
+                  onChange={(e) => setNoteQuery(e.target.value)}
+                  placeholder="노트 검색..."
+                  className="h-7 w-full rounded border border-line/50 bg-transparent pl-6 pr-2 text-[11.5px] text-txt outline-none"
+                />
+              </div>
+              <div className="scroll-thin flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+                {filteredNotes.length === 0 ? (
+                  <p className="px-1 py-2 text-center text-[10.5px] text-txt3">일치하는 노트가 없습니다</p>
+                ) : (
+                  filteredNotes.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applyNoteLink(n.id)}
+                      className="truncate rounded px-2 py-1 text-left text-[11.5px] text-txt2 transition-colors hover:bg-surface2/70 hover:text-txt"
+                      title={n.title}
+                    >
+                      {n.title}
+                    </button>
+                  ))
+                )}
+              </div>
+              {isInternal && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={removeLink}
+                  className="rounded px-2 py-1 text-[11px] text-txt3 hover:bg-surface2/70 hover:text-txt"
+                >
+                  연결 해제
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BubbleToolbar({
   editor,
   onAiAction,
+  popoverOpenRef,
 }: {
   editor: Editor;
   onAiAction: (type: AiActionType, text: string) => void;
+  popoverOpenRef: React.MutableRefObject<boolean>;
 }) {
   const getSelectedText = useCallback(() => {
     const { from, to } = editor.state.selection;
@@ -678,23 +1020,13 @@ function BubbleToolbar({
 
       <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
 
-      <BubbleBtn
-        active={editor.isActive("link")}
-        onClick={() => {
-          const prev = (editor.getAttributes("link").href as string) ?? "";
-          const url = window.prompt("링크 주소 입력 (빈 값이면 제거):", prev || "https://");
-          if (url === null) return;
-          const trimmed = url.trim();
-          if (trimmed === "") {
-            editor.chain().focus().unsetLink().run();
-          } else {
-            editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
-          }
-        }}
-        title="링크"
-      >
-        <Link2 size={13} />
-      </BubbleBtn>
+      <LinkPopover editor={editor} popoverOpenRef={popoverOpenRef} />
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
+
+      <FontPopover editor={editor} />
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-line/50" />
 
       {/* 글자 색상 — 드래그 직후 바로 보이는 빠른 스와치 + 더보기(커스텀/최근) */}
       <span
@@ -782,10 +1114,146 @@ function BubbleToolbar({
    link/underline과 별도 import가 다시 섞여 "Duplicate extension names" 경고가
    재발하기 쉽다. 모든 인스턴스가 이 단일 배열을 공유하도록 모듈 스코프에 한 번만
    정의한다. (link/underline은 StarterKit 내장분만 사용) */
+class BrainXTableView extends TableView {
+  constructor(
+    node: ProseMirrorNode,
+    cellMinWidth: number,
+    view?: EditorView,
+    HTMLAttributes: Record<string, unknown> = {}
+  ) {
+    super(node, cellMinWidth, view, HTMLAttributes);
+    // columnResizing plugin은 View 생성 시 extension의 HTMLAttributes를 넘기지 않는다.
+    // 표 스타일 계약이 리사이즈 활성화 여부에 따라 사라지지 않도록 NodeView가 직접 보장한다.
+    this.table.classList.add("note-table");
+    this.syncDisplayAttributes(node);
+  }
+
+  update(node: ProseMirrorNode) {
+    const updated = super.update(node);
+    if (updated) this.syncDisplayAttributes(node);
+    return updated;
+  }
+
+  private syncDisplayAttributes(node: ProseMirrorNode) {
+    this.table.dataset.align = String(node.attrs.align ?? "center");
+    const widthMode = (String(node.attrs.widthMode ?? "fit") as BlockWidthMode);
+    this.table.dataset.widthMode = widthMode;
+    this.table.dataset.tableColor = String(node.attrs.tableColor ?? "default");
+    this.table.dataset.borderWidth = String(node.attrs.borderWidth ?? 1);
+
+    if (widthMode === "fit" || widthMode === "original") {
+      // 두 모드는 순수 CSS([data-width-mode] 선택자, globals.css)로 처리된다 — 인라인
+      // 스타일이 남아 있으면 그게 우선 적용되어 충돌하므로 비워둔다.
+      this.table.style.width = "";
+      this.table.style.minWidth = "";
+      return;
+    }
+
+    // 비율 프리셋/사용자 지정은 "원본(자연) 폭" 기준으로 계산해야 한다(컨테이너 폭 기준
+    // 계산이 이번 수정의 대상 버그였다). 표는 <img>의 naturalWidth 같은 고정값이 없으므로,
+    // 이미 검증되어 있는 "원본" 모드와 동일한 CSS 상태(max-content)로 한 프레임 동안
+    // 강제했다가 scrollWidth로 그 폭을 읽는다 — 강제→측정→복원이 같은 동기 구간에서 끝나
+    // 화면에 중간 상태가 그려지지 않는다(레이아웃만 강제될 뿐 paint는 일어나지 않음).
+    const prevWidth = this.table.style.width;
+    const prevMinWidth = this.table.style.minWidth;
+    this.table.style.width = "max-content";
+    this.table.style.minWidth = "max-content";
+    const naturalPx = this.table.scrollWidth;
+    this.table.style.width = prevWidth;
+    this.table.style.minWidth = prevMinWidth;
+
+    const widthPercent = (node.attrs.widthPercent as number | null) ?? null;
+    const percent = blockWidthPercent(widthMode, widthPercent);
+    const targetPx = naturalPx * (percent / 100);
+    this.table.style.width = `${targetPx}px`;
+    this.table.style.minWidth = `${targetPx}px`;
+  }
+}
+
+const BrainXTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      align: {
+        default: "center",
+        parseHTML: (el) => el.getAttribute("data-align") ?? "center",
+        renderHTML: (attrs) => ({ "data-align": String(attrs.align ?? "center") }),
+      },
+      widthMode: {
+        default: "fit",
+        parseHTML: (el) => el.getAttribute("data-width-mode") ?? "fit",
+        renderHTML: (attrs) => ({ "data-width-mode": String(attrs.widthMode ?? "fit") }),
+      },
+      widthPercent: {
+        default: null,
+        parseHTML: (el) => {
+          const value = el.getAttribute("data-width-percent");
+          return value ? Number(value) : null;
+        },
+        renderHTML: (attrs) => attrs.widthPercent
+          ? { "data-width-percent": String(attrs.widthPercent) }
+          : {},
+      },
+      tableColor: {
+        default: "default",
+        parseHTML: (el) => el.getAttribute("data-table-color") ?? "default",
+        renderHTML: (attrs) => ({ "data-table-color": String(attrs.tableColor ?? "default") }),
+      },
+      borderWidth: {
+        default: 1,
+        parseHTML: (el) => Number(el.getAttribute("data-border-width")) || 1,
+        renderHTML: (attrs) => ({ "data-border-width": String(attrs.borderWidth ?? 1) }),
+      },
+    };
+  },
+}).configure({
+  resizable: true,
+  View: BrainXTableView,
+  HTMLAttributes: { class: "note-table" },
+});
+
+/** 셀 단위 배경색·정렬 — 표 전체(BrainXTable) 색과 별개로, 선택한 셀(들)에만 적용된다.
+    TableCell/TableHeader 둘 다 같은 속성 세트가 필요해 공통 팩토리로 둔다. */
+function cellDisplayAttributes() {
+  return {
+    cellBackground: {
+      default: "none",
+      parseHTML: (el: HTMLElement) => el.getAttribute("data-cell-bg") ?? "none",
+      renderHTML: (attrs: Record<string, unknown>) =>
+        attrs.cellBackground && attrs.cellBackground !== "none"
+          ? { "data-cell-bg": String(attrs.cellBackground) }
+          : {},
+    },
+    cellAlign: {
+      default: "left",
+      parseHTML: (el: HTMLElement) => el.getAttribute("data-cell-align") ?? "left",
+      renderHTML: (attrs: Record<string, unknown>) =>
+        attrs.cellAlign && attrs.cellAlign !== "left"
+          ? { "data-cell-align": String(attrs.cellAlign) }
+          : {},
+    },
+  };
+}
+
+const BrainXTableCell = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellDisplayAttributes() };
+  },
+});
+
+const BrainXTableHeader = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellDisplayAttributes() };
+  },
+});
+
 const NOTE_EDITOR_EXTENSIONS = [
   StarterKit.configure({
     codeBlock: false,
-    link: { openOnClick: false, autolink: false },
+    // protocols 기본 허용 목록(http/https/mailto 등)에는 brainx-note:// 같은 커스텀 스킴이
+    // 없어서 기본 검증을 통과하지 못해 setLink가 조용히 실패한다(LinkPopover의 노트 연결
+    // 기능, INTERNAL_LINK_PREFIX) — 추가해줘야 내부 노트 링크가 실제로 적용된다.
+    link: { openOnClick: false, autolink: false, protocols: ["http", "https", "mailto", "tel", "brainx-note"] },
   }),
   MarkdownLivePreview,
   MarkdownCodeFenceEnter,
@@ -793,6 +1261,8 @@ const NOTE_EDITOR_EXTENSIONS = [
   HeadingFold,
   TextStyle,
   Color,
+  FontSize,
+  FontFamily,
   Highlight.configure({ multicolor: true }),
   CodeBlockLowlight.extend({
     addAttributes() {
@@ -804,6 +1274,31 @@ const NOTE_EDITOR_EXTENSIONS = [
           renderHTML: (attrs) =>
             attrs.filename ? { "data-filename": String(attrs.filename) } : {},
         },
+        // ── Mermaid 전용 표시 옵션(언어가 mermaid가 아니면 무시됨) ──
+        align: {
+          default: "center",
+          parseHTML: (el) => el.getAttribute("data-align") ?? "center",
+          renderHTML: (attrs) => ({ "data-align": String(attrs.align ?? "center") }),
+        },
+        widthMode: {
+          default: "fit",
+          parseHTML: (el) => el.getAttribute("data-width-mode") ?? "fit",
+          renderHTML: (attrs) => ({ "data-width-mode": String(attrs.widthMode ?? "fit") }),
+        },
+        widthPercent: {
+          default: null,
+          parseHTML: (el) => {
+            const v = el.getAttribute("data-width-percent");
+            return v ? Number(v) : null;
+          },
+          renderHTML: (attrs) =>
+            attrs.widthPercent ? { "data-width-percent": String(attrs.widthPercent) } : {},
+        },
+        preview: {
+          default: true,
+          parseHTML: (el) => el.getAttribute("data-preview") !== "false",
+          renderHTML: (attrs) => ({ "data-preview": attrs.preview === false ? "false" : "true" }),
+        },
       };
     },
     addNodeView() {
@@ -812,9 +1307,11 @@ const NOTE_EDITOR_EXTENSIONS = [
     addInputRules() {
       return [
         textblockTypeInputRule({
-          find: /^```([a-z]+)?[\s\n]$/,
+          // 대소문자 모두 허용(```Mermaid, ```MERMAID 등) — getAttributes에서 소문자로 정규화한다.
+          find: /^```([a-zA-Z]+)?[\s\n]$/,
           type: this.type,
-          getAttributes: (match) => ({ language: match[1] ?? null }),
+          // preview:false — 위 MarkdownCodeFenceEnter의 같은 이유로 새 블록은 항상 편집 모드로 시작.
+          getAttributes: (match) => ({ language: match[1] ? match[1].toLowerCase() : null, preview: false }),
         }),
       ];
     },
@@ -837,14 +1334,30 @@ const NOTE_EDITOR_EXTENSIONS = [
           if ($from.parent.textContent !== "") return false;
           return this.editor.commands.clearNodes();
         },
-        // Escape → 코드블록 밖으로 커서 이동 (마지막 블록이면 paragraph 삽입)
+        // Escape → 코드블록 밖으로 커서 이동 (마지막 블록이면 paragraph 삽입).
+        // Mermaid 코드블록이면 포커스를 빼면서 동시에 다이어그램 보기로 전환한다 — 문법
+        // 오류가 있어도 전환 자체는 그대로 진행하고(오류 표시는 보기 상태의 MermaidPreview가
+        // 담당), 일반 코드블록은 language가 mermaid가 아니므로 이 분기를 타지 않아 기존 동작이
+        // 그대로 유지된다.
         Escape: () => {
           const { state } = this.editor;
           const { $from } = state.selection;
           if ($from.parent.type.name !== "codeBlock") return false;
-          // $from.depth: codeBlock 내부 depth (보통 1), after(depth)로 codeBlock 끝 다음 위치
-          const afterPos = $from.after($from.depth);
-          if (afterPos < state.doc.content.size) {
+
+          if ($from.parent.attrs.language === "mermaid" && $from.parent.attrs.preview !== true) {
+            const blockPos = $from.before($from.depth);
+            this.editor.view.dispatch(
+              this.editor.state.tr.setNodeMarkup(blockPos, undefined, { ...$from.parent.attrs, preview: true })
+            );
+          }
+
+          // setNodeMarkup은 attrs만 바꾸고 문서 크기를 바꾸지 않으므로, 갱신된 state에서도
+          // 같은 절대 위치가 그대로 유효하다 — 그 최신 state를 기준으로 포커스를 이동한다.
+          const freshState = this.editor.state;
+          const $pos = freshState.selection.$from;
+          // $pos.depth: codeBlock 내부 depth(보통 1), after(depth)로 codeBlock 끝 다음 위치
+          const afterPos = $pos.after($pos.depth);
+          if (afterPos < freshState.doc.content.size) {
             // afterPos+1: 다음 노드의 첫 번째 내부 위치 (노드 경계 → 내부)
             return this.editor.commands.focus(afterPos + 1);
           }
@@ -856,17 +1369,80 @@ const NOTE_EDITOR_EXTENSIONS = [
         },
       };
     },
+    addProseMirrorPlugins() {
+      // Esc는 명시적인 키 입력이 있을 때만 동작한다 — "포커스 아웃되면 자동으로 다이어그램
+      // 보기로 전환"(본문/제목/다른 블록/다른 노트 클릭 등 Esc 없이 선택이 떠나는 모든 경우)은
+      // 별도로 다뤄야 한다. appendTransaction은 "이 트랜잭션이 적용된 직후, 필요하면 보정
+      // 트랜잭션을 하나 더 붙이는" ProseMirror 표준 메커니즘이라 selectionUpdate 시점마다
+      // 직접 dispatch를 호출하는 것보다 안전하다(같은 트랜잭션 배치 안에서 처리됨).
+      const mermaidAutoPreview = new Plugin({
+        key: new PluginKey("mermaidAutoPreview"),
+        appendTransaction(transactions, oldState, newState) {
+          if (!transactions.some((tr) => tr.docChanged || tr.selectionSet)) return null;
+
+          // "편집 중이던 mermaid 블록"을 트랜잭션 전(oldState) 선택 위치의 조상에서만 찾으면,
+          // </> 버튼 클릭(mousedown에 preventDefault가 걸려 있어 selection이 그 블록으로 전혀
+          // 옮겨가지 않음)이나 다이어그램 더블클릭(텍스트 위치로 매핑되지 않을 수 있음)으로
+          // 편집을 시작한 경우 oldState.selection이 처음부터 그 블록 밖에 있어서 못 찾는다.
+          // 대신 oldState 문서 전체에서 이미 preview:false인 mermaid 블록을 전부 찾고, 이번
+          // 트랜잭션 이후 그 블록이 선택 범위 밖으로 벗어났는지를 위치 기준으로 직접 판정한다
+          // — 선택이 그 블록을 거쳐 갔는지 여부와 무관하게 항상 정확하게 잡힌다.
+          const openBlocks: { pos: number }[] = [];
+          oldState.doc.descendants((node, pos) => {
+            if (node.type.name === "codeBlock" && node.attrs.language === "mermaid" && node.attrs.preview === false) {
+              openBlocks.push({ pos });
+            }
+          });
+          if (openBlocks.length === 0) return null;
+
+          let tr: typeof newState.tr | null = null;
+          for (const { pos } of openBlocks) {
+            // 문서 변경으로 위치가 옮겨졌을 수 있으니 mapping으로 보정한 뒤, 그 위치가 여전히
+            // 유효한 mermaid 코드블록인지 한 번 더 확인한다(삭제됐을 수도 있음).
+            let mappedPos = pos;
+            for (const t of transactions) mappedPos = t.mapping.map(mappedPos);
+            const nodeAtMapped = newState.doc.nodeAt(mappedPos);
+            if (!nodeAtMapped || nodeAtMapped.type.name !== "codeBlock") continue;
+            if (nodeAtMapped.attrs.language !== "mermaid" || nodeAtMapped.attrs.preview !== false) continue;
+
+            // 이 블록의 범위 안에 트랜잭션 후 selection이 여전히 걸쳐 있으면(같은 블록 안에서
+            // 타이핑/커서 이동) 그대로 두고, 벗어났을 때만 보기 모드로 되돌린다.
+            const from = mappedPos;
+            const to = mappedPos + nodeAtMapped.nodeSize;
+            const sel = newState.selection;
+            if (sel.from >= from && sel.to <= to) continue;
+
+            tr = (tr ?? newState.tr).setNodeMarkup(mappedPos, undefined, { ...nodeAtMapped.attrs, preview: true });
+          }
+          return tr;
+        },
+      });
+      return [mermaidAutoPreview];
+    },
   }).configure({
     lowlight,
     exitOnTripleEnter: true,
     exitOnArrowDown: true,
   }),
+  ImageBlock,
+  BrainXTable,
+  TableRow,
+  BrainXTableHeader,
+  BrainXTableCell,
+  WikiLink,
+  WikiLinkSuggestion,
 ];
 
 export interface NoteEditorHandle {
   focusStart: () => void;
   focusEnd: () => void;
   flushPendingSave: () => void;
+  /** 패널 레벨(EditorPanel.tsx)의 항상-보이는 삽입 버튼이 호출한다 — 본문 안에 버튼을 두면
+      노트 길이에 따라 스크롤해야 보이는 위치에 가는 버그가 있었음(고정 위치 버튼은 패널
+      기준으로 둬야 함). */
+  insertImageFile: (file: File) => void;
+  insertImageUrl: (src: string) => void;
+  insertTable: (rows: number, cols: number) => void;
 }
 
 /* ── 커스텀 버블 메뉴 ──────────────────────────────────────────────────
@@ -918,6 +1494,11 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
   const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number; bottom: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  /* LinkPopover의 "노트 연결" 검색창처럼 버블 툴바 안에 실제 입력 포커스가 필요한 하위
+     팝오버가 떠 있는 동안은, 그 입력에 포커스가 가면서 에디터 밖으로 선택이 옮겨가도(=
+     네이티브 selection 소유권이 사라짐) 툴바 전체가 사라지면 안 된다 — 아래 `settling`과
+     같은 자리에서 함께 체크한다(기존 선택 보존 로직 확장, 변경 아님). */
+  const popoverOpenRef = useRef(false);
 
   const updateAnchor = useCallback(() => {
     if (!editor.isEditable) {
@@ -967,12 +1548,12 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
       const belongsHere = !!anchorEl && editor.view.dom.contains(anchorEl);
 
       if (!belongsHere) {
-        if (settling) return; // 잔여 collapse 가능성 — 마지막 위치 유지, 숨기지 않음
+        if (settling || popoverOpenRef.current) return; // 잔여 collapse 가능성 — 마지막 위치 유지, 숨기지 않음
         setAnchor(null);
         return;
       }
       if (sel.isCollapsed || editor.isActive("codeBlock")) {
-        if (settling && sel.isCollapsed) return; // 잔여 collapse — 마지막 위치 유지
+        if ((settling && sel.isCollapsed) || popoverOpenRef.current) return; // 잔여 collapse — 마지막 위치 유지
         setAnchor(null);
         return;
       }
@@ -1000,7 +1581,10 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
   }, [editor]);
 
   useEffect(() => {
-    const handleBlur = () => setAnchor(null);
+    // 팝오버(LinkPopover의 노트 검색 입력 등) 안의 input에 포커스를 줄 때도 에디터 blur가
+    // 발생하는데, 그 동안은 무시해야 한다 — 위 updateAnchor의 settling/popoverOpenRef 분기와
+    // 동일한 이유.
+    const handleBlur = () => { if (!popoverOpenRef.current) setAnchor(null); };
     editor.on("selectionUpdate", updateAnchor);
     editor.on("transaction", updateAnchor);
     editor.on("blur", handleBlur);
@@ -1046,7 +1630,11 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
     setPos({ left, top });
   }, [anchor]);
 
-  if (!anchor) return null;
+  // 표 안에서는 이 일반 버블 툴바를 띄우지 않는다 — 행/열/셀 작업 위에 별도로 떠 있는
+  // TableToolbar가 이제 서식(Bold/Italic/Strike/색상)·정렬·삭제까지 전부 통합해서 보여준다
+  // (TableToolbar.tsx 참고). 두 툴바가 동시에 떠서 겹치던 문제를 "표 안에서는 툴바 하나만"
+  // 원칙으로 해결한 것 — 표 밖에서는 기존과 동일하게 동작한다.
+  if (!anchor || editor.isActive("table")) return null;
 
   return createPortal(
     <div
@@ -1059,14 +1647,15 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         zIndex: 2000,
       }}
     >
-      <BubbleToolbar editor={editor} onAiAction={onAiAction} />
+      <BubbleToolbar editor={editor} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
     </div>,
     document.body
   );
 }
 
 /** 본문이 비어있고 포커스되지 않았을 때만 보이는 안내 문구 — placeholder처럼 동작 */
-const EDITOR_HINT_TEXT = "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · 텍스트 선택 → 버블 툴바";
+const EDITOR_HINT_TEXT =
+  "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · ```mermaid 다이어그램 · ![](url) 이미지 · 텍스트 선택 → 버블 툴바";
 
 interface NoteEditorProps {
   note: MockNote;
@@ -1086,23 +1675,105 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   ref
 ) {
   const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
+  const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
+  const wikiCtx = useWikiLinkContext();
+
+  /* 내부 노트 링크(LinkPopover에서 만든 brainx-note://<id> href) 클릭 처리 — 읽기 모드는
+     바로 이동, 편집 모드는 Ctrl/Cmd+클릭만 이동(평범한 클릭은 커서 위치/편집을 위해 남겨둠).
+     일반 외부 링크(http 등)는 기존처럼 openOnClick:false라 아무 동작도 하지 않는다(그대로 유지). */
+  const handleInternalLinkClick = useCallback((e: React.MouseEvent) => {
+    const anchor = (e.target as HTMLElement).closest?.("a[href^='" + INTERNAL_LINK_PREFIX + "']") as HTMLAnchorElement | null;
+    if (!anchor || !wikiCtx) return false;
+    if (mode === "edit" && !(e.metaKey || e.ctrlKey)) return false;
+    const noteId = anchor.getAttribute("href")!.slice(INTERNAL_LINK_PREFIX.length);
+    const target = wikiCtx.notes.find((n) => n.id === noteId);
+    if (!target) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    wikiCtx.onNavigate(target.title);
+    return true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, wikiCtx]);
 
   const editor = useEditor({
     extensions: NOTE_EDITOR_EXTENSIONS,
     content: resolveEditorHtml(note.content),
     immediatelyRender: false,
-    editable: false,
+    // Table의 columnResizing plugin은 생성 시점의 isEditable을 한 번만 읽는다. 항상 등록되게
+    // true로 생성하고, 아래 layout effect에서 실제 탭 mode를 첫 paint 전에 적용한다.
+    editable: true,
     editorProps: {
       attributes: {
         spellcheck: "false",
         autocomplete: "off",
         translate: "no",
       },
+      // 클립보드에 이미지 파일이 있을 때만 가로채 이미지 블록으로 삽입한다 — 이미지가 아닌
+      // 일반 텍스트/HTML 붙여넣기는 false를 반환해 tiptap의 기본 처리를 그대로 따른다.
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        files.forEach((file) => insertImageBlockFromFile(view, file));
+        return true;
+      },
+      // 사이드바 노트 드래그(EditorPanel의 dragPayload 오버레이)는 이 핸들러와 무관하게
+      // 별도의 absolute 오버레이가 이벤트를 먼저 가로채므로 충돌하지 않는다 — 여기서는 OS
+      // 파일 탐색기 등에서 끌어온 실제 이미지 파일(event.dataTransfer.files)만 처리한다.
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false; // 에디터 내부 노드 이동(드래그) — 기본 동작 유지
+        const files = Array.from(event.dataTransfer?.files ?? []).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        const pos = coords?.pos ?? view.state.selection.from;
+        files.forEach((file) => insertImageBlockFromFile(view, file, pos));
+        return true;
+      },
     },
     onFocus: () => setFocused(true),
-    onBlur: () => setFocused(false),
+    // 본문 안에서 다른 위치로 선택이 옮겨가는 경우는 CodeBlockLowlight의 mermaidAutoPreview
+    // appendTransaction이 처리하지만, 포커스가 에디터 DOM 밖으로 완전히 나가는 경우(제목 클릭,
+    // 다른 노트/탭 클릭, 사이드바 클릭 등)는 selection 자체가 안 바뀌어 그 훅이 못 잡는다 —
+    // blur 시점에 한 번 더 직접 확인해 다이어그램 보기로 되돌린다.
+    // 현재 selection의 조상에서만 mermaid 블록을 찾으면 </> 버튼 클릭(mousedown에
+    // preventDefault가 걸려 있어 selection이 그 블록으로 옮겨가지 않음)이나 다이어그램
+    // 더블클릭으로 편집을 시작한 직후에는 selection이 그 블록 밖에 있어 못 찾는다 — 위
+    // appendTransaction과 동일하게 문서 전체에서 preview:false인 mermaid 블록을 전부 찾아
+    // 되돌린다(selection 경로와 무관하게 항상 정확히 잡힌다).
+    onBlur: ({ editor: ed }) => {
+      setFocused(false);
+      const openPositions: number[] = [];
+      ed.state.doc.descendants((node, pos) => {
+        if (node.type.name === "codeBlock" && node.attrs.language === "mermaid" && node.attrs.preview === false) {
+          openPositions.push(pos);
+        }
+      });
+      if (openPositions.length === 0) return;
+      let tr = ed.state.tr;
+      for (const pos of openPositions) {
+        const node = tr.doc.nodeAt(pos);
+        if (node) tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, preview: true });
+      }
+      ed.view.dispatch(tr);
+      // blur가 "다른 노트 클릭"으로 일어난 경우, 곧바로 note.id가 바뀌면서 아래 [note.id, editor]
+      // effect가 contentSyncTimerRef를 그냥 clearTimeout만 하고(flush 없이) 새 노트 내용으로
+      // 덮어쓴다 — 그 사이 400ms 디바운스가 아직 안 끌렸으면 방금 되돌린 preview:true가 notes
+      // state에 저장되지 못한 채 사라져, 그 노트를 다시 열면 코드 편집 상태로 보이는 문제가
+      // 있었다. 이 보정만큼은 디바운스를 기다리지 않고 즉시 저장한다.
+      if (contentSyncTimerRef.current) {
+        clearTimeout(contentSyncTimerRef.current);
+        contentSyncTimerRef.current = null;
+      }
+      onContentChange(note.id, ed.getHTML());
+    },
     /* 본문 변경 → mock notes state로 디바운스 동기화 (탭 전환/재방문 시 내용 유지) */
     onUpdate: ({ editor: ed }) => {
       setIsEmpty(ed.isEmpty);
@@ -1130,6 +1801,16 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       }
       onContentChange(note.id, editor.getHTML());
     },
+    insertImageFile: (file) => {
+      if (!editor) return;
+      insertImageBlockFromFile(editor.view, file);
+    },
+    insertImageUrl: (src) => {
+      editor?.chain().focus().setImageBlock({ src }).run();
+    },
+    insertTable: (rows, cols) => {
+      editor?.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    },
   }), [editor, note.id, onContentChange]);
 
   /* note 변경(탭 전환 등) → 내용만 갱신한다. 모드는 여기서 설정하지 않는다 — mode prop은
@@ -1142,18 +1823,30 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       clearTimeout(contentSyncTimerRef.current);
       contentSyncTimerRef.current = null;
     }
-    editor.commands.setContent(resolveEditorHtml(note.content));
-    setIsEmpty(note.content.trim() === "");
-    setFocused(false);
+    // setContent를 이 effect 안에서 곧바로 호출하면, 새 노트 본문에 이미지/표/코드블록처럼
+    // ReactNodeViewRenderer를 쓰는 노드가 있을 때 그 NodeView가 마운트되며 ReactRenderer가
+    // 내부적으로 flushSync를 호출한다 — 그게 "지금 이 React 커밋(effect 플러시)이 끝나기 전"에
+    // 일어나 "flushSync was called from inside a lifecycle method" 에러가 난다. 마이크로태스크로
+    // 한 틱 미뤄서 현재 커밋이 완전히 끝난 뒤에 실행되게 한다(빠르게 노트를 또 전환하면 이전
+    // 마이크로태스크는 cancelled 플래그로 무시).
+    let cancelled = false;
+    const content = note.content;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      editor.commands.setContent(resolveEditorHtml(content));
+      setIsEmpty(content.trim() === "");
+      setFocused(false);
+    });
     // editor를 deps에 포함: NoteEditor가 새로 마운트되는 시점(예: 빈 시작 탭 → 새 노트로 교체)에는
     // immediatelyRender:false로 인해 첫 렌더에서 editor가 아직 null이라 이 effect가 조기 종료되는데,
     // note.id만 의존하면 editor가 준비된 뒤에도 재실행되지 않는다.
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id, editor]);
 
   /* mode prop(탭별 읽기/편집 상태) → editable 토글. 탭 전환으로 note.id와 mode가 같은 렌더에서
      함께 바뀌어도 두 effect가 각자 최신 값으로 정확히 적용된다. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!editor) return;
     editor.setEditable(mode === "edit");
   }, [editor, mode]);
@@ -1170,9 +1863,72 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   return (
     <div
       className="split-pane-editor tiptap-note-content relative"
-      onClick={(e) => { if (mode === "edit") { e.stopPropagation(); onActivate(); } }}
+      style={typographyCssVars(note.typography)}
+      onClick={(e) => {
+        if (handleInternalLinkClick(e)) return;
+        if (mode === "edit") { e.stopPropagation(); onActivate(); }
+      }}
+      onContextMenu={(event) => {
+        if (mode !== "edit" || !editor) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate();
+        const coords = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
+        let clickedInTable = false;
+        if (coords) {
+          const $clicked = editor.state.doc.resolve(coords.pos);
+          for (let depth = $clicked.depth; depth >= 0; depth -= 1) {
+            if ($clicked.node(depth).type.name === "table") {
+              clickedInTable = true;
+              break;
+            }
+          }
+          const currentSelection = editor.state.selection;
+          const keepCellRange = currentSelection instanceof CellSelection
+            && coords.pos >= currentSelection.from
+            && coords.pos <= currentSelection.to;
+          if (!keepCellRange) {
+            const selection = TextSelection.near($clicked);
+            editor.view.dispatch(editor.state.tr.setSelection(selection));
+          }
+        }
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          inTable: clickedInTable,
+        });
+      }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        aria-label="이미지 파일 선택"
+        style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden", pointerEvents: "none" }}
+        onChange={(event) => {
+          Array.from(event.target.files ?? []).forEach((file) => {
+            if (editor) insertImageBlockFromFile(editor.view, file);
+          });
+          event.target.value = "";
+        }}
+      />
       {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
+      {editor && <TableToolbar editor={editor} />}
+      {editor && <WikiLinkAutocomplete editor={editor} />}
+      {editor && contextMenu && (
+        <EditorContextMenu
+          target={contextMenu}
+          editor={editor}
+          onClose={() => setContextMenu(null)}
+          onChooseImage={() => fileInputRef.current?.click()}
+          onInsertImageUrl={() => {
+            const url = window.prompt("이미지 URL 입력:", "https://")?.trim();
+            if (url) editor.chain().focus().setImageBlock({ src: url }).run();
+          }}
+          onInsertTable={(rows, cols) => editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()}
+        />
+      )}
       <EditorContent editor={editor} />
       {showHint && (
         <p
