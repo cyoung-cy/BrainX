@@ -63,7 +63,7 @@
 - [x] vector index에서 해당 note document를 삭제한다.
 - [ ] summary cache, graph edge, recommendation projection, clustering/insight 참조를 제거한다.
 - [ ] `permanent=true`이면 사용자 복구용 데이터도 삭제 대상으로 처리한다.
-- [ ] 삭제 이벤트 처리에는 `NoteSearchIndexPort`의 note 단위 delete 동작이 필요하다.
+- [x] 삭제 이벤트 처리에는 `NoteSearchIndexPort`의 note 단위 delete 동작이 필요하다. 현재 note 단위 delete는 구현되었고 user 단위 delete는 `UserDeletionRequested` 처리 단계에서 추가한다.
 
 ### `NotesMoved`
 
@@ -188,7 +188,7 @@
 ## 현재 구현에서 필요한 선행 보강
 
 - [x] Workspace snapshot adapter가 실제 note title/markdown을 가져와야 한다.
-- [ ] `NoteSearchIndexPort`에 note 단위 delete와 user 단위 delete가 필요하다. note 단위 delete는 구현되었고 user 단위 delete는 `UserDeletionRequested` 처리 단계에서 추가한다.
+- [x] `NoteSearchIndexPort`에 note 단위 delete가 필요하다. note 단위 delete는 구현되었고 user 단위 delete는 `UserDeletionRequested` 처리 단계에서 추가한다.
 - [x] note projection에는 최소 `userId`, `noteId`, `title`, `folderId`, `tags`, `version`, `markdownHash`, `archived`, `trashed`가 필요하다. 현재는 search index 동기화 관측을 위해 `searchIndexStatus`, `indexedVersion`, `indexedMarkdownHash`, `indexedAt`도 함께 저장한다.
 - [ ] summary cache에는 `version` 또는 `markdownHash`가 필요하다.
 - [ ] vector index metadata에는 folder/tag/archive/trashed 상태를 filter 가능한 형태로 넣어야 한다. 현재 chunk metadata에는 `userId`, `noteId`, `chunkId`, `chunkIndex`, `title`, `excerpt`, `keywordIds`, `markdownHash`, `version`을 저장한다.
