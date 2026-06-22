@@ -43,7 +43,7 @@ function FavNoteRow({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[13px] transition-colors",
         isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
       style={{ background: isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
@@ -94,7 +94,7 @@ function FavFolderRow({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[14px] transition-colors",
         isSelected ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
       style={{ background: isSelected ? "rgb(var(--primary) / 0.12)" : undefined }}
@@ -377,7 +377,7 @@ export default function NotesExplorer({
                   }}
                   onDragEnd={onDragEnd}
                   className={cx(
-                    "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+                    "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[13px] transition-colors",
                     note.id === activeNoteId ? "font-medium text-txt" : "text-txt2 hover:text-txt"
                   )}
                   style={{ background: note.id === activeNoteId ? "rgb(var(--primary) / 0.12)" : undefined }}
