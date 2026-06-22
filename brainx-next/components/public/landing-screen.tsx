@@ -193,12 +193,12 @@ export function LandingScreen() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[1180px] gap-12 px-6 pb-20 pt-16 md:grid-cols-2 md:px-10 md:pt-24">
+      <section className="mx-auto grid max-w-[1180px] gap-12 px-6 pb-20 pt-16 lg:grid-cols-[1.1fr_0.9fr] md:px-10 md:pt-24 lg:items-center">
         <div className="relative z-10">
           <Badge color="139 92 246" dot className="mb-6">
             AI 기반 개인 지식 관리 · BrainX
           </Badge>
-          <h1 className="mb-5 text-[42px] font-bold leading-[1.08] tracking-tight md:text-[56px]">
+          <h1 className="mb-5 break-keep text-[24px] sm:text-[36px] md:text-[48px] lg:text-[54px] font-bold leading-[1.08] tracking-tight whitespace-nowrap">
             내 지식의 우주를 탐험하는<br />
             <span className="gradient-text">AI 두뇌, BrainX</span>
           </h1>

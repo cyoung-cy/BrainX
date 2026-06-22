@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useGuideStore } from "@/lib/use-guide-store";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
@@ -58,7 +59,7 @@ function SearchBar() {
   const options = ["최신순", "오래된순", "제목 기준", "내용 기준", "기간 검색"];
 
   return (
-    <div className="relative w-full md:flex-1 md:max-w-xl">
+    <div className="relative w-full md:flex-1 md:max-w-xl tutorial-target-search">
       <div
         className={cx(
           "group flex h-11 items-center gap-2.5 rounded-2xl border px-3.5 transition-all duration-200",
@@ -182,13 +183,11 @@ function SidebarItem({
   icon,
   label,
   path,
-  collapsed,
   onMyPageClick,
 }: {
   icon: Parameters<typeof Icon>[0]["name"];
   label: string;
   path: string;
-  collapsed: boolean;
   onMyPageClick?: () => void;
 }) {
   const pathname = usePathname();
@@ -206,7 +205,10 @@ function SidebarItem({
         router.push(path);
       }}
       className={cx(
-        "group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 transition-all duration-200",
+        "group relative flex aspect-square w-full items-center justify-center gap-3 rounded-[0.4rem] transition-all duration-200",
+        path === "/home" && "tutorial-target-home",
+        path === "/graph" && "tutorial-target-mindmap",
+        path === "/chat" && "tutorial-target-ai",
         active
           ? "bg-surface2/80 text-txt"
           : "text-txt2 hover:bg-surface2/50 hover:text-txt",
@@ -216,72 +218,35 @@ function SidebarItem({
         <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-accent" />
       ) : null}
       <Icon name={icon} size={19} className={active ? "text-primary" : ""} />
-      {!collapsed ? (
-        <span className="text-[16px] font-medium whitespace-nowrap">
-          {label}
-        </span>
-      ) : null}
-      {collapsed ? (
-        <span className="pointer-events-none absolute left-full ml-3 z-50 whitespace-nowrap rounded-lg border border-line/60 bg-surface2 px-2 py-1 text-[14px] text-txt opacity-0 shadow-soft group-hover:opacity-100">
-          {label}
-        </span>
-      ) : null}
+      
+      {/* Tooltip on Hover */}
+      <span 
+        className="pointer-events-none absolute left-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+      >
+        {label}
+        <div
+          className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 bg-txt"
+          style={{ zIndex: -1 }}
+        />
+      </span>
     </button>
   );
 }
 
 function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const router = useRouter();
-  const { sidebarCollapsed, setSidebarCollapsed, notes, t } = useBrainX();
+  const { t } = useBrainX();
 
   return (
     <aside
-      className={cx(
-        "relative z-20 hidden h-full shrink-0 flex-col border-r border-line/50 bg-bg2/40 backdrop-blur-xl transition-all duration-300 md:flex",
-        sidebarCollapsed ? "w-[68px]" : "w-[236px]",
-      )}
+      className="relative z-20 hidden h-full w-[50px] shrink-0 flex-col border-r border-line/50 bg-bg2/40 backdrop-blur-xl transition-all duration-300 md:flex pt-4"
     >
-      <div className="flex h-16 shrink-0 items-center gap-2.5 px-4">
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2.5 group"
-        >
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary via-accent to-cyan shadow-glow">
-            <Icon
-              name="brain"
-              size={20}
-              className="text-white"
-              strokeWidth={1.6}
-            />
-          </div>
-          {!sidebarCollapsed ? (
-            <span className="text-[21px] font-bold tracking-tight text-txt font-display">
-              BrainX
-            </span>
-          ) : null}
-        </button>
-      </div>
-
-      <div className="mb-2 px-3">
-        <Btn
-          variant="primary"
-          size={sidebarCollapsed ? "sm" : "md"}
-          icon="plus"
-          className={cx("w-full", sidebarCollapsed && "px-0")}
-          onClick={() => router.push("/notes/new")}
-        >
-          {!sidebarCollapsed ? "새 노트" : null}
-        </Btn>
-      </div>
-
-      <nav className="scroll flex-1 space-y-1 overflow-y-auto px-3">
+      <nav className="flex-1 space-y-2 px-1">
         {NAV.map((item) => (
           <SidebarItem
             key={item.id}
             {...item}
             label={t(item.labelKey)}
-            collapsed={sidebarCollapsed}
             onMyPageClick={onOpenSettings}
           />
         ))}
@@ -291,62 +256,44 @@ function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
             key={item.id}
             {...item}
             label={t(item.labelKey)}
-            collapsed={sidebarCollapsed}
           />
         ))}
       </nav>
 
-      {!sidebarCollapsed ? (
-        <div className="m-3 rounded-2xl glass p-3.5">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[14px] font-semibold text-txt">
-              Free 플랜
-            </span>
-            <Badge color="139 92 246" className="!h-5">
-              Pro 추천
-            </Badge>
-          </div>
-          <div className="mb-1.5 h-1.5 overflow-hidden rounded-full bg-surface2">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
-              style={{ width: `${Math.min(64 + notes.length, 92)}%` }}
-            />
-          </div>
-          <p className="text-[13px] text-txt3">토큰 12.8K / 20K · 이번 달</p>
-          <Btn
-            variant="soft"
-            size="sm"
-            className="mt-3 w-full"
-            onClick={() => router.push("/billing")}
+      <div className="mt-auto px-1 pb-3 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => useGuideStore.getState().resetTutorials()}
+          className="group relative grid aspect-square w-full place-items-center rounded-[0.4rem] text-txt3 hover:bg-surface2/50 hover:text-txt transition-colors"
+        >
+          <Icon name="help" size={18} />
+          <span 
+            className="pointer-events-none absolute left-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100"
           >
-            업그레이드
-          </Btn>
-        </div>
-      ) : (
+            튜토리얼 다시보기
+            <div
+              className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 bg-txt"
+              style={{ zIndex: -1 }}
+            />
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => router.push("/billing")}
-          className="m-3 grid h-10 place-items-center rounded-xl glass text-accent"
-          title="업그레이드"
+          className="group relative grid aspect-square w-full place-items-center rounded-[0.4rem] glass text-accent"
         >
           <Icon name="bolt" size={18} />
+          <span 
+            className="pointer-events-none absolute left-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          >
+            업그레이드
+            <div
+              className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 bg-txt"
+              style={{ zIndex: -1 }}
+            />
+          </span>
         </button>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setSidebarCollapsed((current) => !current)}
-        className="absolute -right-3 top-20 z-30 grid h-6 w-6 place-items-center rounded-full border border-line bg-surface2 text-txt2 shadow-soft hover:text-txt"
-      >
-        <Icon
-          name="chevR"
-          size={14}
-          className={cx(
-            "transition-transform",
-            sidebarCollapsed ? "" : "rotate-180",
-          )}
-        />
-      </button>
+      </div>
     </aside>
   );
 }
@@ -464,8 +411,21 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <header className="relative z-10 border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
-      <div className="flex flex-col gap-3 px-4 py-3 md:h-16 md:flex-row md:items-center md:gap-3 md:px-5 md:py-0">
-        <SearchBar />
+      <div className="flex flex-col gap-3 px-4 py-3 md:h-16 md:flex-row md:items-center md:gap-3 md:pl-0 md:pr-5 md:py-0">
+        <div className="hidden h-full w-[50px] shrink-0 items-center justify-center border-r border-line/50 md:flex">
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="flex items-center group"
+          >
+            <div className="grid aspect-square w-[42px] shrink-0 place-items-center rounded-[0.4rem] bg-gradient-to-br from-primary via-accent to-cyan shadow-glow">
+              <Icon name="brain" size={22} className="text-white" strokeWidth={1.6} />
+            </div>
+          </button>
+        </div>
+        <div className="md:ml-2 md:flex-1 md:max-w-xl">
+          <SearchBar />
+        </div>
         <div className="flex items-center justify-between gap-2 md:ml-auto md:justify-end">
           <ThemeToggle />
           <button
@@ -522,11 +482,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }, [pathname, router]);
 
   return (
-    <div className="flex h-[100svh] w-full overflow-hidden">
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onOpenSettings={() => setSettingsOpen(true)} />
-        <main className="scroll relative flex-1 overflow-y-auto">
+    <div className="flex h-[100svh] w-full flex-col overflow-hidden">
+      <TopBar onOpenSettings={() => setSettingsOpen(true)} />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <main className="scroll relative flex-1 min-w-0 overflow-y-auto">
           {children}
         </main>
       </div>

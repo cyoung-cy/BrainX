@@ -234,7 +234,7 @@ export default function FolderTree({
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
           <div
-            className="flex items-center gap-1.5 rounded-md border border-primary/50 px-2.5 py-1.5 text-[12px] font-medium text-txt shadow-lg"
+            className="flex items-center gap-1.5 rounded-md border border-primary/50 px-2.5 py-1.5 text-[13px] font-medium text-txt shadow-lg"
             style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 20px -4px rgba(2,6,23,0.5)" }}
           >
             {activeDrag.dragType === "folder" ? (
@@ -557,7 +557,7 @@ function FolderNode({
             }
             <span
               className={cx(
-                "flex-1 truncate text-[12px] font-medium",
+                "flex-1 truncate text-[14px] font-medium",
                 isSelected ? "text-txt" : "text-txt2 group-hover:text-txt"
               )}
             >
@@ -740,7 +740,7 @@ function NoteRow({
         onDragEnd();
       }}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1 rounded-md pr-1 text-[12px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1 rounded-md pr-1 text-[13px] transition-colors",
         isActive ? "font-medium text-txt" : "text-txt3 hover:text-txt2",
         dragging && "opacity-40"
       )}

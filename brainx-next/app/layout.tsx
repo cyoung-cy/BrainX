@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { BrainXProvider } from "@/components/brainx-provider";
 import { ToastStack } from "@/components/brainx-ui";
+import { TutorialProvider } from "@/components/tutorial-provider";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -47,7 +48,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" suppressHydrationWarning className={`${display.variable} ${mono.variable}`}>
-      <body suppressHydrationWarning className="min-h-screen overflow-x-hidden bg-bg text-txt antialiased">
+      <body suppressHydrationWarning className="min-h-screen overflow-x-hidden bg-bg text-txt antialiased text-[14px]">
         <Script id="brainx-theme-init" strategy="beforeInteractive">
           {themeScript}
         </Script>
@@ -58,7 +59,9 @@ export default function RootLayout({
         </div>
         <div className="relative z-10 min-h-screen">
           <BrainXProvider>
-            {children}
+            <TutorialProvider>
+              {children}
+            </TutorialProvider>
             <ToastStack />
           </BrainXProvider>
         </div>
