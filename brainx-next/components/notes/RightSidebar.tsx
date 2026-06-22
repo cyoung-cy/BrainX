@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { CollapseChevron } from "./CollapseChevron";
 import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
 import { MockNote } from "@/lib/notes/noteTypes";
@@ -79,10 +80,7 @@ function SideCard({
             {count}
           </span>
         )}
-        {open
-          ? <ChevronDown size={12} className="shrink-0 text-txt3" />
-          : <ChevronRight size={12} className="shrink-0 text-txt3" />
-        }
+        <CollapseChevron expanded={open} size={12} />
       </button>
 
       {/* 카드 본문 */}
@@ -242,7 +240,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
 
   return (
     <div
-      className="flex w-[270px] shrink-0 flex-col border-l border-line/50"
+      className="flex h-full w-full min-w-0 flex-col border-l border-line/50"
       style={{ background: "rgb(var(--bg2))" }}
     >
       {/* ── 패널 헤더 ──────────────────────────────── */}
@@ -383,10 +381,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         >
           <Icon name="chat" size={13} className="shrink-0 text-txt3" />
           <span className="flex-1 text-left text-[12px] font-semibold text-txt">인라인 AI</span>
-          {chatOpen
-            ? <ChevronDown size={11} className="shrink-0 text-txt3" />
-            : <ChevronRight size={11} className="shrink-0 text-txt3" />
-          }
+          <CollapseChevron expanded={chatOpen} size={11} />
         </button>
 
         {chatOpen && (

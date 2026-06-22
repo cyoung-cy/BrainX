@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/** import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/web/variable/pretendardvariable-dynamic-subset.min.css");*/
+
 :root {
   --bg: 10 12 26;
   --bg2: 13 18 38;
@@ -538,7 +540,9 @@ html.light .aurora b {
   outline: none;
   min-height: 300px;
   max-width: 72ch;
-  font-size: 0.9375rem;
+  /* 문서 전체 타이포그래피 설정(--note-fs-*)이 지정되지 않으면 14px로 폴백 */
+  font-size: var(--note-fs-body, 14px);
+  font-family: var(--note-font-family, inherit);
   line-height: 1.8;
   color: rgb(var(--txt2));
 }
@@ -553,7 +557,9 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h1 {
-  font-size: 1.8em;
+  /* --note-fs-h1이 설정되면 절대 px값(예: "38px")으로 덮어쓰고, 아니면 본문(em 기준) 대비
+     기존 비율(1.8배)을 그대로 유지 — 본문 font-size가 바뀌면 em 단위라 자동으로 같이 커진다 */
+  font-size: var(--note-fs-h1, 1.8em);
   font-weight: 700;
   margin-top: 1.4em;
   margin-bottom: 0.2em;
@@ -562,7 +568,7 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h2 {
-  font-size: 1.35em;
+  font-size: var(--note-fs-h2, 1.35em);
   font-weight: 600;
   margin-top: 1.2em;
   margin-bottom: 0.15em;
@@ -570,7 +576,7 @@ html.light .aurora b {
 }
 
 .tiptap-note-content .ProseMirror h3 {
-  font-size: 1.1em;
+  font-size: var(--note-fs-h3, 1.1em);
   font-weight: 600;
   margin-top: 1em;
   color: rgb(var(--txt));
@@ -657,6 +663,114 @@ html.light .aurora b {
   height: 0;
 }
 
+/* ── 표(Table) — .tableWrapper/.column-resize-handle/.selectedCell/.resize-cursor는
+   @tiptap/extension-table이 자동으로 붙이는 고정 클래스명(설정 불가)이라 반드시 스타일이
+   필요하다. */
+.tiptap-note-content .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.75em 0;
+  border-radius: 0.55rem;
+}
+
+.tiptap-note-content .ProseMirror table.note-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  color: rgb(var(--txt2));
+  background: rgb(var(--surface) / 0.45);
+}
+
+.tiptap-note-content .ProseMirror table.note-table td,
+.tiptap-note-content .ProseMirror table.note-table th {
+  border: 1px solid rgb(var(--border) / 0.82);
+  padding: 0.45em 0.65em;
+  vertical-align: top;
+  position: relative;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.tiptap-note-content .ProseMirror table.note-table th {
+  background: rgb(var(--surface2) / 0.92);
+  color: rgb(var(--txt));
+  font-weight: 650;
+  text-align: left;
+}
+
+/* 이전에는 hover된 셀의 행 전체 + 열 전체(:has() + :nth-child 20열 분량)가 함께 강조되어
+   과한 시각 효과였다 — 현재 셀 하나만 옅게 표시하는 것으로 단순화했다. */
+.tiptap-note-content .ProseMirror table.note-table :is(td, th):hover {
+  box-shadow: inset 0 0 0 999px rgb(var(--primary) / 0.05);
+}
+
+/* 표 전체 크기. "맞춤"/"원본"은 순수 CSS로 처리한다. 50/75/125/150%·사용자 지정은 표에
+   <img>의 naturalWidth 같은 고정값이 없어 CSS만으로 "원본 폭 기준 비율"을 계산할 수
+   없으므로, BrainXTableView(NoteEditor.tsx)가 원본 폭을 측정해 인라인 style.width/minWidth로
+   직접 적용한다 — 그래서 percent 프리셋용 규칙은 여기 없다. 확대한 폭은 .tableWrapper
+   안에서만 스크롤된다. */
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="fit"] { width: 100%; }
+.tiptap-note-content .ProseMirror table.note-table[data-width-mode="original"] {
+  width: max-content !important;
+  min-width: max-content !important;
+}
+
+.tiptap-note-content .ProseMirror .tableWrapper:has(table.note-table[data-align="center"]) table.note-table { margin-inline: auto; }
+.tiptap-note-content .ProseMirror .tableWrapper:has(table.note-table[data-align="right"]) table.note-table { margin-left: auto; }
+
+.tiptap-note-content .ProseMirror table.note-table[data-border-width="2"] :is(td, th) { border-width: 2px; }
+.tiptap-note-content .ProseMirror table.note-table[data-border-width="3"] :is(td, th) { border-width: 3px; }
+
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="blue"] td { background: rgb(59 130 246 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="blue"] th { background: rgb(59 130 246 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="emerald"] td { background: rgb(16 185 129 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="emerald"] th { background: rgb(16 185 129 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="amber"] td { background: rgb(245 158 11 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="amber"] th { background: rgb(245 158 11 / 0.16); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] td { background: rgb(244 63 94 / 0.055); }
+.tiptap-note-content .ProseMirror table.note-table[data-table-color="rose"] th { background: rgb(244 63 94 / 0.16); }
+
+/* 셀 단위 배경색·정렬. 표 전체 색([data-table-color])과 같은 specificity라 소스 순서상
+   이 블록을 더 뒤에 둬서 셀 지정이 표 전체 색을 이기게 한다. */
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="yellow"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="yellow"] { background: rgb(234 179 8 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="green"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="green"] { background: rgb(16 185 129 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="blue"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="blue"] { background: rgb(59 130 246 / 0.22); }
+.tiptap-note-content .ProseMirror table.note-table td[data-cell-bg="gray"],
+.tiptap-note-content .ProseMirror table.note-table th[data-cell-bg="gray"] { background: rgb(148 163 184 / 0.26); }
+
+.tiptap-note-content .ProseMirror table.note-table :is(td, th)[data-cell-align="center"] { text-align: center; }
+.tiptap-note-content .ProseMirror table.note-table :is(td, th)[data-cell-align="right"] { text-align: right; }
+
+.tiptap-note-content .ProseMirror table.note-table .selectedCell {
+  background: rgb(var(--primary) / 0.12);
+}
+
+.tiptap-note-content .ProseMirror table.note-table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: rgb(var(--primary) / 0.5);
+  pointer-events: none;
+}
+
+.tiptap-note-content .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.tiptap-note-content .ProseMirror[contenteditable="false"] .column-resize-handle {
+  display: none;
+}
+
+html.light .tiptap-note-content .ProseMirror table.note-table :is(td, th) {
+  border-color: rgb(var(--border));
+}
+
 /* Light mode overrides */
 .tiptap-note-content--light .ProseMirror {
   color: #374151;
@@ -698,7 +812,11 @@ html.light .aurora b {
 .split-pane-editor.tiptap-note-content .ProseMirror {
   min-height: 0;
   max-width: none;
-  font-size: 0.8125rem;  /* 13px — ReadMarkdown과 동일 */
+  /* 이 셀렉터가 .tiptap-note-content .ProseMirror보다 specificity가 높아 그냥 font-size를
+     박아두면 문서 기본 타이포그래피(--note-fs-body)가 적용돼도 항상 14px로 덮어써진다 —
+     여기도 같은 var()로 맞춰 폴백(14px)은 유지하면서 설정값이 있으면
+     반영되게 한다 */
+  font-size: var(--note-fs-body, 14px);
   line-height: 1.85;
 }
 
@@ -1020,49 +1138,5 @@ html.light .hljs-addition {
   color: #15803d;
 }
 
-/* BlockNote — light mode: clean white surface (Notion-like) */
-html.light .bn-root[data-color-scheme=light] {
-  --bn-colors-editor-background: #ffffff;
-  --bn-colors-menu-background: #ffffff;
-  --bn-colors-tooltip-background: #f8fafc;
-  --bn-colors-hovered-background: #f1f5f9;
-  --bn-colors-selected-background: #dbeafe;
-  --bn-colors-border: #e2e8f0;
-  --bn-colors-editor-text: #0f172a;
-  --bn-colors-menu-text: #0f172a;
-  --bn-colors-side-menu: #94a3b8;
-}
-
-/* BlockNote — force dark/light surface to match BrainX */
-.bn-container[data-color-scheme] {
-  --bn-colors-editor-background: transparent;
-  --bn-colors-menu-background: rgb(var(--surface));
-  --bn-colors-tooltip-background: rgb(var(--surface2));
-  --bn-colors-hovered-background: rgb(var(--surface2));
-  --bn-colors-selected-background: rgb(var(--primary) / 0.15);
-  --bn-colors-border: rgb(var(--border));
-  --bn-colors-editor-text: rgb(var(--txt));
-  --bn-colors-menu-text: rgb(var(--txt));
-  --bn-colors-tooltip-text: rgb(var(--txt2));
-}
-
-/*
- * BlockNote font-size override.
- *
- * WHY: BlockNote's bundled CSS sets `.bn-default-styles { font-size: 16px }`
- * with a hardcoded pixel value directly on the editor's root element.
- * Because this explicit declaration lives *inside* the shadow of BlockNote's
- * component tree, a Tailwind text-sm / text-base class on a parent wrapper
- * cannot override it — CSS inheritance is broken by the explicit value.
- *
- * FIX: We place a `data-bn-fontsize` attribute on our wrapper div and set a
- * CSS custom property `--bn-fs` on it.  The rule below has higher specificity
- * ([attr + class] beats [class]) and uses !important, so it reliably wins.
- * Heading em-units (3em / 2em / 1.3em) are relative to .bn-default-styles,
- * so they scale proportionally for free.
- */
-[data-bn-fontsize] .bn-default-styles,
-[data-bn-fontsize] .bn-editor {
-  font-size: var(--bn-fs, 16px) !important;
-  transition: font-size 0.15s ease;
-}
+/* BlockNote 관련 CSS는 BlockNote/Mantine 패키지 제거(components/editor/BlockNoteEditor.tsx
+   삭제)와 함께 정리됨 — 더 이상 어떤 페이지에서도 .bn-* 클래스가 렌더링되지 않는다. */

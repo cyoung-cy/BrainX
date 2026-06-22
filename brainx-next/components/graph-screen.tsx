@@ -40,6 +40,8 @@ type GraphNode = {
 type GraphControls = {
   zoom: (factor: number) => void;
   fit: () => void;
+  center: () => void;
+  fitArea: (width: number, height: number) => void;
   reheat: () => void;
   bridges: () => void;
 };
@@ -139,7 +141,7 @@ function GraphCanvasFlow({
   bridgeMode: boolean;
   onSelect: (id: string | null) => void;
 }) {
-  const { setCenter, fitView, zoomTo, getViewport } = useReactFlow();
+  const { setCenter, fitView, zoomTo, getViewport, fitBounds } = useReactFlow();
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<PlanetFlowNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<OrbitFlowEdge>([]);
   const [hovered, setHovered] = useState<BrainXNote | null>(null);
@@ -167,11 +169,24 @@ function GraphCanvasFlow({
   useEffect(() => {
     if (controls) {
       controls.current = {
-        zoom: (factor) => {
-          zoomTo(factor); // react flow zooming
+        zoom: (delta) => {
+          const currentZoom = getViewport().zoom;
+          zoomTo(currentZoom + delta, { duration: 300 });
         },
         fit: () => {
-          fitView({ duration: 800 });
+          fitView({ duration: 800, padding: 0.1 });
+        },
+        center: () => {
+          setCenter(0, 0, { duration: 800 });
+        },
+        fitArea: (width, height) => {
+          // 노드 실제 크기(너비 약 150px, 높이 50px)를 정확히 감싸도록 여백 조정
+          const w = width + 150;
+          const h = height + 60;
+          fitBounds(
+            { x: -w/2, y: -h/2, width: w, height: h },
+            { padding: 0.1, duration: 800 }
+          );
         },
         reheat: () => {
           // Add some random velocity to shake things up
@@ -239,19 +254,26 @@ function GraphCanvasFlow({
     if (layoutMode === 'tree') {
       const xSpacing = 140;
       const ySpacing = 50;
+      let maxItemsInLayer = 0;
       layers.forEach((layer, depth) => {
+        maxItemsInLayer = Math.max(maxItemsInLayer, layer.length);
         const x = depth * xSpacing;
         const totalHeight = (layer.length - 1) * ySpacing;
         let startY = -totalHeight / 2;
         layer.forEach((id) => {
           const p = positionsRef.current[id];
           if (p) {
-            p.tx = x - (layers.length * xSpacing) / 2;
+            p.tx = x - ((layers.length - 1) * xSpacing) / 2;
             p.ty = startY;
           }
           startY += ySpacing;
         });
       });
+      
+      const width = (layers.length - 1) * xSpacing;
+      const height = (maxItemsInLayer - 1) * ySpacing;
+      if (controls.current) controls.current.fitArea(width, height);
+      
     } else if (layoutMode === 'radial') {
       const minArcSpacing = 40;
       let currentRadius = 0;
@@ -288,12 +310,15 @@ function GraphCanvasFlow({
           });
         }
       });
+      if (controls.current) controls.current.fitArea(currentRadius * 2, currentRadius * 2);
     }
   }, [layoutMode, notes, edges]);
 
   // Physics loop
   useEffect(() => {
+    let tick = 0;
     const step = () => {
+      tick++;
       const pos = positionsRef.current;
       const isStructured = notes.some(n => pos[n.id] && pos[n.id].tx !== null);
 
@@ -305,6 +330,9 @@ function GraphCanvasFlow({
             if (!a || !b) continue;
             let dx = a.x - b.x;
             let dy = a.y - b.y;
+            // Optimization: Skip expensive math for nodes far away from each other
+            if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue;
+            
             const distance2 = dx * dx + dy * dy + 0.01;
             const distance = Math.sqrt(distance2);
             const repulsion = 2600 / distance2;
@@ -389,16 +417,23 @@ function GraphCanvasFlow({
         }
       });
 
-      if (moved) {
-        setRfNodes((nds) => 
-          nds.map((n) => {
+      if (moved && tick % 2 === 0) {
+        setRfNodes((nds) => {
+          let hasChanges = false;
+          const next = nds.map((n) => {
             const p = pos[n.id];
             if (p) {
-              return { ...n, position: { x: p.x, y: p.y } };
+              const dx = Math.abs(n.position.x - p.x);
+              const dy = Math.abs(n.position.y - p.y);
+              if (dx > 0.5 || dy > 0.5) {
+                hasChanges = true;
+                return { ...n, position: { x: p.x, y: p.y } };
+              }
             }
             return n;
-          })
-        );
+          });
+          return hasChanges ? next : nds;
+        });
       }
 
       raf.current = requestAnimationFrame(step);
@@ -470,18 +505,24 @@ function GraphCanvasFlow({
           theme
         },
         hidden,
-        draggable: true
+        draggable: true,
+        className: dimmed ? 'pointer-events-none' : ''
       };
     });
     
     const newEdges = edges.map(edge => {
+      const sourceNote = notes.find(n => n.id === edge.source);
+      const targetNote = notes.find(n => n.id === edge.target);
+      
+      const sourceDimmed = timeFilter !== "전체" && (ageRank[sourceNote?.updated ?? 0] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
+      const targetDimmed = timeFilter !== "전체" && (ageRank[targetNote?.updated ?? 0] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
+
       const isSelected = activeId && (edge.source === activeId || edge.target === activeId);
       // bridgeMode: bridge 아닌 엣지는 흐리게, bridge 엣지는 강조
       const isDimmed = activeId
         ? !isSelected
-        : (bridgeMode ? !edge.bridge : false);
+        : (bridgeMode ? !edge.bridge : (sourceDimmed || targetDimmed));
       // 소스 노드의 색상을 엣지에 전달
-      const sourceNote = notes.find(n => n.id === edge.source);
       const sourceColor = sourceNote ? clusterById(sourceNote.cluster).color : null;
       // 선택/호버된 활성 노드의 색상을 엣지에 전달
       const activeNote = activeId ? notes.find(n => n.id === activeId) : null;
@@ -527,9 +568,13 @@ function GraphCanvasFlow({
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={(_, node) => onSelect(selectedId === node.id ? null : node.id)}
+        onNodeClick={(_, node) => {
+          if (node.data.dimmed) return;
+          onSelect(selectedId === node.id ? null : node.id);
+        }}
         onPaneClick={() => onSelect(null)}
         onNodeMouseEnter={(_, node) => {
+          if (node.data.dimmed) return;
           if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
           const note = notes.find(n => n.id === node.id);
           if (note) setHovered(note);
@@ -767,20 +812,32 @@ function GraphScreenInner() {
         </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-3">
-          <div className="glass flex items-center gap-0.5 rounded-xl p-1.5 backdrop-blur-md shadow-sm">
-            <button type="button" onClick={() => controls.current?.zoom(1.2)} title="확대" className="grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
+          <div className="glass relative z-20 flex items-center gap-0.5 rounded-xl p-1.5 backdrop-blur-md shadow-sm">
+            <button type="button" onClick={() => controls.current?.zoom(0.5)} className="group relative grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
               <Icon name="zoomin" size={17} />
+              <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                확대
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
             </button>
-            <button type="button" onClick={() => controls.current?.zoom(0.83)} title="축소" className="grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
+            <button type="button" onClick={() => controls.current?.zoom(-0.5)} className="group relative grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
               <Icon name="zoomout" size={17} />
+              <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                축소
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
             </button>
-            <button type="button" onClick={() => controls.current?.fit()} title="전체 보기" className="grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
+            <button type="button" onClick={() => controls.current?.fit()} className="group relative grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
               <Icon name="fit" size={17} />
+              <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                전체 보기
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
             </button>
             <div className="mx-1 h-6 w-px bg-line/40" />
             <div className="flex rounded-lg p-0.5 bg-surface2/50">
               {/* 네트워크 (force): 노드 3개와 연결선 */}
-              <button type="button" onClick={() => setLayoutMode('force')} title="네트워크 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'force' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+              <button type="button" onClick={() => setLayoutMode('force')} className={cx("group relative h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'force' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
                 <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <circle cx="8.5" cy="3.5" r="2" />
                   <circle cx="3" cy="13" r="2" />
@@ -789,9 +846,13 @@ function GraphScreenInner() {
                   <line x1="8.5" y1="5.5" x2="14" y2="11" />
                   <line x1="3" y1="13" x2="14" y2="13" />
                 </svg>
+                <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  네트워크 레이아웃
+                  <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+                </span>
               </button>
-              {/* 가로 트리: 계층형 트리 */}
-              <button type="button" onClick={() => setLayoutMode('tree')} title="가로 트리 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'tree' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+              {/* ─ 트리: 트리 레이아웃 */}
+              <button type="button" onClick={() => setLayoutMode('tree')} className={cx("group relative h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'tree' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
                 <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <circle cx="2.5" cy="8.5" r="1.8" />
                   <circle cx="9" cy="4" r="1.8" />
@@ -807,9 +868,13 @@ function GraphScreenInner() {
                   <line x1="10.8" y1="13" x2="13.5" y2="10.5" />
                   <line x1="10.8" y1="13" x2="13.5" y2="15.2" />
                 </svg>
+                <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  가로 트리 레이아웃
+                  <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+                </span>
               </button>
               {/* 방사형: 동심원 */}
-              <button type="button" onClick={() => setLayoutMode('radial')} title="방사형 레이아웃" className={cx("h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'radial' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
+              <button type="button" onClick={() => setLayoutMode('radial')} className={cx("group relative h-9 w-9 grid place-items-center rounded-md transition-colors", layoutMode === 'radial' ? "bg-txt/15 text-txt shadow-sm" : "text-txt3 hover:text-txt")}>
                 <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <circle cx="8.5" cy="8.5" r="1.8" />
                   <circle cx="8.5" cy="8.5" r="5" />
@@ -819,32 +884,49 @@ function GraphScreenInner() {
                   <line x1="3.5" y1="8.5" x2="1.5" y2="8.5" />
                   <line x1="13.5" y1="8.5" x2="15.5" y2="8.5" />
                 </svg>
+                <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  방사형 레이아웃
+                  <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+                </span>
               </button>
             </div>
             <div className="mx-1 h-6 w-px bg-line/40" />
             <button
                 type="button"
                 onClick={() => setTheme(t => t === 'universe' ? '2d' : 'universe')}
-                title={theme === 'universe' ? '우주 모드 끄기' : '우주 모드 켜기'}
                 className={cx(
-                  "grid h-9 w-9 place-items-center rounded-lg transition-all duration-300 relative",
+                  "group relative grid h-9 w-9 place-items-center rounded-lg transition-all duration-300",
                   theme === 'universe' 
-                    ? "text-cyan drop-shadow-[0_0_8px_rgba(34,211,238,0.7)] hover:text-white hover:drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" 
+                    ? "text-cyan hover:text-white" 
                     : "text-txt3 hover:bg-txt/10 hover:text-txt"
                 )}
               >
-                <UniverseIcon size={19} />
+                <div className={theme === 'universe' ? "drop-shadow-[0_0_8px_rgba(34,211,238,0.7)] group-hover:drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] transition-all duration-300" : ""}>
+                  <UniverseIcon size={19} />
+                </div>
+                <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  {theme === 'universe' ? '우주 모드 끄기' : '우주 모드 켜기'}
+                  <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+                </span>
               </button>
             <div className="mx-1 h-6 w-px bg-line/40" />
-            <button type="button" onClick={() => setClusterOn((current) => !current)} title="클러스터링" className={cx("grid h-9 w-9 place-items-center rounded-lg transition-colors", clusterOn ? "bg-primary text-white" : "text-txt3 hover:bg-txt/10 hover:text-txt")}>
+            <button type="button" onClick={() => setClusterOn((current) => !current)} className={cx("group relative grid h-9 w-9 place-items-center rounded-lg transition-colors", clusterOn ? "bg-primary text-white" : "text-txt3 hover:bg-txt/10 hover:text-txt")}>
               <Icon name="cluster" size={17} />
+              <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                클러스터링
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
             </button>
-            <button type="button" onClick={() => controls.current?.reheat()} title="재배치" className="grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
+            <button type="button" onClick={() => controls.current?.reheat()} className="group relative grid h-9 w-9 place-items-center rounded-lg transition-colors text-txt3 hover:bg-txt/10 hover:text-txt">
               <Icon name="refresh" size={17} />
+              <span className="pointer-events-none absolute top-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                재배치
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
             </button>
           </div>
 
-          <div className="glass flex items-center gap-0.5 rounded-xl p-1 backdrop-blur-md shadow-sm">
+          <div className="glass relative z-10 flex items-center gap-0.5 rounded-xl p-1 backdrop-blur-md shadow-sm">
             {["전체", "최근 1일", "최근 1주"].map((item) => (
               <button
                 key={item}

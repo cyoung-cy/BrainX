@@ -1,0 +1,235 @@
+"use client";
+
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Node, mergeAttributes, nodeInputRule } from "@tiptap/core";
+import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
+import type { EditorView } from "@tiptap/pm/view";
+import { ImageOff } from "lucide-react";
+import { cx } from "@/lib/utils";
+import {
+  BlockSizeToolbar,
+  blockContentStyle,
+  blockFrameStyle,
+  blockJustify,
+  type BlockAlign,
+  type BlockWidthMode,
+} from "./BlockControls";
+
+/** 클립보드/드래그앤드롭으로 들어온 이미지 파일을 base64 data URL로 읽어 지정 위치(또는 현재
+    커서)에 이미지 블록으로 삽입한다. 파일 읽기가 비동기라 handlePaste/handleDrop처럼 동기
+    반환값이 필요한 곳에서는 호출 직후 true를 반환하고, 실제 삽입은 콜백에서 수행한다.
+    TODO: 실제 서비스에서는 base64 대신 업로드 API(S3/MinIO)에 파일을 보내고 반환된 URL을
+    src로 사용해야 한다 — 지금은 백엔드 업로드 연동이 없는 프론트 데모 단계라 base64로 처리. */
+export function insertImageBlockFromFile(view: EditorView, file: File, pos?: number) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const src = typeof reader.result === "string" ? reader.result : null;
+    if (!src) return;
+    const insertPos = pos ?? view.state.selection.from;
+    const node = view.state.schema.nodes.imageBlock.create({
+      src,
+      alt: file.name,
+      align: "center",
+      widthMode: "fit",
+    });
+    view.dispatch(view.state.tr.insert(insertPos, node));
+  };
+  reader.readAsDataURL(file);
+}
+
+declare module "@tiptap/core" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Commands<ReturnType> {
+    imageBlock: {
+      setImageBlock: (attrs: { src: string; alt?: string | null }) => ReturnType;
+    };
+  }
+}
+
+function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
+  const [broken, setBroken] = useState(false);
+  const src          = (node.attrs.src as string) ?? "";
+  const alt          = (node.attrs.alt as string) ?? "";
+  const align        = (node.attrs.align as BlockAlign) ?? "center";
+  const widthMode    = (node.attrs.widthMode as BlockWidthMode) ?? "fit";
+  const widthPercent = (node.attrs.widthPercent as number | null) ?? null;
+
+  // 50/75/125/150% 같은 비율 프리셋은 "원본 픽셀 크기"를 알아야 계산할 수 있다(컨테이너
+  // 폭 기준 계산이 이번 수정의 대상 버그였다) — <img>의 naturalWidth를 측정해 둔다.
+  // "원본"/"맞춤" 모드는 이 값과 무관하게 순수 CSS(아래 frameStyle/contentStyle)로 처리되어
+  // 측정 전에도 깜빡임 없이 항상 정확하다.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [naturalWidthPx, setNaturalWidthPx] = useState<number | null>(null);
+
+  useEffect(() => setNaturalWidthPx(null), [src]);
+
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) setNaturalWidthPx(img.naturalWidth);
+  }, [src]);
+
+  // 크기 툴바는 이제 document.body에 portal로 뜬다(Split View 좁은 패널에서 글자가 세로로
+  // 깨지거나 잘리는 문제 방지, BlockControls.tsx 참고) — 그래서 CSS group-hover 대신 이
+  // wrapper의 실제 hover를 JS 상태로 추적해 anchor로 넘긴다.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+
+  const isOriginal = widthMode === "original";
+  const frameStyle = isOriginal
+    ? { width: "100%", maxWidth: "100%" }
+    : blockFrameStyle(widthMode, widthPercent, naturalWidthPx);
+  const contentStyle = isOriginal
+    ? { width: "max-content", maxWidth: "none" }
+    : blockContentStyle(widthMode, widthPercent, naturalWidthPx);
+
+  return (
+    <NodeViewWrapper className="split-image-block my-3" data-drag-handle>
+      {/* NodeViewWrapper는 forwardRef가 아니라 ref를 직접 못 받는다 — hover 감지/위치 측정용
+          ref는 이 안쪽 div에 둔다. */}
+      <div
+        ref={wrapperRef}
+        className="relative"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <BlockSizeToolbar
+          value={{ align, widthMode, widthPercent }}
+          onChange={(next) => updateAttributes(next)}
+          anchorRef={wrapperRef}
+          visible={hovered || selected}
+        />
+        <div className="flex" style={{ justifyContent: blockJustify(align) }}>
+          <div
+            style={{ ...frameStyle, overflowX: "auto" }}
+            className={cx(
+              "rounded-lg",
+              selected && "outline outline-2 outline-offset-2 outline-primary/60"
+            )}
+          >
+            <div style={contentStyle}>
+              {broken || !src ? (
+                <div className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-line/60 text-txt3">
+                  <ImageOff size={18} />
+                  <span className="text-[11px]">이미지를 불러올 수 없습니다</span>
+                </div>
+              ) : (
+                <img
+                  ref={imgRef}
+                  src={src}
+                  alt={alt}
+                  onLoad={(e) => setNaturalWidthPx(e.currentTarget.naturalWidth)}
+                  onError={() => setBroken(true)}
+                  draggable={false}
+                  style={{
+                    display: "block",
+                    width: isOriginal ? "auto" : "100%",
+                    maxWidth: isOriginal ? "none" : "100%",
+                    height: "auto",
+                    borderRadius: "0.5rem",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+/** 노트 본문에 삽입되는 이미지 블록. 텍스트 노드가 아닌 atom(leaf) 노드라 캡션/주변 텍스트
+    편집과 독립적으로 정렬·크기를 가질 수 있다(코드블록의 mermaid 옵션과 동일한 패턴 공유,
+    `BlockControls.tsx` 참고). 실제 업로드 API가 없으므로 src는 data URL(base64)/외부
+    URL을 그대로 저장한다.
+    TODO: 운영 환경에서는 paste/drop 시 base64 대신 S3/MinIO에 업로드하고 반환된 asset URL을
+    src에 저장해야 한다(현재는 프론트 데모 단계라 base64 직접 저장). */
+export const ImageBlock = Node.create({
+  name: "imageBlock",
+  group: "block",
+  atom: true,
+  draggable: true,
+  selectable: true,
+
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      align: {
+        default: "center",
+        parseHTML: (el) => el.getAttribute("data-align") ?? "center",
+        renderHTML: (attrs) => ({ "data-align": String(attrs.align ?? "center") }),
+      },
+      widthMode: {
+        default: "fit",
+        parseHTML: (el) => el.getAttribute("data-width-mode") ?? "fit",
+        renderHTML: (attrs) => ({ "data-width-mode": String(attrs.widthMode ?? "fit") }),
+      },
+      widthPercent: {
+        default: null,
+        parseHTML: (el) => {
+          const v = el.getAttribute("data-width-percent");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attrs) =>
+          attrs.widthPercent ? { "data-width-percent": String(attrs.widthPercent) } : {},
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: "div[data-image-block]",
+        getAttrs: (el) => {
+          if (!(el instanceof HTMLElement)) return false;
+          const img = el.querySelector("img");
+          if (!img) return false;
+          return {
+            src: img.getAttribute("src"),
+            alt: img.getAttribute("alt"),
+            align: el.getAttribute("data-align") ?? "center",
+            widthMode: el.getAttribute("data-width-mode") ?? "fit",
+            widthPercent: el.getAttribute("data-width-percent")
+              ? Number(el.getAttribute("data-width-percent"))
+              : null,
+          };
+        },
+      },
+      // 외부 HTML/마크다운 변환 등에서 단순 <img> 태그만 오는 경우의 폴백
+      { tag: "img" },
+    ];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const { src, alt } = node.attrs;
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-image-block": "true" }),
+      ["img", { src, alt: alt ?? "" }],
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageBlockView);
+  },
+
+  addCommands() {
+    return {
+      setImageBlock:
+        (attrs) =>
+        ({ commands }) =>
+          commands.insertContent({ type: this.name, attrs: { align: "center", widthMode: "fit", ...attrs } }),
+    };
+  },
+
+  addInputRules() {
+    return [
+      // 마크다운 이미지 문법 ![alt](url) + 공백/줄바꿈 입력 시 자동으로 이미지 블록으로 변환
+      nodeInputRule({
+        find: /(?:^|\s)!\[([^\]]*)\]\((\S+)\)\s$/,
+        type: this.type,
+        getAttributes: (match) => ({ alt: match[1] || null, src: match[2] }),
+      }),
+    ];
+  },
+});

@@ -10,6 +10,22 @@ export interface MockFolder {
   favorite?: boolean;
 }
 
+/** 노트 전체(문서 단위) 타이포그래피 설정 — 선택한 텍스트에만 적용되는 BubbleToolbar의
+    Aa(FontPopover, fontExtensions.ts)와는 별개로 노트 전체의 기본값을 결정한다. */
+export interface NoteTypography {
+  /** 기본 글꼴 크기 배율(%, 기본 100) — 본문/H1/H2/H3가 이 비율로 함께 커지거나 작아진다 */
+  scalePercent?: number;
+  /** 문서 전체 기본 글꼴 — null/undefined면 앱 기본 글꼴 사용 */
+  fontFamily?: string | null;
+  /** 레벨별 개별 글자 크기(px) 오버라이드. 설정된 레벨은 scalePercent 계산값을 무시하고 이 값을 그대로 쓴다 */
+  overrides?: {
+    body?: number;
+    h1?: number;
+    h2?: number;
+    h3?: number;
+  };
+}
+
 export interface MockNote {
   id: string;
   title: string;
@@ -19,6 +35,10 @@ export interface MockNote {
   folderId?: string;
   createdAt: number;
   updatedAt: number;
+  version?: number;
+  persisted?: boolean;
+  /** 선택 사항 — 설정하지 않은 노트는 기존 기본 스타일을 그대로 사용한다 */
+  typography?: NoteTypography;
 }
 
 /** 일반 노트 탭 */

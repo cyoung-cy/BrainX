@@ -5302,10 +5302,6 @@ paths:
         operationId: checkEntitlementsInternal
         reason: capability/quota must be decided synchronously before model call or job acceptance
         required: true
-      - targetService: knowledge-workspace
-        operationId: getNoteSnapshotInternal
-        reason: only when the operation requires latest authoritative markdown beyond the Intelligence read model
-        required: conditional
       x-async-boundary: false
       requestBody:
         required: true
@@ -5331,7 +5327,7 @@ paths:
 
                     event: done
 
-                    data: {"messageId":"msg_01J..."}
+                    data: {"suggestionId":"sug_01J...","action":"REWRITE","modelId":"gpt-5.4-mini"}
 
 
                     '
@@ -5379,13 +5375,9 @@ paths:
         description: 2D/3D graph and mind map UI
       x-produces-events:
       - AiSuggestionDecisionRecorded
-      x-internal-sync-calls:
-      - targetService: knowledge-workspace
-        operationId: patchNoteContentInternal
-        reason: ACCEPTED decision that changes note content must be applied through Workspace command API
-        required: conditional
+      x-internal-sync-calls: []
       x-async-boundary: false
-      description: Accepted/Rejected/Regenerated 개별 이벤트 대신 AiSuggestionDecisionRecorded 하나로 표준화한다.
+      description: v1은 Workspace patch 없이 Accepted/Rejected/Regenerated 결정을 AiSuggestionDecisionRecorded 이벤트로만 기록한다.
       parameters:
       - name: suggestionId
         in: path
@@ -9216,12 +9208,48 @@ components:
           - canEdit
           - canShare
           additionalProperties: false
+        typography:
+          $ref: '#/components/schemas/NoteTypography'
       required:
       - noteId
       - title
       - markdown
       - version
       - permissions
+      additionalProperties: false
+    NoteTypography:
+      type: object
+      nullable: true
+      description: >-
+        노트 단위 타이포그래피 설정. 본문 콘텐츠(markdown)와는 별개로 저장되는 노트별
+        설정값이며, 설정하지 않은 노트는 기본 스타일을 그대로 사용한다.
+      properties:
+        scalePercent:
+          type: integer
+          nullable: true
+          description: 기본 글꼴 크기 배율(%). null이면 100%(기본값).
+        fontFamily:
+          type: string
+          nullable: true
+          description: 노트 전체 기본 글꼴. null이면 앱 기본 글꼴.
+        overrides:
+          type: object
+          nullable: true
+          description: 레벨별 개별 글자 크기(px) 오버라이드. 설정한 레벨은 scalePercent와 무관하게 이 값을 유지한다.
+          properties:
+            body:
+              type: integer
+              nullable: true
+            h1:
+              type: integer
+              nullable: true
+            h2:
+              type: integer
+              nullable: true
+            h3:
+              type: integer
+              nullable: true
+          additionalProperties: false
       additionalProperties: false
     NoteContentSaveRequest:
       type: object
@@ -9277,6 +9305,14 @@ components:
         archived:
           type: boolean
           nullable: true
+        typography:
+          $ref: '#/components/schemas/NoteTypography'
+        order:
+          type: integer
+          nullable: true
+          description: >-
+            같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다. null이면 정렬
+            순서가 지정되지 않은 것으로 간주하고 기본 정렬(생성일 등)을 따른다.
       additionalProperties: false
     NoteMetadataData:
       type: object
@@ -9294,6 +9330,12 @@ components:
             type: string
         version:
           type: integer
+        typography:
+          $ref: '#/components/schemas/NoteTypography'
+        order:
+          type: integer
+          nullable: true
+          description: 같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다.
       required:
       - noteId
       - version
@@ -9408,6 +9450,12 @@ components:
         depth:
           type: integer
           nullable: true
+        order:
+          type: integer
+          nullable: true
+          description: >-
+            같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다. null이면 정렬
+            순서가 지정되지 않은 것으로 간주하고 기본 정렬(이름 등)을 따른다.
       required:
       - folderId
       - name
@@ -9431,6 +9479,9 @@ components:
           nullable: true
         parentFolderId:
           type: string
+          nullable: true
+        order:
+          type: integer
           nullable: true
       additionalProperties: false
     FolderDeleteRequest:
@@ -9527,6 +9578,17 @@ components:
           type: string
         createIfMissing:
           type: boolean
+        anchorText:
+          type: string
+          nullable: true
+          description: >-
+            본문에 실제로 표시되는 링크 텍스트. 위키링크 별칭([[노트|별칭]])이나 임의 앵커
+            텍스트가 targetTitle과 다를 때만 값을 보낸다. null이면 targetTitle과 동일하게
+            표시된 것으로 간주한다.
+        headingAnchor:
+          type: string
+          nullable: true
+          description: 위키링크 [[노트#헤딩]]의 헤딩 식별자. 헤딩 앵커가 없으면 null.
       required:
       - targetTitle
       - createIfMissing
@@ -9542,6 +9604,14 @@ components:
           type: string
         targetTitle:
           type: string
+        anchorText:
+          type: string
+          nullable: true
+          description: NoteLinkCreateRequest.anchorText 참고.
+        headingAnchor:
+          type: string
+          nullable: true
+          description: NoteLinkCreateRequest.headingAnchor 참고.
       required:
       - linkId
       - sourceNoteId
@@ -10221,6 +10291,9 @@ components:
     SemanticSearchRequest:
       type: object
       properties:
+        documentGroupId:
+          type: string
+          description: Logical document group boundary for RAG/search isolation. If omitted, Knowledge Intelligence treats it as default.
         query:
           type: string
         filters:
@@ -10279,6 +10352,12 @@ components:
         selectedText:
           type: string
           nullable: true
+        contextBefore:
+          type: string
+          nullable: true
+        contextAfter:
+          type: string
+          nullable: true
         action:
           type: string
           enum:
@@ -10286,7 +10365,6 @@ components:
           - REWRITE
           - CONTINUE
           - TRANSLATE
-          - SPELLCHECK
         language:
           type: string
           example: ko
@@ -10324,6 +10402,9 @@ components:
     ChatThreadCreateRequest:
       type: object
       properties:
+        documentGroupId:
+          type: string
+          description: Logical document group boundary for this chat thread. If omitted, Knowledge Intelligence treats it as default.
         title:
           type: string
         modelId:
@@ -10337,6 +10418,8 @@ components:
       properties:
         threadId:
           type: string
+        documentGroupId:
+          type: string
         title:
           type: string
         modelId:
@@ -10346,6 +10429,7 @@ components:
           format: date-time
       required:
       - threadId
+      - documentGroupId
       - title
       - modelId
       - createdAt
@@ -10357,6 +10441,7 @@ components:
           type: string
         noteScope:
           type: object
+          description: Optional narrowing scope inside the chat thread documentGroupId. noteScope.documentGroupId must match the thread documentGroupId when supplied.
           additionalProperties: true
         modelId:
           type: string
@@ -10395,9 +10480,19 @@ components:
               vendorInputCostPer1kTokens:
                 type: number
                 nullable: true
+              vendorCachedInputCostPer1kTokens:
+                type: number
+                nullable: true
               vendorOutputCostPer1kTokens:
                 type: number
                 nullable: true
+              costCurrency:
+                type: string
+                nullable: true
+                description: ISO 4217 currency code for vendor token costs.
+              enabled:
+                type: boolean
+                description: Whether the requesting user can select/use this model.
             required:
             - modelId
             - name
@@ -11155,6 +11250,9 @@ components:
       properties:
         noteId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary for this note. If omitted by older Workspace providers, consumers should use default.
         title:
           type: string
         markdown:

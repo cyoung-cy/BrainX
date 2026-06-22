@@ -16,8 +16,6 @@ import {
   type MeasuringConfiguration,
 } from "@dnd-kit/core";
 import {
-  ChevronRight,
-  ChevronDown,
   Folder,
   FolderOpen,
   FileText,
@@ -34,6 +32,9 @@ import {
 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote } from "@/lib/notes/noteTypes";
+import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
+import { CollapseChevron } from "./CollapseChevron";
+import { HoverInfoCard } from "./HoverInfoCard";
 import {
   resolveDrop,
   type DragActiveData,
@@ -72,12 +73,18 @@ interface FolderTreeItem {
   children: FolderTreeItem[];
 }
 
+function noteNewestFirst(a: MockNote, b: MockNote) {
+  const at = Math.max(a.createdAt, a.updatedAt);
+  const bt = Math.max(b.createdAt, b.updatedAt);
+  return bt - at;
+}
+
 function buildTree(folders: MockFolder[], notes: MockNote[], parentId: string | null): FolderTreeItem[] {
   return folders
     .filter((f) => f.parentFolderId === parentId)
     .map((folder) => ({
       folder,
-      notes: notes.filter((n) => n.folderId === folder.id),
+      notes: notes.filter((n) => n.folderId === folder.id).sort(noteNewestFirst),
       children: buildTree(folders, notes, folder.id),
     }));
 }
@@ -132,6 +139,11 @@ export default function FolderTree({
   onReorderFolder,
 }: FolderTreeProps) {
   const tree = buildTree(folders, notes, null);
+  const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
+  const rootNotes = useMemo(
+    () => notes.filter((note) => !note.folderId || !folderIds.has(note.folderId)).sort(noteNewestFirst),
+    [notes, folderIds]
+  );
 
   /* ── 폴더/노트 위치 변경 DnD (별도 그립 핸들 — 기존 노트 드래그-분할과 충돌 없음) ── */
   const [activeDrag, setActiveDrag] = useState<DragActiveData | null>(null);
@@ -202,6 +214,20 @@ export default function FolderTree({
       onDragCancel={handleDragCancel}
     >
       <div className="py-1">
+        {rootNotes.map((note) => (
+          <NoteRow
+            key={note.id}
+            note={note}
+            depth={0}
+            isActive={note.id === activeNoteId}
+            activeDrag={activeDrag}
+            overIndicator={overIndicator}
+            onNoteClick={onNoteClick}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          />
+        ))}
+
         {tree.map((item) => (
           <FolderNode
             key={item.folder.id}
@@ -233,7 +259,7 @@ export default function FolderTree({
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
           <div
-            className="flex items-center gap-1.5 rounded-md border border-primary/50 px-2.5 py-1.5 text-[12px] font-medium text-txt shadow-lg"
+            className="flex items-center gap-1.5 rounded-md border border-primary/50 px-2.5 py-1.5 text-[13px] font-medium text-txt shadow-lg"
             style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 20px -4px rgba(2,6,23,0.5)" }}
           >
             {activeDrag.dragType === "folder" ? (
@@ -434,6 +460,7 @@ function FolderNode({
   const [renameDraft, setRenameDraft] = useState(item.folder.name);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   const dndId = `folder:${item.folder.id}`;
   const isBeingDragged = activeDrag?.dragType === "folder" && activeDrag.id === item.folder.id;
@@ -481,7 +508,7 @@ function FolderNode({
     <div>
       {/* 폴더 헤더 */}
       <div
-        ref={setDropRef}
+        ref={(el) => { setDropRef(el); rowRef.current = el; }}
         className="group relative flex h-7 cursor-pointer items-center gap-1 rounded-md pr-1 transition-colors hover:bg-surface2/40"
         style={{
           paddingLeft: indent,
@@ -517,7 +544,7 @@ function FolderNode({
           title={expanded ? "접기" : "펼치기"}
           className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-txt3 transition-colors hover:bg-surface2/70"
         >
-          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          <CollapseChevron expanded={expanded} size={11} />
         </button>
 
         {renaming ? (
@@ -555,7 +582,7 @@ function FolderNode({
             }
             <span
               className={cx(
-                "flex-1 truncate text-[12px] font-medium",
+                "flex-1 truncate text-[14px] font-medium",
                 isSelected ? "text-txt" : "text-txt2 group-hover:text-txt"
               )}
             >
@@ -609,6 +636,15 @@ function FolderNode({
             )}
           </div>
         )}
+
+        <HoverInfoCard anchorRef={rowRef} hovered={hovered && !renaming && !menuOpen && !isBeingDragged}>
+          <p className="mb-1.5 flex items-center gap-1.5 truncate font-semibold text-txt">
+            <Folder size={11} className="shrink-0" style={{ color: folderColor }} />
+            {item.folder.name}
+          </p>
+          <p className="text-txt2">{item.children.length}개의 폴더</p>
+          <p className="text-txt2">{item.notes.length}개의 노트</p>
+        </HoverInfoCard>
       </div>
 
       {/* 자식 (하위 폴더 + 노트) */}
@@ -632,6 +668,20 @@ function FolderNode({
             </div>
           )}
 
+          {item.notes.map((note) => (
+            <NoteRow
+              key={note.id}
+              note={note}
+              depth={depth + 1}
+              isActive={note.id === activeNoteId}
+              activeDrag={activeDrag}
+              overIndicator={overIndicator}
+              onNoteClick={onNoteClick}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+            />
+          ))}
+
           {item.children.map((child) => (
             <FolderNode
               key={child.folder.id}
@@ -649,20 +699,6 @@ function FolderNode({
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
               onDeleteFolder={onDeleteFolder}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-            />
-          ))}
-
-          {item.notes.map((note) => (
-            <NoteRow
-              key={note.id}
-              note={note}
-              depth={depth + 1}
-              isActive={note.id === activeNoteId}
-              activeDrag={activeDrag}
-              overIndicator={overIndicator}
-              onNoteClick={onNoteClick}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />
@@ -695,6 +731,7 @@ function NoteRow({
 }) {
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
   const indent = depth * 14 + 6 + 16;
 
   const dndId = `note:${note.id}`;
@@ -712,7 +749,7 @@ function NoteRow({
 
   return (
     <div
-      ref={setDropRef}
+      ref={(el) => { setDropRef(el); rowRef.current = el; }}
       draggable
       onClick={() => onNoteClick(note.id)}
       onMouseEnter={() => setHovered(true)}
@@ -728,7 +765,7 @@ function NoteRow({
         onDragEnd();
       }}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1 rounded-md pr-1 text-[12px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1 rounded-md pr-1 text-[13px] transition-colors",
         isActive ? "font-medium text-txt" : "text-txt3 hover:text-txt2",
         dragging && "opacity-40"
       )}
@@ -768,6 +805,14 @@ function NoteRow({
         style={{ color: isActive ? "rgb(var(--primary))" : undefined }}
       />
       <span className="flex-1 truncate">{note.title}</span>
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !dragging}>
+        <p className="mb-1 truncate font-semibold text-txt">{note.title}</p>
+        <p className="text-txt3">마지막 수정</p>
+        <p className="mb-1.5 text-txt2">{formatRelativeTime(note.updatedAt)}</p>
+        <p className="text-txt3">생성일</p>
+        <p className="text-txt2">{formatAbsoluteDateTime(note.createdAt)}</p>
+      </HoverInfoCard>
     </div>
   );
 }
