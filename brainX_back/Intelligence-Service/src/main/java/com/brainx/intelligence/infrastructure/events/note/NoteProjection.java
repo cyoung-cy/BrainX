@@ -3,8 +3,11 @@ package com.brainx.intelligence.infrastructure.events.note;
 import java.time.Instant;
 import java.util.List;
 
+import com.brainx.intelligence.shared.domain.DocumentGroups;
+
 public record NoteProjection(
     String userId,
+    String documentGroupId,
     String noteId,
     String title,
     String folderId,
@@ -25,6 +28,7 @@ public record NoteProjection(
 
     public NoteProjection {
         userId = requireText(userId, "userId");
+        documentGroupId = DocumentGroups.normalize(documentGroupId);
         noteId = requireText(noteId, "noteId");
         title = title == null ? "" : title;
         tags = tags == null ? List.of() : tags.stream()
@@ -63,6 +67,41 @@ public record NoteProjection(
     ) {
         this(
             userId,
+            DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt
+        );
+    }
+
+    public NoteProjection(
+        String userId,
+        String documentGroupId,
+        String noteId,
+        String title,
+        String folderId,
+        List<String> tags,
+        int version,
+        String markdownHash,
+        boolean contentPending,
+        boolean archived,
+        boolean trashed,
+        boolean deleted,
+        String lastEventId,
+        Instant updatedAt
+    ) {
+        this(
+            userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -92,8 +131,33 @@ public record NoteProjection(
         String eventId,
         Instant updatedAt
     ) {
+        return created(
+            userId,
+            DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            eventId,
+            updatedAt
+        );
+    }
+
+    public static NoteProjection created(
+        String userId,
+        String documentGroupId,
+        String noteId,
+        String title,
+        String folderId,
+        List<String> tags,
+        int version,
+        String eventId,
+        Instant updatedAt
+    ) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -130,6 +194,29 @@ public record NoteProjection(
             && sameValue(indexedMarkdownHash, targetMarkdownHash);
     }
 
+    public NoteProjection withDocumentGroupId(String documentGroupId) {
+        return new NoteProjection(
+            userId,
+            documentGroupId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt,
+            searchIndexStatus,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
+        );
+    }
+
     public NoteProjection withSnapshot(
         String title,
         String folderId,
@@ -141,6 +228,7 @@ public record NoteProjection(
     ) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -172,6 +260,7 @@ public record NoteProjection(
         boolean nextArchived = archived == null ? this.archived : archived;
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title == null ? this.title : title,
             folderId == null ? this.folderId : folderId,
@@ -194,6 +283,7 @@ public record NoteProjection(
     public NoteProjection withTags(List<String> tags, String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -216,6 +306,7 @@ public record NoteProjection(
     public NoteProjection movedTo(String folderId, String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -238,6 +329,7 @@ public record NoteProjection(
     public NoteProjection trashed(String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -260,6 +352,7 @@ public record NoteProjection(
     public NoteProjection deleted(String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -282,6 +375,7 @@ public record NoteProjection(
     public NoteProjection indexed(int version, String markdownHash, Instant indexedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -304,6 +398,7 @@ public record NoteProjection(
     public NoteProjection provisionallyIndexed(int version, Instant indexedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -326,6 +421,7 @@ public record NoteProjection(
     public NoteProjection indexFailed(String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,
@@ -348,6 +444,7 @@ public record NoteProjection(
     public NoteProjection indexRemoved(String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,

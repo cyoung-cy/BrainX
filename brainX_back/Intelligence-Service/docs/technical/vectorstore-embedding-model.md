@@ -89,10 +89,12 @@ brainx.vector.qdrant.collection-name=brainx_note_search_voyage_1024
 
 - document 저장: `NoteSearchDocument.chunkText`를 `AiEmbeddingPort`에 `inputType=DOCUMENT`로 전달하고, Voyage request는 `input_type=document`를 사용한다.
 - query 검색: query text를 `AiEmbeddingPort`에 `inputType=QUERY`로 전달하고, Voyage request는 `input_type=query`를 사용한다.
-- Qdrant point id는 `userId::noteId::chunkIndex`에서 만든 deterministic UUID다.
+- Qdrant point id는 `userId::documentGroupId::noteId::chunkIndex`에서 만든 deterministic UUID다.
 - Qdrant payload는 기존 metadata key를 유지하고 본문은 `doc_content`에 저장한다.
-- Qdrant 검색 filter는 `userId` 기준으로 사용자 데이터를 격리한다.
-- note 삭제/교체는 `userId + noteId` filter로 기존 chunk를 삭제한 뒤 새 chunk를 upsert한다.
+- Qdrant payload에는 `documentGroupId`를 저장한다. 없거나 blank이면 `default`로 normalize한다.
+- Qdrant 검색 filter는 `userId AND documentGroupId` 기준으로 사용자와 문서 그룹을 함께 격리한다.
+- note 삭제/교체는 `userId + documentGroupId + noteId` filter로 기존 chunk를 삭제한 뒤 새 chunk를 upsert한다.
+- Workspace가 아직 group을 보내지 않으면 모든 note는 `default` group으로 색인된다. 향후 Workspace payload나 snapshot에 `documentGroupId`가 들어오면 Intelligence-Service는 같은 경로로 즉시 group별 격리를 적용한다.
 
 ## Usage와 비용
 
@@ -110,6 +112,7 @@ Voyage `usage.total_tokens`가 반환되면 `TokenUsagePort`에 실제 embedding
 ## 주의점
 
 - Qdrant collection은 생성 시 vector dimension이 고정된다. 기존 collection이 다른 dimension으로 만들어졌다면 새 collection을 쓰거나 기존 collection을 삭제해야 한다.
-- 기존 collection은 unnamed vector와 주요 payload key를 유지하므로 계속 읽을 수 있지만, usage/cost 기록과 index 상태를 안정화하려면 재ingest를 권장한다.
+- 기존 collection은 unnamed vector와 주요 payload key를 유지하지만, `documentGroupId` payload가 없는 point는 group filter에서 누락될 수 있다. usage/cost 기록, index 상태, group 격리를 안정화하려면 재ingest를 권장한다.
 - application/domain layer에 Qdrant client, `RestClient`, provider별 DTO를 직접 주입하지 않는다.
+- Qdrant Java client wrapper bean은 component scan 조건부 등록에 의존하지 않는다. `@ConditionalOnBean` 처리 순서로 `QdrantVectorIndexClient`가 누락되면 RAG CLI는 no-op 검색 결과만 받을 수 있다. 원인 분석과 등록 원칙은 `docs/technical/conditional-on-bean.md`를 참고한다.
 - 제공된 API key가 채팅이나 로그에 노출된 적이 있으면 운영 사용 전에 rotation한다.

@@ -6,8 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.brainx.intelligence.shared.domain.DocumentGroups;
+
 public record SemanticSearchQuery(
     String userId,
+    String documentGroupId,
     String query,
     Map<String, Object> filters,
     int limit,
@@ -17,8 +20,19 @@ public record SemanticSearchQuery(
     public static final int DEFAULT_LIMIT = 10;
     public static final int MAX_LIMIT = 50;
 
+    public SemanticSearchQuery(
+        String userId,
+        String query,
+        Map<String, Object> filters,
+        int limit,
+        List<String> hybridWithClientKeywordIds
+    ) {
+        this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, query, filters, limit, hybridWithClientKeywordIds);
+    }
+
     public SemanticSearchQuery {
         userId = ExplorationValidation.requireText(userId, "userId");
+        documentGroupId = DocumentGroups.normalize(documentGroupId);
         query = ExplorationValidation.requireText(query, "query");
         filters = immutableMap(filters);
         limit = normalizeLimit(limit);

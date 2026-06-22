@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.brainx.intelligence.exploration.domain.ExplorationDomainException;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 
 public interface NoteChunkRetrievalPort {
 
@@ -11,6 +12,7 @@ public interface NoteChunkRetrievalPort {
 
     record NoteChunkSearchQuery(
         String userId,
+        String documentGroupId,
         String queryText,
         int topK
     ) {
@@ -18,8 +20,13 @@ public interface NoteChunkRetrievalPort {
         public static final int DEFAULT_TOP_K = 8;
         public static final int MAX_TOP_K = 40;
 
+        public NoteChunkSearchQuery(String userId, String queryText, int topK) {
+            this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, queryText, topK);
+        }
+
         public NoteChunkSearchQuery {
             userId = requireText(userId, "userId");
+            documentGroupId = DocumentGroups.normalize(documentGroupId);
             queryText = requireText(queryText, "queryText");
             topK = normalizeTopK(topK);
         }

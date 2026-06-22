@@ -19,10 +19,12 @@ import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchI
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
+import com.brainx.intelligence.infrastructure.events.NoOpIntelligenceEventAdapter;
 import com.brainx.intelligence.infrastructure.events.note.MarkdownNoteChunker;
 import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
 import com.brainx.intelligence.infrastructure.events.note.NoteProjectionStore;
 import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
+import com.brainx.intelligence.infrastructure.events.producer.KafkaIntelligenceEventAdapter;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
 import com.brainx.intelligence.settings.domain.AiModel;
 import com.brainx.intelligence.settings.domain.VendorTokenCost;
@@ -42,6 +44,7 @@ class SampleRagServiceTest {
     void ingestStoresProjectionAndReplacesChunks() throws Exception {
         Files.writeString(tempDir.resolve("rag.md"), "# RAG 품질\n\n본문 ".repeat(100));
         var properties = properties();
+        properties.setDocumentGroupId("group-1");
         FakeProjectionStore projectionStore = new FakeProjectionStore();
         FakeSearchIndex searchIndex = new FakeSearchIndex();
 
@@ -50,12 +53,17 @@ class SampleRagServiceTest {
         assertThat(result.notesIndexed()).isEqualTo(1);
         assertThat(result.chunksIndexed()).isGreaterThan(0);
         assertThat(projectionStore.saved).hasSize(1);
+        assertThat(projectionStore.saved.getFirst().documentGroupId()).isEqualTo("group-1");
         assertThat(projectionStore.saved.getFirst().markdownHash()).hasSize(64);
         assertThat(projectionStore.saved.getFirst().searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
         assertThat(projectionStore.saved.getFirst().indexedVersion()).isEqualTo(1);
         assertThat(projectionStore.saved.getFirst().indexedMarkdownHash()).hasSize(64);
         assertThat(searchIndex.replacedChunks).hasSize(1);
+        assertThat(searchIndex.replacedKeys).containsExactly(
+            "sample-user::group-1::" + projectionStore.saved.getFirst().noteId()
+        );
         assertThat(searchIndex.replacedChunks.getFirst()).isNotEmpty();
+        assertThat(searchIndex.replacedChunks.getFirst().getFirst().documentGroupId()).isEqualTo("group-1");
         assertThat(searchIndex.replacedChunks.getFirst().getFirst().markdownHash()).hasSize(64);
         assertThat(searchIndex.replacedChunks.getFirst().getFirst().sourcePath()).isEqualTo("rag.md");
         assertThat(searchIndex.replacedChunks.getFirst().getFirst().sourceFilename()).isEqualTo("rag.md");
@@ -81,13 +89,74 @@ class SampleRagServiceTest {
 
         assertThat(response.answerMode()).isEqualTo("retrieval");
         assertThat(response.model()).isEqualTo("none");
+        assertThat(response.tokenUsage()).isNull();
+        assertThat(response.usageRecords()).isEmpty();
         assertThat(response.contexts()).hasSize(1);
         assertThat(response.contexts().getFirst().title()).isEqualTo("RAG note");
     }
 
     @Test
+    void askIncludesEmbeddingUsageRecordsInRetrievalOnlyResponse() {
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        chunkRetrieval.results = List.of(new NoteChunkSearchResult(
+            "sample-user",
+            "note-1",
+            "note-1::0",
+            0,
+            "RAG note",
+            "chunk text",
+            0.93d,
+            "hash",
+            1
+        ));
+        SampleRagTokenUsageRecorder usageRecorder = usageRecorder();
+        chunkRetrieval.usagePort = usageRecorder;
+        chunkRetrieval.usageRecord = new TokenUsageRecord(
+            "usage-1",
+            "sample-user",
+            "AI-Service",
+            "note-search-query-embedding",
+            "voyage-4-lite",
+            12,
+            0,
+            12,
+            0,
+            0,
+            12,
+            new BigDecimal("0.00000024"),
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            new BigDecimal("0.00000024"),
+            "USD",
+            "query-1"
+        );
+
+        var response = service(
+            properties(),
+            new FakeProjectionStore(),
+            new FakeSearchIndex(),
+            chunkRetrieval,
+            null,
+            usageRecorder,
+            usageRecorder
+        ).ask("RAG란?");
+
+        assertThat(response.answerMode()).isEqualTo("retrieval");
+        assertThat(response.tokenUsage()).isNull();
+        assertThat(response.usageRecords()).hasSize(1);
+        assertThat(response.usageRecords().getFirst().featureId()).isEqualTo("note-search-query-embedding");
+        assertThat(response.usageRecords().getFirst().model()).isEqualTo("voyage-4-lite");
+        assertThat(response.usageRecords().getFirst().inputTokens()).isEqualTo(12);
+        assertThat(response.usageRecords().getFirst().totalTokens()).isEqualTo(12);
+        assertThat(response.usageRecords().getFirst().costEstimate().totalCost()).isEqualByComparingTo("0.00000024");
+        assertThat(response.usageRecords().getFirst().costEstimate().currencyCode()).isEqualTo("USD");
+    }
+
+    @Test
     void askFiltersLowScoreChunksAndLimitsChunksPerNote() {
         FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        var properties = properties();
+        properties.setDocumentGroupId("group-1");
         chunkRetrieval.results = List.of(
             new NoteChunkSearchResult("sample-user", "note-1", "note-1::0", 0, "RAG note", "first", 0.93d, "hash", 1),
             new NoteChunkSearchResult("sample-user", "note-1", "note-1::1", 1, "RAG note", "second", 0.81d, "hash", 1),
@@ -96,13 +165,14 @@ class SampleRagServiceTest {
             new NoteChunkSearchResult("sample-user", "note-3", "note-3::0", 0, "Other note", "other", 0.62d, "hash", 1)
         );
 
-        var response = service(properties(), new FakeProjectionStore(), new FakeSearchIndex(), chunkRetrieval, null)
+        var response = service(properties, new FakeProjectionStore(), new FakeSearchIndex(), chunkRetrieval, null)
             .ask("RAG란?");
 
         assertThat(response.contexts()).extracting("chunkId")
             .containsExactly("note-1::0", "note-1::1", "note-3::0");
         assertThat(response.contexts()).extracting("noteId")
             .containsExactly("note-1", "note-1", "note-3");
+        assertThat(chunkRetrieval.lastQuery.documentGroupId()).isEqualTo("group-1");
         assertThat(chunkRetrieval.lastQuery.topK()).isEqualTo(16);
     }
 
@@ -171,6 +241,16 @@ class SampleRagServiceTest {
         assertThat(response.answerMode()).isEqualTo("llm");
         assertThat(response.model()).isEqualTo("gpt-5.4-mini");
         assertThat(response.answer()).isEqualTo("generated from context");
+        assertThat(response.tokenUsage()).isNotNull();
+        assertThat(response.tokenUsage().inputTokens()).isEqualTo(100);
+        assertThat(response.tokenUsage().cachedInputTokens()).isEqualTo(40);
+        assertThat(response.tokenUsage().billableInputTokens()).isEqualTo(60);
+        assertThat(response.tokenUsage().outputTokens()).isEqualTo(20);
+        assertThat(response.tokenUsage().reasoningTokens()).isEqualTo(5);
+        assertThat(response.tokenUsage().totalTokens()).isEqualTo(120);
+        assertThat(response.tokenUsage().costEstimate().totalCost()).isEqualByComparingTo("0.001280000000");
+        assertThat(response.tokenUsage().costEstimate().currencyCode()).isEqualTo("USD");
+        assertThat(response.usageRecords()).isEmpty();
         assertThat(aiChatPort.lastRequest.modelId()).isEqualTo("gpt-5.4-mini");
         assertThat(aiChatPort.lastRequest.messages().get(1).content()).contains("chunk text for prompt");
         assertThat(aiChatPort.lastRequest.messages().get(1).content()).contains("sourcePath=docs/rag.md");
@@ -206,7 +286,8 @@ class SampleRagServiceTest {
             searchIndex,
             chunkRetrieval,
             aiChatPort,
-            new FakeTokenUsagePort()
+            new FakeTokenUsagePort(),
+            null
         );
     }
 
@@ -218,9 +299,32 @@ class SampleRagServiceTest {
         AiChatPort aiChatPort,
         FakeTokenUsagePort tokenUsagePort
     ) {
+        return service(
+            properties,
+            projectionStore,
+            searchIndex,
+            chunkRetrieval,
+            aiChatPort,
+            tokenUsagePort,
+            null
+        );
+    }
+
+    private static SampleRagService service(
+        SampleRagProperties properties,
+        FakeProjectionStore projectionStore,
+        FakeSearchIndex searchIndex,
+        FakeChunkRetrieval chunkRetrieval,
+        AiChatPort aiChatPort,
+        TokenUsagePort tokenUsagePort,
+        SampleRagTokenUsageRecorder usageRecorder
+    ) {
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
         if (aiChatPort != null) {
             beanFactory.registerSingleton("aiChatPort", aiChatPort);
+        }
+        if (usageRecorder != null) {
+            beanFactory.registerSingleton("sampleRagTokenUsageRecorder", usageRecorder);
         }
         return new SampleRagService(
             properties,
@@ -231,7 +335,16 @@ class SampleRagServiceTest {
             chunkRetrieval,
             beanFactory.getBeanProvider(AiChatPort.class),
             tokenUsagePort,
-            new AiTokenUsageCostEstimator(new FakeAiModelCatalog())
+            new AiTokenUsageCostEstimator(new FakeAiModelCatalog()),
+            beanFactory.getBeanProvider(SampleRagTokenUsageRecorder.class)
+        );
+    }
+
+    private static SampleRagTokenUsageRecorder usageRecorder() {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        return new SampleRagTokenUsageRecorder(
+            beanFactory.getBeanProvider(KafkaIntelligenceEventAdapter.class),
+            beanFactory.getBeanProvider(NoOpIntelligenceEventAdapter.class)
         );
     }
 
@@ -240,16 +353,28 @@ class SampleRagServiceTest {
         private final List<NoteProjection> saved = new ArrayList<>();
 
         @Override
-        public Optional<NoteProjection> findByUserIdAndNoteId(String userId, String noteId) {
+        public Optional<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteId(
+            String userId,
+            String documentGroupId,
+            String noteId
+        ) {
             return saved.stream()
-                .filter(projection -> projection.userId().equals(userId) && projection.noteId().equals(noteId))
+                .filter(projection -> projection.userId().equals(userId)
+                    && projection.documentGroupId().equals(documentGroupId)
+                    && projection.noteId().equals(noteId))
                 .findFirst();
         }
 
         @Override
-        public List<NoteProjection> findByUserIdAndNoteIds(String userId, List<String> noteIds) {
+        public List<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteIds(
+            String userId,
+            String documentGroupId,
+            List<String> noteIds
+        ) {
             return saved.stream()
-                .filter(projection -> projection.userId().equals(userId) && noteIds.contains(projection.noteId()))
+                .filter(projection -> projection.userId().equals(userId)
+                    && projection.documentGroupId().equals(documentGroupId)
+                    && noteIds.contains(projection.noteId()))
                 .toList();
         }
 
@@ -263,6 +388,8 @@ class SampleRagServiceTest {
     private static final class FakeSearchIndex implements NoteSearchIndexPort {
 
         private final List<List<NoteSearchDocument>> replacedChunks = new ArrayList<>();
+        private final List<String> replacedKeys = new ArrayList<>();
+        private final List<String> deletedKeys = new ArrayList<>();
 
         @Override
         public List<SemanticSearchResult> search(NoteSearchQuery query) {
@@ -275,13 +402,20 @@ class SampleRagServiceTest {
         }
 
         @Override
-        public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+        public boolean replaceNoteChunks(
+            String userId,
+            String documentGroupId,
+            String noteId,
+            List<NoteSearchDocument> chunks
+        ) {
+            replacedKeys.add(userId + "::" + documentGroupId + "::" + noteId);
             replacedChunks.add(chunks);
             return true;
         }
 
         @Override
-        public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+        public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
+            deletedKeys.add(userId + "::" + documentGroupId + "::" + noteId);
             return true;
         }
     }
@@ -290,10 +424,15 @@ class SampleRagServiceTest {
 
         private List<NoteChunkSearchResult> results = List.of();
         private NoteChunkSearchQuery lastQuery;
+        private TokenUsagePort usagePort;
+        private TokenUsageRecord usageRecord;
 
         @Override
         public List<NoteChunkSearchResult> searchChunks(NoteChunkSearchQuery query) {
             lastQuery = query;
+            if (usagePort != null && usageRecord != null) {
+                usagePort.recordTokenUsage(usageRecord);
+            }
             return results;
         }
     }

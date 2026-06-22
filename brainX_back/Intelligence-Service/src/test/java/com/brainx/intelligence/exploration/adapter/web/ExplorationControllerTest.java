@@ -66,6 +66,7 @@ class ExplorationControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
+                      "documentGroupId": "group-1",
                       "query": "RAG 검색",
                       "filters": {},
                       "limit": 5,
@@ -85,6 +86,7 @@ class ExplorationControllerTest {
 
         verify(semanticSearchUseCase).semanticSearch(argThat(command ->
             command.userId().equals("user-1")
+                && command.documentGroupId().equals("group-1")
                 && command.query().equals("RAG 검색")
                 && command.limit().equals(5)
                 && command.hybridWithClientKeywordIds().equals(List.of("keyword-1"))

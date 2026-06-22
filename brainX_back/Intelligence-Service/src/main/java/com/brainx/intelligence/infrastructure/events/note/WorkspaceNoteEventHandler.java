@@ -14,6 +14,7 @@ import com.brainx.intelligence.infrastructure.events.consumer.EventProcessingExc
 import com.brainx.intelligence.infrastructure.workspace.WorkspaceNoteAdapterException;
 import com.brainx.intelligence.shared.application.port.outbound.WorkspaceNotePort;
 import com.brainx.intelligence.shared.application.port.outbound.WorkspaceNotePort.NoteSnapshot;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -81,15 +82,21 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         requireText(payload.noteId(), "noteId");
         requireText(payload.userId(), "userId");
         requireText(payload.title(), "title");
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
         int version = requireVersion(payload.version());
 
-        var existing = noteProjectionStore.findByUserIdAndNoteId(payload.userId(), payload.noteId());
+        var existing = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
+            payload.userId(),
+            documentGroupId,
+            payload.noteId()
+        );
         if (existing.isPresent() && existing.get().stale(version)) {
             return;
         }
 
         NoteProjection projection = NoteProjection.created(
             payload.userId(),
+            documentGroupId,
             payload.noteId(),
             payload.title(),
             payload.folderId(),
@@ -98,13 +105,14 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             context.eventId(),
             context.envelope().occurredAt()
         );
-        noteProjectionStore.save(projection);
         boolean snapshotAvailable = tryIndexFromSnapshot(projection, version, null, context.eventId(), false);
         if (!snapshotAvailable) {
+            noteProjectionStore.save(projection);
             replaceProvisionalIndex(
                 projection,
                 noteChunker.chunk(
                     payload.userId(),
+                    documentGroupId,
                     payload.noteId(),
                     payload.title(),
                     "",
@@ -121,10 +129,15 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         NoteContentSavedPayload payload = readPayload(context, NoteContentSavedPayload.class);
         requireText(payload.noteId(), "noteId");
         requireText(payload.userId(), "userId");
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
         int version = requireVersion(payload.version());
         requireText(payload.markdownHash(), "markdownHash");
 
-        var existing = noteProjectionStore.findByUserIdAndNoteId(payload.userId(), payload.noteId());
+        var existing = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
+            payload.userId(),
+            documentGroupId,
+            payload.noteId()
+        );
         if (existing.isPresent() && existing.get().stale(version)) {
             return;
         }
@@ -137,6 +150,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         noteSummaryPort.deleteByUserIdAndNoteId(payload.userId(), payload.noteId());
         NoteProjection base = existing.orElseGet(() -> new NoteProjection(
             payload.userId(),
+            documentGroupId,
             payload.noteId(),
             "",
             null,
@@ -157,11 +171,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         JsonNode payload = context.payload();
         String noteId = requireText(text(payload, "noteId"), "noteId");
         String userId = requireText(text(payload, "userId"), "userId");
+        String documentGroupId = DocumentGroups.normalize(text(payload, "documentGroupId"));
         int version = requireVersion(integer(payload, "version"));
 
-        NoteProjection base = noteProjectionStore.findByUserIdAndNoteId(userId, noteId)
+        NoteProjection base = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(userId, documentGroupId, noteId)
             .orElseGet(() -> new NoteProjection(
                 userId,
+                documentGroupId,
                 noteId,
                 "",
                 null,
@@ -205,10 +221,16 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         NoteTagsChangedPayload payload = readPayload(context, NoteTagsChangedPayload.class);
         requireText(payload.noteId(), "noteId");
         requireText(payload.userId(), "userId");
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
 
-        NoteProjection base = noteProjectionStore.findByUserIdAndNoteId(payload.userId(), payload.noteId())
+        NoteProjection base = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
+                payload.userId(),
+                documentGroupId,
+                payload.noteId()
+            )
             .orElseGet(() -> new NoteProjection(
                 payload.userId(),
+                documentGroupId,
                 payload.noteId(),
                 "",
                 null,
@@ -233,8 +255,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         NoteStatePayload payload = readPayload(context, NoteStatePayload.class);
         requireText(payload.noteId(), "noteId");
         requireText(payload.userId(), "userId");
-        NoteProjection updated = noteProjectionStore.findByUserIdAndNoteId(payload.userId(), payload.noteId())
-            .orElseGet(() -> minimalProjection(payload.userId(), payload.noteId(), context))
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
+        NoteProjection updated = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
+                payload.userId(),
+                documentGroupId,
+                payload.noteId()
+            )
+            .orElseGet(() -> minimalProjection(payload.userId(), documentGroupId, payload.noteId(), context))
             .trashed(context.eventId(), context.envelope().occurredAt());
         noteProjectionStore.save(updated);
         removeIndex(updated, context.eventId());
@@ -244,8 +271,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         NoteStatePayload payload = readPayload(context, NoteStatePayload.class);
         requireText(payload.noteId(), "noteId");
         requireText(payload.userId(), "userId");
-        NoteProjection updated = noteProjectionStore.findByUserIdAndNoteId(payload.userId(), payload.noteId())
-            .orElseGet(() -> minimalProjection(payload.userId(), payload.noteId(), context))
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
+        NoteProjection updated = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
+                payload.userId(),
+                documentGroupId,
+                payload.noteId()
+            )
+            .orElseGet(() -> minimalProjection(payload.userId(), documentGroupId, payload.noteId(), context))
             .deleted(context.eventId(), context.envelope().occurredAt());
         noteProjectionStore.save(updated);
         removeIndex(updated, context.eventId());
@@ -255,8 +287,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
     private void handleNotesMoved(EventProcessingContext context) {
         NotesMovedPayload payload = readPayload(context, NotesMovedPayload.class);
         requireText(payload.userId(), "userId");
+        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
         List<String> noteIds = payload.noteIds() == null ? List.of() : payload.noteIds();
-        for (NoteProjection projection : noteProjectionStore.findByUserIdAndNoteIds(payload.userId(), noteIds)) {
+        for (NoteProjection projection : noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteIds(
+            payload.userId(),
+            documentGroupId,
+            noteIds
+        )) {
             noteProjectionStore.save(projection.movedTo(
                 payload.targetFolderId(),
                 context.eventId(),
@@ -291,7 +328,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             throw EventProcessingException.retryable("SNAPSHOT_STALE", "Workspace note snapshot is older than the event.");
         }
 
-        NoteProjection indexed = base.withSnapshot(
+        NoteProjection indexed = base.withDocumentGroupId(snapshotDocumentGroupId(base, snapshot)).withSnapshot(
             snapshot.title(),
             snapshot.folderId(),
             snapshot.tags(),
@@ -306,6 +343,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                 indexed,
                 noteChunker.chunk(
                     indexed.userId(),
+                    indexed.documentGroupId(),
                     indexed.noteId(),
                     indexed.title(),
                     snapshot.markdown(),
@@ -323,7 +361,12 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
 
     private void replaceProvisionalIndex(NoteProjection projection, List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks, String eventId) {
         try {
-            boolean indexed = noteSearchIndexPort.replaceNoteChunks(projection.userId(), projection.noteId(), chunks);
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(
+                projection.userId(),
+                projection.documentGroupId(),
+                projection.noteId(),
+                chunks
+            );
             if (indexed) {
                 noteProjectionStore.save(projection.provisionallyIndexed(projection.version(), Instant.now()));
             }
@@ -341,7 +384,12 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         String eventId
     ) {
         try {
-            boolean indexed = noteSearchIndexPort.replaceNoteChunks(projection.userId(), projection.noteId(), chunks);
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(
+                projection.userId(),
+                projection.documentGroupId(),
+                projection.noteId(),
+                chunks
+            );
             if (indexed) {
                 noteProjectionStore.save(projection.indexed(indexedVersion, indexedMarkdownHash, Instant.now()));
             }
@@ -353,7 +401,11 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
 
     private void removeIndex(NoteProjection projection, String eventId) {
         try {
-            boolean removed = noteSearchIndexPort.deleteByUserIdAndNoteId(projection.userId(), projection.noteId());
+            boolean removed = noteSearchIndexPort.deleteByUserIdAndDocumentGroupIdAndNoteId(
+                projection.userId(),
+                projection.documentGroupId(),
+                projection.noteId()
+            );
             if (removed) {
                 noteProjectionStore.save(projection.indexRemoved(eventId, Instant.now()));
             }
@@ -371,9 +423,15 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         }
     }
 
-    private static NoteProjection minimalProjection(String userId, String noteId, EventProcessingContext context) {
+    private static NoteProjection minimalProjection(
+        String userId,
+        String documentGroupId,
+        String noteId,
+        EventProcessingContext context
+    ) {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             "",
             null,
@@ -387,6 +445,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             context.eventId(),
             context.envelope().occurredAt()
         );
+    }
+
+    private static String snapshotDocumentGroupId(NoteProjection base, NoteSnapshot snapshot) {
+        if (!DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID.equals(base.documentGroupId())) {
+            return base.documentGroupId();
+        }
+        return snapshot.documentGroupId();
     }
 
     private static String requireText(String value, String name) {
@@ -431,22 +496,43 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record NoteCreatedPayload(String noteId, String userId, String title, String folderId, List<String> tags, Integer version) {
+    record NoteCreatedPayload(
+        String noteId,
+        String userId,
+        String documentGroupId,
+        String title,
+        String folderId,
+        List<String> tags,
+        Integer version
+    ) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record NoteContentSavedPayload(String noteId, String userId, Integer version, String markdownHash, Instant savedAt) {
+    record NoteContentSavedPayload(
+        String noteId,
+        String userId,
+        String documentGroupId,
+        Integer version,
+        String markdownHash,
+        Instant savedAt
+    ) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record NoteTagsChangedPayload(String noteId, String userId, List<String> tags) {
+    record NoteTagsChangedPayload(String noteId, String userId, String documentGroupId, List<String> tags) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record NoteStatePayload(String noteId, String userId) {
+    record NoteStatePayload(String noteId, String userId, String documentGroupId) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record NotesMovedPayload(String userId, List<String> noteIds, String sourceFolderId, String targetFolderId) {
+    record NotesMovedPayload(
+        String userId,
+        String documentGroupId,
+        List<String> noteIds,
+        String sourceFolderId,
+        String targetFolderId
+    ) {
     }
 }

@@ -7,6 +7,8 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import com.brainx.intelligence.shared.domain.DocumentGroups;
+
 @Component
 @ConfigurationProperties(prefix = "brainx.dev.sample-rag")
 public class SampleRagProperties {
@@ -15,6 +17,7 @@ public class SampleRagProperties {
     private String command = "ingest";
     private Path directory = Path.of("sample_notes");
     private String userId = "sample-user";
+    private String documentGroupId = DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID;
     private String folderId = "sample_notes";
     private List<String> tags = new ArrayList<>(List.of("sample_notes"));
     private String query = "";
@@ -54,6 +57,14 @@ public class SampleRagProperties {
 
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public String getDocumentGroupId() {
+        return DocumentGroups.normalize(documentGroupId);
+    }
+
+    public void setDocumentGroupId(String documentGroupId) {
+        this.documentGroupId = DocumentGroups.normalize(documentGroupId);
     }
 
     public String getFolderId() {

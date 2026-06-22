@@ -10,6 +10,9 @@ public class BrainxEventProducerProperties {
     private boolean enabled;
     private String semanticSearchPerformedTopic = "brainx.knowledge.intelligence.semantic-search-performed.v1";
     private String tokenUsageRecordedRequestedTopic = "brainx.knowledge.intelligence.token-usage-recorded-requested.v1";
+    private String aiSuggestionCreatedTopic = "brainx.knowledge.intelligence.ai-suggestion-created.v1";
+    private String aiSuggestionDecisionRecordedTopic =
+        "brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1";
 
     public boolean isEnabled() {
         return enabled;
@@ -33,5 +36,21 @@ public class BrainxEventProducerProperties {
 
     public void setTokenUsageRecordedRequestedTopic(String tokenUsageRecordedRequestedTopic) {
         this.tokenUsageRecordedRequestedTopic = tokenUsageRecordedRequestedTopic;
+    }
+
+    public String getAiSuggestionCreatedTopic() {
+        return aiSuggestionCreatedTopic;
+    }
+
+    public void setAiSuggestionCreatedTopic(String aiSuggestionCreatedTopic) {
+        this.aiSuggestionCreatedTopic = aiSuggestionCreatedTopic;
+    }
+
+    public String getAiSuggestionDecisionRecordedTopic() {
+        return aiSuggestionDecisionRecordedTopic;
+    }
+
+    public void setAiSuggestionDecisionRecordedTopic(String aiSuggestionDecisionRecordedTopic) {
+        this.aiSuggestionDecisionRecordedTopic = aiSuggestionDecisionRecordedTopic;
     }
 }

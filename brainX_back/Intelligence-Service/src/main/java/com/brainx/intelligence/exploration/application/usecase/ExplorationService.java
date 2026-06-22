@@ -53,6 +53,7 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
     public SemanticSearchResponse semanticSearch(SemanticSearchCommand command) {
         var query = new SemanticSearchQuery(
             command.userId(),
+            command.documentGroupId(),
             command.query(),
             command.filters(),
             SemanticSearchQuery.normalizeLimit(command.limit()),
@@ -71,6 +72,7 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
         var matches = noteSearchIndexPort.search(
             new NoteSearchQuery(
                 query.userId(),
+                query.documentGroupId(),
                 query.query(),
                 query.filters(),
                 query.limit(),
@@ -82,7 +84,8 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
 
         explorationEventPort.semanticSearchPerformed(new SemanticSearchPerformedEvent(
             query.userId(),
-            sha256(query.userId() + "\n" + query.query()),
+            query.documentGroupId(),
+            sha256(query.userId() + "\n" + query.documentGroupId() + "\n" + query.query()),
             results.results().size(),
             results.charged()
         ));

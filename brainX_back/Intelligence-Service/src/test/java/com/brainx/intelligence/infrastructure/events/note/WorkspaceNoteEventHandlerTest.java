@@ -76,13 +76,53 @@ class WorkspaceNoteEventHandlerTest {
             """));
 
         NoteProjection projection = projectionStore.findByUserIdAndNoteId("user-1", "note-1").orElseThrow();
+        assertThat(projection.documentGroupId()).isEqualTo("default");
         assertThat(projection.title()).isEqualTo("Created note");
         assertThat(projection.contentPending()).isTrue();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.PROVISIONAL);
         assertThat(projection.indexedVersion()).isEqualTo(1);
         assertThat(projection.indexedMarkdownHash()).isNull();
         assertThat(searchIndex.savedDocuments).hasSize(1);
+        assertThat(searchIndex.savedDocuments.getFirst().documentGroupId()).isEqualTo("default");
         assertThat(searchIndex.savedDocuments.getFirst().title()).isEqualTo("Created note");
+    }
+
+    @Test
+    void noteCreatedPreservesDocumentGroupIdFromPayload() {
+        workspace.snapshot = null;
+
+        handler.handle(context("evt-1", "NoteCreated", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","title":"Created note","version":1}
+            """));
+
+        NoteProjection projection = projectionStore
+            .findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1")
+            .orElseThrow();
+        assertThat(projection.documentGroupId()).isEqualTo("group-1");
+        assertThat(searchIndex.savedDocuments).hasSize(1);
+        assertThat(searchIndex.savedDocuments.getFirst().documentGroupId()).isEqualTo("group-1");
+        assertThat(searchIndex.deletedKeys).containsExactly("user-1::group-1::note-1");
+    }
+
+    @Test
+    void sameUserAndNoteIdCanBeProjectedInDifferentDocumentGroups() {
+        workspace.snapshot = null;
+
+        handler.handle(context("evt-1", "NoteCreated", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","title":"Group 1 note","version":1}
+            """));
+        handler.handle(context("evt-2", "NoteCreated", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-2","title":"Group 2 note","version":1}
+            """));
+
+        assertThat(projectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1"))
+            .get()
+            .extracting(NoteProjection::title)
+            .isEqualTo("Group 1 note");
+        assertThat(projectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-2", "note-1"))
+            .get()
+            .extracting(NoteProjection::title)
+            .isEqualTo("Group 2 note");
     }
 
     @Test
@@ -100,10 +140,13 @@ class WorkspaceNoteEventHandlerTest {
         );
 
         handler.handle(context("evt-1", "NoteContentSaved", """
-            {"noteId":"note-1","userId":"user-1","version":2,"markdownHash":"hash-2","savedAt":"2026-06-19T00:00:00Z"}
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","version":2,"markdownHash":"hash-2","savedAt":"2026-06-19T00:00:00Z"}
             """));
 
-        NoteProjection projection = projectionStore.findByUserIdAndNoteId("user-1", "note-1").orElseThrow();
+        NoteProjection projection = projectionStore
+            .findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1")
+            .orElseThrow();
+        assertThat(projection.documentGroupId()).isEqualTo("group-1");
         assertThat(projection.title()).isEqualTo("Snapshot title");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
         assertThat(projection.contentPending()).isFalse();
@@ -113,6 +156,8 @@ class WorkspaceNoteEventHandlerTest {
         assertThat(projection.indexedAt()).isNotNull();
         assertThat(workspace.requests).isEqualTo(1);
         assertThat(searchIndex.savedDocuments).hasSizeGreaterThan(1);
+        assertThat(searchIndex.savedDocuments).allSatisfy(document ->
+            assertThat(document.documentGroupId()).isEqualTo("group-1"));
         assertThat(searchIndex.savedDocuments.getFirst().excerpt()).contains("Workspace markdown summary source");
         assertThat(summaryPort.deletedKeys).containsExactly("user-1::note-1");
     }
@@ -209,7 +254,7 @@ class WorkspaceNoteEventHandlerTest {
         assertThat(projection.deleted()).isTrue();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.REMOVED);
         assertThat(projection.indexedVersion()).isNull();
-        assertThat(searchIndex.deletedKeys).containsExactly("user-1::note-1");
+        assertThat(searchIndex.deletedKeys).containsExactly("user-1::default::note-1");
         assertThat(summaryPort.deletedKeys).containsExactly("user-1::note-1");
     }
 
@@ -260,27 +305,39 @@ class WorkspaceNoteEventHandlerTest {
 
         private final Map<String, NoteProjection> projections = new LinkedHashMap<>();
 
-        @Override
         public Optional<NoteProjection> findByUserIdAndNoteId(String userId, String noteId) {
-            return Optional.ofNullable(projections.get(key(userId, noteId)));
+            return findByUserIdAndDocumentGroupIdAndNoteId(userId, "default", noteId);
         }
 
         @Override
-        public List<NoteProjection> findByUserIdAndNoteIds(String userId, List<String> noteIds) {
+        public Optional<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteId(
+            String userId,
+            String documentGroupId,
+            String noteId
+        ) {
+            return Optional.ofNullable(projections.get(key(userId, documentGroupId, noteId)));
+        }
+
+        @Override
+        public List<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteIds(
+            String userId,
+            String documentGroupId,
+            List<String> noteIds
+        ) {
             return noteIds.stream()
-                .map(noteId -> projections.get(key(userId, noteId)))
+                .map(noteId -> projections.get(key(userId, documentGroupId, noteId)))
                 .filter(java.util.Objects::nonNull)
                 .toList();
         }
 
         @Override
         public NoteProjection save(NoteProjection projection) {
-            projections.put(key(projection.userId(), projection.noteId()), projection);
+            projections.put(key(projection.userId(), projection.documentGroupId(), projection.noteId()), projection);
             return projection;
         }
 
-        private static String key(String userId, String noteId) {
-            return userId + "::" + noteId;
+        private static String key(String userId, String documentGroupId, String noteId) {
+            return userId + "::" + documentGroupId + "::" + noteId;
         }
     }
 
@@ -329,21 +386,26 @@ class WorkspaceNoteEventHandlerTest {
         private boolean failOnDelete;
 
         @Override
-        public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+        public boolean replaceNoteChunks(
+            String userId,
+            String documentGroupId,
+            String noteId,
+            List<NoteSearchDocument> chunks
+        ) {
             if (failOnReplace) {
                 throw new RuntimeException("replace failed");
             }
-            deleteByUserIdAndNoteId(userId, noteId);
+            deleteByUserIdAndDocumentGroupIdAndNoteId(userId, documentGroupId, noteId);
             savedDocuments.addAll(chunks);
             return mutationApplied;
         }
 
         @Override
-        public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+        public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
             if (failOnDelete) {
                 throw new RuntimeException("delete failed");
             }
-            deletedKeys.add(userId + "::" + noteId);
+            deletedKeys.add(userId + "::" + documentGroupId + "::" + noteId);
             return mutationApplied;
         }
     }

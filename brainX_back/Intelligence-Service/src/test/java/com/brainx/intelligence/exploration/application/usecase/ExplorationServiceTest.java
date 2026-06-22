@@ -64,6 +64,7 @@ class ExplorationServiceTest {
 
         var result = service.semanticSearch(new SemanticSearchCommand(
             "user-1",
+            "group-1",
             "rag search",
             Map.of(),
             5,
@@ -76,11 +77,13 @@ class ExplorationServiceTest {
         assertThat(result.charged()).isTrue();
         assertThat(result.tokenEstimate()).isPositive();
         assertThat(ports.searchRequests).isEqualTo(1);
+        assertThat(ports.lastSearchQuery.documentGroupId()).isEqualTo("group-1");
         assertThat(ports.lastSearchQuery.queryText()).isEqualTo("rag search");
         assertThat(ports.lastSearchQuery.limit()).isEqualTo(5);
         assertThat(ports.lastSearchQuery.hybridWithClientKeywordIds()).containsExactly("keyword-1");
         assertThat(ports.tokenUsageRecords).isEmpty();
         assertThat(ports.semanticSearchEvents).hasSize(1);
+        assertThat(ports.semanticSearchEvents.getFirst().documentGroupId()).isEqualTo("group-1");
         assertThat(ports.semanticSearchEvents.getFirst().resultCount()).isEqualTo(1);
         assertThat(ports.semanticSearchEvents.getFirst().charged()).isTrue();
     }
@@ -165,12 +168,17 @@ class ExplorationServiceTest {
         }
 
         @Override
-        public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+        public boolean replaceNoteChunks(
+            String userId,
+            String documentGroupId,
+            String noteId,
+            List<NoteSearchDocument> chunks
+        ) {
             return true;
         }
 
         @Override
-        public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+        public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
             return true;
         }
 

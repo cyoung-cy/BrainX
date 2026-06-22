@@ -3856,6 +3856,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         title:
           type: string
         folderId:
@@ -3880,6 +3883,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         version:
           type: integer
         markdownHash:
@@ -3901,6 +3907,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         title:
           type: string
           nullable: true
@@ -3928,6 +3937,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         deletedAt:
           type: string
           format: date-time
@@ -3947,6 +3959,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         deletedAt:
           type: string
           format: date-time
@@ -4032,6 +4047,9 @@ components:
       properties:
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         noteIds:
           type: array
           items:
@@ -4053,6 +4071,9 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
+          description: Logical document group boundary. If omitted by older producers, consumers should use default.
         tags:
           type: array
           items:
@@ -4504,6 +4525,8 @@ components:
       properties:
         userId:
           type: string
+        documentGroupId:
+          type: string
         queryHash:
           type: string
         resultCount:
@@ -4564,6 +4587,8 @@ components:
           type: string
         userId:
           type: string
+        documentGroupId:
+          type: string
         modelId:
           type: string
         title:
@@ -4581,6 +4606,8 @@ components:
         messageId:
           type: string
         userId:
+          type: string
+        documentGroupId:
           type: string
         modelId:
           type: string

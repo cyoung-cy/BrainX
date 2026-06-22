@@ -42,6 +42,7 @@ public class SampleNoteLoader {
             String markdownHash = sha256(markdown);
             return new SampleNoteSnapshot(
                 properties.getUserId(),
+                properties.getDocumentGroupId(),
                 "sample-" + sha256(relativePath).substring(0, 16),
                 title(path, markdown),
                 relativePath,
@@ -115,6 +116,7 @@ public class SampleNoteLoader {
 
     record SampleNoteSnapshot(
         String userId,
+        String documentGroupId,
         String noteId,
         String title,
         String relativePath,

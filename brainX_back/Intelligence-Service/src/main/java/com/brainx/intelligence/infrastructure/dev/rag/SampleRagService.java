@@ -1,5 +1,6 @@
 package com.brainx.intelligence.infrastructure.dev.rag;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +45,7 @@ public class SampleRagService {
     private final ObjectProvider<AiChatPort> aiChatPortProvider;
     private final TokenUsagePort tokenUsagePort;
     private final AiTokenUsageCostEstimator usageCostEstimator;
+    private final ObjectProvider<SampleRagTokenUsageRecorder> usageRecorderProvider;
 
     public SampleRagService(
         SampleRagProperties properties,
@@ -54,7 +56,8 @@ public class SampleRagService {
         NoteChunkRetrievalPort noteChunkRetrievalPort,
         ObjectProvider<AiChatPort> aiChatPortProvider,
         TokenUsagePort tokenUsagePort,
-        AiTokenUsageCostEstimator usageCostEstimator
+        AiTokenUsageCostEstimator usageCostEstimator,
+        ObjectProvider<SampleRagTokenUsageRecorder> usageRecorderProvider
     ) {
         this.properties = properties;
         this.sampleNoteLoader = sampleNoteLoader;
@@ -65,6 +68,7 @@ public class SampleRagService {
         this.aiChatPortProvider = aiChatPortProvider;
         this.tokenUsagePort = tokenUsagePort;
         this.usageCostEstimator = usageCostEstimator;
+        this.usageRecorderProvider = usageRecorderProvider;
     }
 
     public SampleRagIngestionResult ingest() {
@@ -74,6 +78,7 @@ public class SampleRagService {
             List<String> tags = normalizedTags();
             var projection = new NoteProjection(
                 snapshot.userId(),
+                snapshot.documentGroupId(),
                 snapshot.noteId(),
                 snapshot.title(),
                 properties.getFolderId(),
@@ -89,6 +94,7 @@ public class SampleRagService {
             );
             var chunks = noteChunker.chunk(
                 snapshot.userId(),
+                snapshot.documentGroupId(),
                 snapshot.noteId(),
                 snapshot.title(),
                 snapshot.markdown(),
@@ -98,7 +104,12 @@ public class SampleRagService {
                 snapshot.relativePath(),
                 snapshot.filename()
             );
-            boolean indexed = noteSearchIndexPort.replaceNoteChunks(snapshot.userId(), snapshot.noteId(), chunks);
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(
+                snapshot.userId(),
+                snapshot.documentGroupId(),
+                snapshot.noteId(),
+                chunks
+            );
             noteProjectionStore.save(indexed
                 ? projection.indexed(projection.version(), projection.markdownHash(), Instant.now())
                 : projection);
@@ -116,9 +127,25 @@ public class SampleRagService {
         if (!StringUtils.hasText(query)) {
             throw new IllegalArgumentException("query must not be blank.");
         }
+        SampleRagTokenUsageRecorder usageRecorder = usageRecorderProvider.getIfAvailable();
+        if (usageRecorder != null) {
+            usageRecorder.begin();
+        }
+        try {
+            return withUsageRecords(doAsk(query), usageRecorder);
+        } catch (RuntimeException | Error exception) {
+            if (usageRecorder != null) {
+                usageRecorder.drain();
+            }
+            throw exception;
+        }
+    }
+
+    private SampleRagQueryResponse doAsk(String query) {
         List<SampleRagContext> contexts = noteChunkRetrievalPort.searchChunks(new NoteChunkSearchQuery(
-                properties.getUserId(),
-                query,
+            properties.getUserId(),
+            properties.getDocumentGroupId(),
+            query,
                 retrievalTopK()
             )).stream()
             .filter(result -> result.score() >= properties.getMinScore())
@@ -144,12 +171,15 @@ public class SampleRagService {
                     new AiChatMessage(AiRole.USER, userPrompt(query, contexts))
                 )
             ));
-            recordLlmTokenUsage(response.tokenUsage());
+            SampleRagTokenUsage tokenUsage = toTokenUsage(response.tokenUsage());
+            recordLlmTokenUsage(tokenUsage);
             return new SampleRagQueryResponse(
                 query,
                 "llm",
                 properties.getChatModel(),
                 response.content(),
+                tokenUsage,
+                List.of(),
                 contexts
             );
         } catch (IllegalStateException exception) {
@@ -160,9 +190,44 @@ public class SampleRagService {
         }
     }
 
-    private void recordLlmTokenUsage(AiTokenUsage tokenUsage) {
+    private static SampleRagQueryResponse withUsageRecords(
+        SampleRagQueryResponse response,
+        SampleRagTokenUsageRecorder usageRecorder
+    ) {
+        if (usageRecorder == null) {
+            return response;
+        }
+        return response.withUsageRecords(toUsageRecords(usageRecorder.drain()));
+    }
+
+    private static List<SampleRagUsageRecord> toUsageRecords(List<TokenUsageRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+        return records.stream()
+            .map(record -> new SampleRagUsageRecord(
+                record.featureId(),
+                record.modelId(),
+                record.inputTokens(),
+                record.cachedInputTokens(),
+                record.billableInputTokens(),
+                record.outputTokens(),
+                record.reasoningTokens(),
+                record.totalTokens(),
+                new SampleRagCostEstimate(
+                    record.estimatedInputCost(),
+                    record.estimatedCachedInputCost(),
+                    record.estimatedOutputCost(),
+                    record.estimatedCost(),
+                    record.costCurrency()
+                )
+            ))
+            .toList();
+    }
+
+    private SampleRagTokenUsage toTokenUsage(AiTokenUsage tokenUsage) {
         if (tokenUsage == null || !tokenUsage.hasKnownTokens()) {
-            return;
+            return null;
         }
         int inputTokens = tokenCount(tokenUsage.promptTokens());
         int cachedInputTokens = tokenCount(tokenUsage.cachedPromptTokens());
@@ -178,19 +243,44 @@ public class SampleRagService {
             cachedInputTokens,
             outputTokens
         );
-
-        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
-            UUID.randomUUID().toString(),
-            properties.getUserId(),
-            SOURCE_SERVICE,
-            RAG_CHAT_FEATURE_ID,
-            properties.getChatModel(),
+        return new SampleRagTokenUsage(
             inputTokens,
             cachedInputTokens,
             billableInputTokens,
             outputTokens,
             reasoningTokens,
             totalTokens,
+            toCostEstimate(cost)
+        );
+    }
+
+    private static SampleRagCostEstimate toCostEstimate(TokenCostEstimate cost) {
+        return new SampleRagCostEstimate(
+            cost.inputCost(),
+            cost.cachedInputCost(),
+            cost.outputCost(),
+            cost.totalCost(),
+            cost.currencyCode()
+        );
+    }
+
+    private void recordLlmTokenUsage(SampleRagTokenUsage tokenUsage) {
+        if (tokenUsage == null) {
+            return;
+        }
+        SampleRagCostEstimate cost = tokenUsage.costEstimate();
+        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
+            UUID.randomUUID().toString(),
+            properties.getUserId(),
+            SOURCE_SERVICE,
+            RAG_CHAT_FEATURE_ID,
+            properties.getChatModel(),
+            tokenUsage.inputTokens(),
+            tokenUsage.cachedInputTokens(),
+            tokenUsage.billableInputTokens(),
+            tokenUsage.outputTokens(),
+            tokenUsage.reasoningTokens(),
+            tokenUsage.totalTokens(),
             cost.inputCost(),
             cost.cachedInputCost(),
             cost.outputCost(),
@@ -213,12 +303,13 @@ public class SampleRagService {
     }
 
     private SampleRagQueryResponse retrievalOnly(String query, List<SampleRagContext> contexts, String answer) {
-        return new SampleRagQueryResponse(query, "retrieval", RETRIEVAL_ONLY_MODEL, answer, contexts);
+        return new SampleRagQueryResponse(query, "retrieval", RETRIEVAL_ONLY_MODEL, answer, null, List.of(), contexts);
     }
 
     private static SampleRagContext toContext(NoteChunkSearchResult result) {
         return new SampleRagContext(
             result.noteId(),
+            result.documentGroupId(),
             result.chunkId(),
             result.chunkIndex(),
             result.title(),
@@ -324,12 +415,56 @@ public class SampleRagService {
         String answerMode,
         String model,
         String answer,
+        SampleRagTokenUsage tokenUsage,
+        List<SampleRagUsageRecord> usageRecords,
         List<SampleRagContext> contexts
+    ) {
+        public SampleRagQueryResponse {
+            usageRecords = usageRecords == null ? List.of() : List.copyOf(usageRecords);
+            contexts = contexts == null ? List.of() : List.copyOf(contexts);
+        }
+
+        SampleRagQueryResponse withUsageRecords(List<SampleRagUsageRecord> usageRecords) {
+            return new SampleRagQueryResponse(query, answerMode, model, answer, tokenUsage, usageRecords, contexts);
+        }
+    }
+
+    public record SampleRagTokenUsage(
+        int inputTokens,
+        int cachedInputTokens,
+        int billableInputTokens,
+        int outputTokens,
+        int reasoningTokens,
+        int totalTokens,
+        SampleRagCostEstimate costEstimate
+    ) {
+    }
+
+    public record SampleRagCostEstimate(
+        BigDecimal inputCost,
+        BigDecimal cachedInputCost,
+        BigDecimal outputCost,
+        BigDecimal totalCost,
+        String currencyCode
+    ) {
+    }
+
+    public record SampleRagUsageRecord(
+        String featureId,
+        String model,
+        int inputTokens,
+        int cachedInputTokens,
+        int billableInputTokens,
+        int outputTokens,
+        int reasoningTokens,
+        int totalTokens,
+        SampleRagCostEstimate costEstimate
     ) {
     }
 
     public record SampleRagContext(
         String noteId,
+        String documentGroupId,
         String chunkId,
         int chunkIndex,
         String title,

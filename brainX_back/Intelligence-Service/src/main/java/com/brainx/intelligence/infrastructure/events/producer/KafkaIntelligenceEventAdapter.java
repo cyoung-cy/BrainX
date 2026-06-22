@@ -10,19 +10,23 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 @ConditionalOnProperty(prefix = "brainx.events.producer", name = "enabled", havingValue = "true")
-public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort {
+public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort {
 
     private static final String PRODUCER = "AI-Service";
     private static final int EVENT_VERSION = 1;
     private static final String SEMANTIC_SEARCH_PERFORMED = "SemanticSearchPerformed";
     private static final String TOKEN_USAGE_RECORDED_REQUESTED = "TokenUsageRecordedRequested";
+    private static final String AI_SUGGESTION_CREATED = "AiSuggestionCreated";
+    private static final String AI_SUGGESTION_DECISION_RECORDED = "AiSuggestionDecisionRecorded";
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -42,6 +46,7 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
+        payload.put("documentGroupId", DocumentGroups.normalize(event.documentGroupId()));
         payload.put("queryHash", event.queryHash());
         payload.put("resultCount", event.resultCount());
         payload.put("charged", event.charged());
@@ -83,6 +88,43 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
             record.userId(),
             record.causationId(),
             record.usageRequestId(),
+            payload
+        );
+    }
+
+    @Override
+    public void aiSuggestionCreated(AiSuggestionCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("featureId", event.featureId());
+        payload.put("noteId", event.noteId());
+        payload.put("modelId", event.modelId());
+        publish(
+            properties.getAiSuggestionCreatedTopic(),
+            event.userId(),
+            AI_SUGGESTION_CREATED,
+            event.userId(),
+            null,
+            event.suggestionId(),
+            payload
+        );
+    }
+
+    @Override
+    public void aiSuggestionDecisionRecorded(AiSuggestionDecisionRecordedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("decision", event.decision());
+        payload.put("appliedNoteId", event.appliedNoteId());
+        publish(
+            properties.getAiSuggestionDecisionRecordedTopic(),
+            event.userId(),
+            AI_SUGGESTION_DECISION_RECORDED,
+            event.userId(),
+            event.suggestionId(),
+            event.suggestionId() + ":" + event.decision().name(),
             payload
         );
     }

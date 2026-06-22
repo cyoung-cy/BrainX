@@ -46,6 +46,7 @@ public class ExplorationController {
     ) {
         var result = semanticSearchUseCase.semanticSearch(new SemanticSearchCommand(
             userId(principal),
+            request.documentGroupId(),
             request.query(),
             nullToEmpty(request.filters()),
             request.limit(),
@@ -101,6 +102,7 @@ public class ExplorationController {
     }
 
     record SemanticSearchRequest(
+        String documentGroupId,
         @NotBlank String query,
         Map<String, Object> filters,
         Integer limit,

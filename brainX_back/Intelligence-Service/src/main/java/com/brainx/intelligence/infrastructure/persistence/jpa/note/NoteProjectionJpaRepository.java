@@ -8,7 +8,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 interface NoteProjectionJpaRepository extends JpaRepository<NoteProjectionJpaEntity, String> {
 
-    Optional<NoteProjectionJpaEntity> findByUserIdAndNoteId(String userId, String noteId);
+    Optional<NoteProjectionJpaEntity> findByUserIdAndDocumentGroupIdAndNoteId(
+        String userId,
+        String documentGroupId,
+        String noteId
+    );
 
-    List<NoteProjectionJpaEntity> findByUserIdAndNoteIdIn(String userId, Collection<String> noteIds);
+    List<NoteProjectionJpaEntity> findByUserIdAndDocumentGroupIdAndNoteIdIn(
+        String userId,
+        String documentGroupId,
+        Collection<String> noteIds
+    );
 }

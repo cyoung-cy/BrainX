@@ -31,12 +31,14 @@ import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator.TokenCostEstimate;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 
 @Component
 @Primary
 public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteChunkRetrievalPort {
 
     private static final String USER_ID = "userId";
+    private static final String DOCUMENT_GROUP_ID = "documentGroupId";
     private static final String NOTE_ID = "noteId";
     private static final String CHUNK_ID = "chunkId";
     private static final String CHUNK_INDEX = "chunkIndex";
@@ -93,6 +95,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         Map<String, SemanticSearchResult> bestByNoteId = new LinkedHashMap<>();
         for (QdrantVectorSearchHit hit : vectorIndexClient.search(
             query.userId(),
+            query.documentGroupId(),
             queryVector,
             searchTopK(query.limit())
         )) {
@@ -126,7 +129,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
             return List.of();
         }
 
-        return vectorIndexClient.search(query.userId(), queryVector, query.topK()).stream()
+        return vectorIndexClient.search(query.userId(), query.documentGroupId(), queryVector, query.topK()).stream()
             .map(QdrantNoteSearchIndexAdapter::toChunkSearchResult)
             .sorted(Comparator.comparingDouble(NoteChunkSearchResult::score).reversed())
             .limit(query.topK())
@@ -153,18 +156,22 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     }
 
     @Override
-    public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+    public boolean replaceNoteChunks(String userId, String documentGroupId, String noteId, List<NoteSearchDocument> chunks) {
         QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
         if (vectorIndexClient == null) {
             return false;
         }
+        String normalizedDocumentGroupId = DocumentGroups.normalize(documentGroupId);
         List<NoteSearchDocument> safeChunks = chunks == null ? List.of() : chunks;
         AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
         if (!safeChunks.isEmpty() && aiEmbeddingPort == null) {
             return false;
         }
+        if (safeChunks.stream().anyMatch(chunk -> !normalizedDocumentGroupId.equals(chunk.documentGroupId()))) {
+            throw new IllegalArgumentException("chunk documentGroupId must match replace documentGroupId.");
+        }
 
-        vectorIndexClient.deleteByUserIdAndNoteId(userId, noteId);
+        vectorIndexClient.deleteByUserIdAndDocumentGroupIdAndNoteId(userId, normalizedDocumentGroupId, noteId);
         if (safeChunks.isEmpty()) {
             return true;
         }
@@ -184,12 +191,16 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     }
 
     @Override
-    public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+    public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
         QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
         if (vectorIndexClient == null) {
             return false;
         }
-        vectorIndexClient.deleteByUserIdAndNoteId(userId, noteId);
+        vectorIndexClient.deleteByUserIdAndDocumentGroupIdAndNoteId(
+            userId,
+            DocumentGroups.normalize(documentGroupId),
+            noteId
+        );
         return true;
     }
 
@@ -236,7 +247,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     private static QdrantVectorPoint toVectorPoint(NoteSearchDocument document, List<Double> vector) {
         return new QdrantVectorPoint(
-            documentId(document.userId(), document.noteId(), document.chunkIndex()),
+            documentId(document.userId(), document.documentGroupId(), document.noteId(), document.chunkIndex()),
             vector,
             toPayload(document)
         );
@@ -245,6 +256,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     private static Map<String, Object> toPayload(NoteSearchDocument document) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put(USER_ID, document.userId());
+        payload.put(DOCUMENT_GROUP_ID, document.documentGroupId());
         payload.put(NOTE_ID, document.noteId());
         payload.put(CHUNK_ID, document.chunkId());
         payload.put(CHUNK_INDEX, document.chunkIndex());
@@ -267,8 +279,8 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         return values == null ? List.of() : values;
     }
 
-    private static UUID documentId(String userId, String noteId, int chunkIndex) {
-        return UUID.nameUUIDFromBytes((userId + "::" + noteId + "::" + chunkIndex)
+    private static UUID documentId(String userId, String documentGroupId, String noteId, int chunkIndex) {
+        return UUID.nameUUIDFromBytes((userId + "::" + documentGroupId + "::" + noteId + "::" + chunkIndex)
             .getBytes(StandardCharsets.UTF_8));
     }
 
@@ -300,6 +312,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         int chunkIndex = integerValue(payload.get(CHUNK_INDEX), 0);
         return new NoteChunkSearchResult(
             stringValue(payload.get(USER_ID), ""),
+            stringValue(payload.get(DOCUMENT_GROUP_ID), ""),
             noteId,
             stringValue(payload.get(CHUNK_ID), noteId + "::" + chunkIndex),
             chunkIndex,

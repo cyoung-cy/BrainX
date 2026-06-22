@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
 import com.brainx.intelligence.infrastructure.events.note.NoteProjectionStore;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 
 @Repository
 public class NoteProjectionJpaAdapter implements NoteProjectionStore {
@@ -20,18 +21,34 @@ public class NoteProjectionJpaAdapter implements NoteProjectionStore {
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<NoteProjection> findByUserIdAndNoteId(String userId, String noteId) {
-        return repository.findByUserIdAndNoteId(userId, noteId)
+    public Optional<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteId(
+        String userId,
+        String documentGroupId,
+        String noteId
+    ) {
+        return repository.findByUserIdAndDocumentGroupIdAndNoteId(
+                userId,
+                DocumentGroups.normalize(documentGroupId),
+                noteId
+            )
             .map(NoteProjectionJpaEntity::toDomain);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<NoteProjection> findByUserIdAndNoteIds(String userId, List<String> noteIds) {
+    public List<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteIds(
+        String userId,
+        String documentGroupId,
+        List<String> noteIds
+    ) {
         if (noteIds == null || noteIds.isEmpty()) {
             return List.of();
         }
-        return repository.findByUserIdAndNoteIdIn(userId, noteIds).stream()
+        return repository.findByUserIdAndDocumentGroupIdAndNoteIdIn(
+                userId,
+                DocumentGroups.normalize(documentGroupId),
+                noteIds
+            ).stream()
             .map(NoteProjectionJpaEntity::toDomain)
             .toList();
     }
@@ -39,6 +56,14 @@ public class NoteProjectionJpaAdapter implements NoteProjectionStore {
     @Override
     @Transactional
     public NoteProjection save(NoteProjection projection) {
-        return repository.save(NoteProjectionJpaEntity.fromDomain(projection)).toDomain();
+        NoteProjectionJpaEntity entity = NoteProjectionJpaEntity.fromDomain(projection);
+        repository.findByUserIdAndDocumentGroupIdAndNoteId(
+                projection.userId(),
+                projection.documentGroupId(),
+                projection.noteId()
+            )
+            .map(NoteProjectionJpaEntity::projectionId)
+            .ifPresent(entity::setProjectionId);
+        return repository.save(entity).toDomain();
     }
 }

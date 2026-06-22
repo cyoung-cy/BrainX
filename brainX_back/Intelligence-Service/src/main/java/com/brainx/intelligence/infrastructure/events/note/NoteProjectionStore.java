@@ -5,9 +5,17 @@ import java.util.Optional;
 
 public interface NoteProjectionStore {
 
-    Optional<NoteProjection> findByUserIdAndNoteId(String userId, String noteId);
+    Optional<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteId(
+        String userId,
+        String documentGroupId,
+        String noteId
+    );
 
-    List<NoteProjection> findByUserIdAndNoteIds(String userId, List<String> noteIds);
+    List<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteIds(
+        String userId,
+        String documentGroupId,
+        List<String> noteIds
+    );
 
     NoteProjection save(NoteProjection projection);
 }

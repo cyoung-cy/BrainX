@@ -74,6 +74,7 @@ public class ExternalWorkspaceNoteAdapter implements WorkspaceNotePort {
 
     record SnapshotData(
         String noteId,
+        String documentGroupId,
         String title,
         String markdown,
         List<String> tags,
@@ -85,6 +86,7 @@ public class ExternalWorkspaceNoteAdapter implements WorkspaceNotePort {
         NoteSnapshot toSnapshot() {
             return new NoteSnapshot(
                 noteId,
+                documentGroupId,
                 title,
                 markdown,
                 tags == null ? List.of() : tags,

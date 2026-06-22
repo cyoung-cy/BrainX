@@ -27,6 +27,9 @@ public class NoteProjectionJpaEntity {
     @Column(name = "user_id", nullable = false, length = 120)
     private String userId;
 
+    @Column(name = "document_group_id", nullable = false, length = 120)
+    private String documentGroupId;
+
     @Column(name = "note_id", nullable = false, length = 120)
     private String noteId;
 
@@ -83,8 +86,9 @@ public class NoteProjectionJpaEntity {
 
     static NoteProjectionJpaEntity fromDomain(NoteProjection projection) {
         NoteProjectionJpaEntity entity = new NoteProjectionJpaEntity();
-        entity.projectionId = projection.userId() + "::" + projection.noteId();
+        entity.projectionId = projection.userId() + "::" + projection.documentGroupId() + "::" + projection.noteId();
         entity.userId = projection.userId();
+        entity.documentGroupId = projection.documentGroupId();
         entity.noteId = projection.noteId();
         entity.title = projection.title();
         entity.folderId = projection.folderId();
@@ -104,9 +108,18 @@ public class NoteProjectionJpaEntity {
         return entity;
     }
 
+    String projectionId() {
+        return projectionId;
+    }
+
+    void setProjectionId(String projectionId) {
+        this.projectionId = projectionId;
+    }
+
     NoteProjection toDomain() {
         return new NoteProjection(
             userId,
+            documentGroupId,
             noteId,
             title,
             folderId,

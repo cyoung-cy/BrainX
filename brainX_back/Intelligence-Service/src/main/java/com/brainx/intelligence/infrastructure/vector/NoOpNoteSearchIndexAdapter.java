@@ -29,13 +29,13 @@ public class NoOpNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteChun
     }
 
     @Override
-    public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+    public boolean replaceNoteChunks(String userId, String documentGroupId, String noteId, List<NoteSearchDocument> chunks) {
         // No-op fallback for local contexts without a vector store.
         return false;
     }
 
     @Override
-    public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+    public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
         // No-op fallback for local contexts without a vector store.
         return false;
     }

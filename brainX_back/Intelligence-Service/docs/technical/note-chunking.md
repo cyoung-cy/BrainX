@@ -13,6 +13,7 @@
 입력은 Workspace snapshot API에서 받은 note snapshot이다.
 
 - `userId`
+- `documentGroupId`: 문서 그룹/RAG 격리 키. Workspace payload나 snapshot에 없으면 `default`로 normalize한다.
 - `noteId`
 - `title`
 - `markdown`
@@ -24,13 +25,26 @@
 
 - `chunkId`: `noteId::chunkIndex`
 - `chunkIndex`: 0부터 시작하는 chunk 순서
+- `documentGroupId`: 검색/RAG 격리 키
 - `chunkText`: 실제 embedding 대상 텍스트
 - `excerpt`: semantic search 응답에 사용할 짧은 preview
 - `keywordIds`: 현재는 note tag 목록
 - `markdownHash`, `version`: 재색인 대상 추적용 metadata
 - `sourcePath`, `sourceFilename`: sample RAG처럼 원본 파일 출처가 있는 경우에만 채우는 optional metadata
 
-Qdrant 내부 point id는 `userId::noteId::chunkIndex`에서 만든 deterministic UUID를 사용한다. 사람이 읽는 logical chunk id는 payload `chunkId`에 `noteId::chunkIndex` 형태로 저장한다.
+Qdrant 내부 point id는 `userId::documentGroupId::noteId::chunkIndex`에서 만든 deterministic UUID를 사용한다. 사람이 읽는 logical chunk id는 payload `chunkId`에 `noteId::chunkIndex` 형태로 저장한다.
+
+## Document Group 격리
+
+`documentGroupId`는 Intelligence-Service 안에서 RAG/search 범위를 나누는 논리적 격리 키다. Obsidian의 vault처럼 한 사용자의 노트라도 서로 다른 문서 그룹이면 semantic search, RAG context 조회, note 단위 index 교체/삭제가 섞이지 않아야 한다.
+
+- 기본값은 `default`다.
+- Workspace event payload나 snapshot에 `documentGroupId`가 있으면 해당 값을 사용한다.
+- Workspace가 아직 group을 보내지 않으면 모든 projection과 vector payload는 `default` group으로 처리한다.
+- `NoteProjection` 조회 key는 `userId + documentGroupId + noteId`다. 같은 `userId/noteId`라도 group이 다르면 별도 projection으로 저장한다.
+- Qdrant payload에는 `documentGroupId`를 저장하고, 검색/삭제 filter는 항상 `userId AND documentGroupId`를 포함한다. note 교체/삭제는 여기에 `noteId`를 추가한다.
+
+기존 Qdrant collection의 point에는 `documentGroupId` payload가 없을 수 있다. group filter가 강제되면 이런 기존 point는 검색에서 누락될 수 있으므로, 이 변경 이후에는 note 재ingest가 필요하다.
 
 ## 기본값
 
@@ -79,7 +93,7 @@ Qdrant 내부 point id는 `userId::noteId::chunkIndex`에서 만든 deterministi
 - `NoteMetadataChanged`, `NoteTagsChanged`: metadata 일관성을 위해 snapshot 기반 chunk replace를 수행한다.
 - `NoteTrashed`, `NoteDeleted`: note의 모든 chunk를 삭제한다.
 
-Qdrant 교체는 `NoteSearchIndexPort.replaceNoteChunks(userId, noteId, chunks)`를 통해 수행한다. adapter는 먼저 `userId + noteId` filter로 기존 chunk를 삭제하고 새 chunk들을 추가한다.
+Qdrant 교체는 `NoteSearchIndexPort.replaceNoteChunks(userId, documentGroupId, noteId, chunks)`를 통해 수행한다. adapter는 먼저 `userId + documentGroupId + noteId` filter로 기존 chunk를 삭제하고 새 chunk들을 추가한다.
 
 ## Projection Version/Hash와 Indexed Version/Hash
 
@@ -102,7 +116,7 @@ Qdrant 교체는 `NoteSearchIndexPort.replaceNoteChunks(userId, noteId, chunks)`
 | `FAILED` | index replace/delete 중 예외가 발생했고, event retry 또는 후속 복구가 필요하다. |
 | `REMOVED` | archived/trashed/deleted 상태 때문에 search index에서 의도적으로 제거됐다. |
 
-운영 DB는 Hibernate `ddl-auto=validate`를 사용하므로 `search_index_status`, `indexed_version`, `indexed_markdown_hash`, `indexed_at` 컬럼을 별도 migration으로 추가해야 한다. `local`과 `test` profile은 H2 `create-drop`이므로 자동으로 새 컬럼을 만든다.
+운영 DB는 Hibernate `ddl-auto=validate`를 사용하므로 `document_group_id`, `search_index_status`, `indexed_version`, `indexed_markdown_hash`, `indexed_at` 컬럼을 별도 migration으로 추가해야 한다. 기존 row의 `document_group_id`는 `default`로 backfill하고, 가능하면 `projection_id`도 `user_id::default::note_id` 형태로 갱신해야 한다. `local`과 `test` profile은 H2 `create-drop`이므로 자동으로 새 컬럼을 만든다.
 
 ## 검색 결과 매핑
 

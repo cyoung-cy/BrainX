@@ -2,8 +2,11 @@ package com.brainx.intelligence.exploration.domain;
 
 import java.util.List;
 
+import com.brainx.intelligence.shared.domain.DocumentGroups;
+
 public record NoteSearchDocument(
     String userId,
+    String documentGroupId,
     String noteId,
     String chunkId,
     int chunkIndex,
@@ -18,7 +21,7 @@ public record NoteSearchDocument(
 ) {
 
     public NoteSearchDocument(String userId, String noteId, String title, String excerpt, List<String> keywordIds) {
-        this(userId, noteId, null, 0, title, excerpt, excerpt, keywordIds, null, null, null, null);
+        this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, noteId, null, 0, title, excerpt, excerpt, keywordIds, null, null, null, null);
     }
 
     public NoteSearchDocument(
@@ -33,11 +36,29 @@ public record NoteSearchDocument(
         String markdownHash,
         Integer version
     ) {
-        this(userId, noteId, chunkId, chunkIndex, title, excerpt, chunkText, keywordIds, markdownHash, version, null, null);
+        this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, noteId, chunkId, chunkIndex, title, excerpt, chunkText, keywordIds, markdownHash, version, null, null);
+    }
+
+    public NoteSearchDocument(
+        String userId,
+        String noteId,
+        String chunkId,
+        int chunkIndex,
+        String title,
+        String excerpt,
+        String chunkText,
+        List<String> keywordIds,
+        String markdownHash,
+        Integer version,
+        String sourcePath,
+        String sourceFilename
+    ) {
+        this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, noteId, chunkId, chunkIndex, title, excerpt, chunkText, keywordIds, markdownHash, version, sourcePath, sourceFilename);
     }
 
     public NoteSearchDocument {
         userId = ExplorationValidation.requireText(userId, "userId");
+        documentGroupId = DocumentGroups.normalize(documentGroupId);
         noteId = ExplorationValidation.requireText(noteId, "noteId");
         if (chunkIndex < 0) {
             throw new ExplorationDomainException("chunkIndex must not be negative.");

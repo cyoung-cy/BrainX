@@ -40,8 +40,10 @@ class NoteProjectionJpaAdapterTest {
             Instant.parse("2026-06-19T00:00:00Z")
         ).indexed(2, "hash-2", Instant.parse("2026-06-19T00:00:01Z")));
 
-        var projection = adapter.findByUserIdAndNoteId("user-1", "note-1").orElseThrow();
+        var projection = adapter.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "default", "note-1")
+            .orElseThrow();
 
+        assertThat(projection.documentGroupId()).isEqualTo("default");
         assertThat(projection.tags()).containsExactly("tag-1", "tag-2");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
         assertThat(projection.contentPending()).isFalse();
@@ -69,8 +71,57 @@ class NoteProjectionJpaAdapterTest {
             Instant.parse("2026-06-19T00:00:00Z")
         ));
 
-        var projections = adapter.findByUserIdAndNoteIds("user-1", List.of("note-1", "missing"));
+        var projections = adapter.findByUserIdAndDocumentGroupIdAndNoteIds(
+            "user-1",
+            "default",
+            List.of("note-1", "missing")
+        );
 
         assertThat(projections).extracting(NoteProjection::noteId).containsExactly("note-1");
+    }
+
+    @Test
+    void sameNoteIdCanBeStoredSeparatelyByDocumentGroupId() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Group 1 title",
+            null,
+            List.of(),
+            1,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-2",
+            "note-1",
+            "Group 2 title",
+            null,
+            List.of(),
+            1,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+
+        assertThat(adapter.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1"))
+            .get()
+            .extracting(NoteProjection::title)
+            .isEqualTo("Group 1 title");
+        assertThat(adapter.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-2", "note-1"))
+            .get()
+            .extracting(NoteProjection::title)
+            .isEqualTo("Group 2 title");
     }
 }

@@ -14,6 +14,7 @@
 - `docs/technical/conditional-on-bean.md`: Spring Boot `@ConditionalOnBean`의 의미와 Qdrant adapter 적용 맥락을 확인할 때 참고합니다.
 - `docs/technical/ai-model-pricing-and-usage.md`: AI 모델 catalog 비용 필드, availability 결합, token usage/cost estimate 기록 정책을 확인할 때 참고합니다.
 - `docs/technical/consumed-events-implementation-checkpoints.md`: `AI-Service`가 consumer로 받는 이벤트별 구현 체크포인트를 확인할 때 참고합니다.
+- `docs/technical/external-search.md`: OpenAI Responses `web_search` 기반 외부 자료 검색 port, CLI 실행 방법, RAG chat router 연결 방향을 확인할 때 참고합니다.
 - `docs/technical/note-chunking.md`: Workspace note markdown을 chunk 단위 vector index로 변환하는 규칙과 semantic search dedupe 정책을 확인할 때 참고합니다.
 - `docs/technical/sample-notes-rag-cli.md`: `sample_notes` 기반 로컬 RAG CLI 색인/질의 흐름과 retrieval/chat 질의별 출력 capture script 정보를 확인할 때 참고합니다.
 - `docs/technical/vectorstore-embedding-model.md`: Qdrant Java client 직접 연동, Voyage embedding, RAG vector usage/cost 기록 정책을 확인할 때 참고합니다.
@@ -40,6 +41,7 @@
 - 문체 설정 UX나 `StyleProfile` 입력 방향은 `docs/domain/style-profile-input-direction.md`를 기준으로 답합니다.
 - Spring Boot conditional bean 등록이나 Qdrant adapter 조건부 등록은 `docs/technical/conditional-on-bean.md`를 기준으로 답합니다.
 - AI 모델 비용, cached input token, usage event payload, RAG usage cost estimate는 `docs/technical/ai-model-pricing-and-usage.md`를 기준으로 답합니다.
+- 외부 자료 검색 port, OpenAI `web_search` provider, 검색 CLI 실행 방법, RAG chat router 연결 방향은 `docs/technical/external-search.md`를 기준으로 답합니다.
 - 노트 markdown chunking, Qdrant chunk metadata, semantic search note-level dedupe는 `docs/technical/note-chunking.md`를 기준으로 답합니다.
 - `sample_notes` 기반 RAG CLI 실행 방법과 retrieval/chat 질의별 출력 capture 결과 위치는 `docs/technical/sample-notes-rag-cli.md`를 기준으로 답합니다.
 - Qdrant 직접 연동과 Voyage embedding model 지정 방식은 `docs/technical/vectorstore-embedding-model.md`를 기준으로 답합니다.

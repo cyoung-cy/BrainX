@@ -40,6 +40,7 @@ public class MarkdownNoteChunker {
 
     public List<NoteSearchDocument> chunk(
         String userId,
+        String documentGroupId,
         String noteId,
         String title,
         String markdown,
@@ -47,11 +48,38 @@ public class MarkdownNoteChunker {
         String markdownHash,
         Integer version
     ) {
-        return chunk(userId, noteId, title, markdown, keywordIds, markdownHash, version, null, null);
+        return chunk(userId, documentGroupId, noteId, title, markdown, keywordIds, markdownHash, version, null, null);
     }
 
     public List<NoteSearchDocument> chunk(
         String userId,
+        String noteId,
+        String title,
+        String markdown,
+        List<String> keywordIds,
+        String markdownHash,
+        Integer version
+    ) {
+        return chunk(userId, null, noteId, title, markdown, keywordIds, markdownHash, version, null, null);
+    }
+
+    public List<NoteSearchDocument> chunk(
+        String userId,
+        String noteId,
+        String title,
+        String markdown,
+        List<String> keywordIds,
+        String markdownHash,
+        Integer version,
+        String sourcePath,
+        String sourceFilename
+    ) {
+        return chunk(userId, null, noteId, title, markdown, keywordIds, markdownHash, version, sourcePath, sourceFilename);
+    }
+
+    public List<NoteSearchDocument> chunk(
+        String userId,
+        String documentGroupId,
         String noteId,
         String title,
         String markdown,
@@ -72,6 +100,7 @@ public class MarkdownNoteChunker {
             String chunkText = withTitlePrefix(normalizedTitle, bodies.get(index));
             chunks.add(new NoteSearchDocument(
                 userId,
+                documentGroupId,
                 noteId,
                 noteId + "::" + index,
                 index,

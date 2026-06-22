@@ -7,6 +7,7 @@
 - [x] AsyncAPI envelope의 `eventId`, `eventType`, `eventVersion`, `occurredAt`, `producer`, `correlationId`, `causationId`, `idempotencyKey`, `payload`를 공통 DTO로 받는다.
 - [x] `eventId` 기준 idempotency store를 둔다. 이미 처리한 이벤트는 성공 처리하고 side effect를 반복하지 않는다.
 - [x] note 계열 이벤트 중 payload `version`이 있는 이벤트는 현재 projection보다 오래되면 무시한다. `version`이 없는 이벤트는 `eventId` idempotency와 projection 상태 전환으로 처리한다.
+- [x] note 계열 이벤트 payload나 Workspace snapshot에 `documentGroupId`가 있으면 projection/vector 격리 키로 사용한다. Workspace가 아직 group을 보내지 않으면 `default`로 fallback한다.
 - [x] 실패 시 retry 가능한 오류와 poison message를 구분하고, 재시도 후에도 실패하면 failed-event store로 보낸다. Kafka DLQ publish는 운영 정책 확정 후 별도 구현한다.
 - [x] log에는 `eventId`, `eventType`, `userId`, `noteId`, `correlationId`만 남기고 원문 markdown, API key, 장문 생성 결과는 남기지 않는다.
 - [x] event-to-event 또는 job 흐름을 만들 때는 기존 `correlationId`와 `causationId`를 유지할 수 있도록 context에 보존한다.
@@ -16,6 +17,7 @@
 ### `NoteCreated`
 
 - [x] `noteId`, `userId`, `title`, `folderId`, `tags`, `version`으로 note projection을 upsert한다.
+- [x] `documentGroupId`가 있으면 `userId + documentGroupId + noteId` 기준으로 projection을 저장한다. 없으면 `default` group이다.
 - [x] payload에는 markdown이 없으므로 full embedding을 하려면 Workspace snapshot을 조회한다.
 - [x] snapshot이 있으면 `title + markdown`에서 excerpt/search text를 만들고 vector index에 upsert한다.
 - [x] snapshot이 없으면 title-only provisional index를 만들거나 `contentPending=true`로 두고 `NoteContentSaved`를 기다린다.
@@ -26,6 +28,7 @@
 ### `NoteContentSaved`
 
 - [x] `noteId`, `userId`, `version`, `markdownHash`, `savedAt`을 projection에 기록한다.
+- [x] payload `documentGroupId`가 있으면 같은 group 안에서만 projection 조회와 vector replace를 수행한다.
 - [x] 저장된 `markdownHash`와 같거나 더 낮은 `version`이면 vector 재색인을 건너뛴다.
 - [x] Workspace snapshot을 조회해 최신 `title`과 `markdown`을 가져온다.
 - [x] markdown에서 검색/RAG용 chunk들을 만들고 chunk-level `NoteSearchDocument` 집합으로 교체한다.
@@ -129,7 +132,8 @@
 - [ ] `userId`, `defaultModelId`, `registeredProviders`를 model settings projection/cache에 반영한다.
 - [ ] default model이 더 이상 사용 가능하지 않으면 fallback 정책을 적용하거나 사용 불가 상태로 표시한다.
 - [ ] 사용자별 model choice cache를 무효화한다.
-- [ ] 작성 보조, RAG 채팅, insight job이 새 model setting을 읽도록 한다.
+- [x] 작성 보조 inline assist는 요청 시 `AiModelSettings.defaultModelId`를 읽고 없으면 `brainx.assist.default-model`로 fallback한다.
+- [ ] RAG 채팅과 insight job이 새 model setting을 읽도록 한다.
 - [ ] self-produced event도 idempotent하게 처리해 multi-instance 환경에서 projection이 맞춰지게 한다.
 
 ### `UserStyleProfileChanged`
@@ -189,8 +193,8 @@
 
 - [x] Workspace snapshot adapter가 실제 note title/markdown을 가져와야 한다.
 - [x] `NoteSearchIndexPort`에 note 단위 delete가 필요하다. note 단위 delete는 구현되었고 user 단위 delete는 `UserDeletionRequested` 처리 단계에서 추가한다.
-- [x] note projection에는 최소 `userId`, `noteId`, `title`, `folderId`, `tags`, `version`, `markdownHash`, `archived`, `trashed`가 필요하다. 현재는 search index 동기화 관측을 위해 `searchIndexStatus`, `indexedVersion`, `indexedMarkdownHash`, `indexedAt`도 함께 저장한다.
+- [x] note projection에는 최소 `userId`, `documentGroupId`, `noteId`, `title`, `folderId`, `tags`, `version`, `markdownHash`, `archived`, `trashed`가 필요하다. `documentGroupId`는 Workspace가 group을 보내기 전까지 `default`다. 현재는 search index 동기화 관측을 위해 `searchIndexStatus`, `indexedVersion`, `indexedMarkdownHash`, `indexedAt`도 함께 저장한다.
 - [ ] summary cache에는 `version` 또는 `markdownHash`가 필요하다.
-- [ ] vector index metadata에는 folder/tag/archive/trashed 상태를 filter 가능한 형태로 넣어야 한다. 현재 chunk metadata에는 `userId`, `noteId`, `chunkId`, `chunkIndex`, `title`, `excerpt`, `keywordIds`, `markdownHash`, `version`을 저장한다.
+- [ ] vector index metadata에는 folder/tag/archive/trashed 상태를 filter 가능한 형태로 넣어야 한다. 현재 chunk metadata에는 `userId`, `documentGroupId`, `noteId`, `chunkId`, `chunkIndex`, `title`, `excerpt`, `keywordIds`, `markdownHash`, `version`을 저장한다.
 - [ ] cluster/insight job 상태 저장소와 result 저장소가 필요하다.
 - [x] event idempotency store와 failed-event store가 필요하다. Kafka DLQ 운영 정책과 publish adapter는 후속 구현으로 둔다.

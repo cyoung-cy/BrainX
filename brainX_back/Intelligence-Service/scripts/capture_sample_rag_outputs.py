@@ -467,6 +467,8 @@ def compact_command_record(record: dict[str, Any]) -> dict[str, Any]:
 def compact_record(record: dict[str, Any]) -> dict[str, Any]:
     response = record.get("response") or {}
     contexts = response.get("contexts") if isinstance(response, dict) else None
+    token_usage = token_usage_summary(response.get("tokenUsage")) if isinstance(response, dict) else None
+    usage_records = usage_record_summaries(response.get("usageRecords")) if isinstance(response, dict) else []
     return {
         "label": record["label"],
         "query": record.get("query"),
@@ -475,12 +477,103 @@ def compact_record(record: dict[str, Any]) -> dict[str, Any]:
         "durationSeconds": record["durationSeconds"],
         "answerMode": response.get("answerMode") if isinstance(response, dict) else None,
         "model": response.get("model") if isinstance(response, dict) else None,
+        "tokenUsage": token_usage,
+        "usageRecords": usage_records,
         "contextCount": len(contexts) if isinstance(contexts, list) else None,
         "stdoutPath": record["stdoutPath"],
         "stderrPath": record["stderrPath"],
         "stdoutBytesPath": record["stdoutBytesPath"],
         "stderrBytesPath": record["stderrBytesPath"],
     }
+
+
+def token_usage_summary(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    cost = value.get("costEstimate")
+    if not isinstance(cost, dict):
+        cost = {}
+    return {
+        "inputTokens": value.get("inputTokens"),
+        "cachedInputTokens": value.get("cachedInputTokens"),
+        "billableInputTokens": value.get("billableInputTokens"),
+        "outputTokens": value.get("outputTokens"),
+        "reasoningTokens": value.get("reasoningTokens"),
+        "totalTokens": value.get("totalTokens"),
+        "estimatedInputCost": cost.get("inputCost"),
+        "estimatedCachedInputCost": cost.get("cachedInputCost"),
+        "estimatedOutputCost": cost.get("outputCost"),
+        "estimatedCost": cost.get("totalCost"),
+        "costCurrency": cost.get("currencyCode"),
+    }
+
+
+def usage_record_summaries(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [summary for item in value if (summary := usage_record_summary(item)) is not None]
+
+
+def usage_record_summary(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    cost = value.get("costEstimate")
+    if not isinstance(cost, dict):
+        cost = {}
+    return {
+        "featureId": value.get("featureId"),
+        "model": value.get("model"),
+        "inputTokens": value.get("inputTokens"),
+        "cachedInputTokens": value.get("cachedInputTokens"),
+        "billableInputTokens": value.get("billableInputTokens"),
+        "outputTokens": value.get("outputTokens"),
+        "reasoningTokens": value.get("reasoningTokens"),
+        "totalTokens": value.get("totalTokens"),
+        "estimatedInputCost": cost.get("inputCost"),
+        "estimatedCachedInputCost": cost.get("cachedInputCost"),
+        "estimatedOutputCost": cost.get("outputCost"),
+        "estimatedCost": cost.get("totalCost"),
+        "costCurrency": cost.get("currencyCode"),
+    }
+
+
+def format_token_usage_summary(value: dict[str, Any] | None) -> str:
+    if not value:
+        return "none"
+    tokens = (
+        f"input={value.get('inputTokens')}, "
+        f"cachedInput={value.get('cachedInputTokens')}, "
+        f"billableInput={value.get('billableInputTokens')}, "
+        f"output={value.get('outputTokens')}, "
+        f"reasoning={value.get('reasoningTokens')}, "
+        f"total={value.get('totalTokens')}"
+    )
+    estimated_cost = value.get("estimatedCost")
+    currency = value.get("costCurrency")
+    if estimated_cost is None:
+        return f"{tokens}, estimatedCost=unknown"
+    return f"{tokens}, estimatedCost={estimated_cost} {currency or ''}".strip()
+
+
+def format_usage_records(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return "none"
+    formatted: list[str] = []
+    for record in records:
+        estimated_cost = record.get("estimatedCost")
+        currency = record.get("costCurrency")
+        if estimated_cost is None:
+            cost = "estimatedCost=unknown"
+        else:
+            cost = f"estimatedCost={estimated_cost} {currency or ''}".strip()
+        formatted.append(
+            f"{record.get('featureId')}/{record.get('model')}: "
+            f"input={record.get('inputTokens')}, "
+            f"output={record.get('outputTokens')}, "
+            f"total={record.get('totalTokens')}, "
+            f"{cost}"
+        )
+    return "; ".join(formatted)
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -516,13 +609,28 @@ def write_chunk_report(path: Path, summary: dict[str, Any], records: list[dict[s
         contexts = response.get("contexts")
         if not isinstance(contexts, list):
             contexts = []
+        token_usage = token_usage_summary(response.get("tokenUsage"))
+        usage_records = usage_record_summaries(response.get("usageRecords"))
         lines.extend([
             f"- status: `{record['status']}`",
             f"- answerMode: `{response.get('answerMode', '')}`",
             f"- model: `{response.get('model', '')}`",
+            f"- tokenUsage: `{format_token_usage_summary(token_usage)}`",
+            f"- usageRecords: `{format_usage_records(usage_records)}`",
             f"- contextCount: `{len(contexts)}`",
             "",
         ])
+        answer = str(response.get("answer") or "")
+        if answer:
+            fence = code_fence(answer)
+            lines.extend([
+                "Answer:",
+                "",
+                f"{fence}text",
+                answer,
+                fence,
+                "",
+            ])
         for rank, context in enumerate(contexts, start=1):
             if not isinstance(context, dict):
                 continue
@@ -533,6 +641,7 @@ def write_chunk_report(path: Path, summary: dict[str, Any], records: list[dict[s
                 "",
                 f"- title: {context.get('title', '')}",
                 f"- noteId: `{context.get('noteId', '')}`",
+                f"- documentGroupId: `{context.get('documentGroupId', '')}`",
                 f"- chunkId: `{context.get('chunkId', '')}`",
                 f"- chunkIndex: `{context.get('chunkIndex', '')}`",
                 f"- score: `{context.get('score', '')}`",

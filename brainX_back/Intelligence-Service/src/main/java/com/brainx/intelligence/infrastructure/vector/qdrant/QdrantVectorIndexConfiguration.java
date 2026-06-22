@@ -27,4 +27,13 @@ public class QdrantVectorIndexConfiguration {
         }
         return new QdrantClient(builder.build());
     }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "brainx.vector.qdrant", name = "enabled", havingValue = "true", matchIfMissing = true)
+    QdrantVectorIndexClient qdrantVectorIndexClient(
+        QdrantClient qdrantClient,
+        QdrantVectorIndexProperties properties
+    ) {
+        return new DefaultQdrantVectorIndexClient(qdrantClient, properties);
+    }
 }
