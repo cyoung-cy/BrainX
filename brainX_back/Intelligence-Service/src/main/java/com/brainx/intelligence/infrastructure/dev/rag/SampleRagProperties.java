@@ -19,6 +19,8 @@ public class SampleRagProperties {
     private List<String> tags = new ArrayList<>(List.of("sample_notes"));
     private String query = "";
     private int topK = 8;
+    private double minScore = 0.35d;
+    private int maxChunksPerNote = 2;
     private int maxContextChars = 8_000;
     private String chatModel = "gpt-5.4-mini";
 
@@ -84,6 +86,25 @@ public class SampleRagProperties {
 
     public void setTopK(int topK) {
         this.topK = topK;
+    }
+
+    public double getMinScore() {
+        return minScore;
+    }
+
+    public void setMinScore(double minScore) {
+        if (Double.isNaN(minScore) || Double.isInfinite(minScore)) {
+            throw new IllegalArgumentException("minScore must be finite.");
+        }
+        this.minScore = minScore;
+    }
+
+    public int getMaxChunksPerNote() {
+        return maxChunksPerNote;
+    }
+
+    public void setMaxChunksPerNote(int maxChunksPerNote) {
+        this.maxChunksPerNote = Math.max(1, maxChunksPerNote);
     }
 
     public int getMaxContextChars() {

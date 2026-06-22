@@ -4703,11 +4703,35 @@ components:
           nullable: true
         inputTokens:
           type: integer
+        cachedInputTokens:
+          type: integer
+          description: Cached prompt/input tokens included in inputTokens.
+        billableInputTokens:
+          type: integer
+          description: Non-cached prompt/input tokens charged at the regular input rate.
         outputTokens:
           type: integer
+        reasoningTokens:
+          type: integer
+          description: Reasoning tokens included in outputTokens when the provider reports them.
+        totalTokens:
+          type: integer
+        estimatedInputCost:
+          type: number
+          nullable: true
+        estimatedCachedInputCost:
+          type: number
+          nullable: true
+        estimatedOutputCost:
+          type: number
+          nullable: true
         estimatedCost:
           type: number
           nullable: true
+        costCurrency:
+          type: string
+          nullable: true
+          description: ISO 4217 currency code for estimated cost fields.
         causationId:
           type: string
       required:
@@ -4716,7 +4740,11 @@ components:
       - sourceService
       - featureId
       - inputTokens
+      - cachedInputTokens
+      - billableInputTokens
       - outputTokens
+      - reasoningTokens
+      - totalTokens
       - causationId
       additionalProperties: false
     TokenUsageRecordedPayload:

@@ -7,7 +7,8 @@ info:
 
     Revision policy:
 
-    - Public/client API remains under /api/v1.
+    - Public/client API remains under /api/v1, except the currently implemented Ingestion publish helper which is exposed
+    at /v1/publish-jobs.
 
     - Service-to-service synchronous APIs are explicitly isolated under /internal/v1.
 
@@ -17,7 +18,7 @@ info:
 
     - Token usage recording is event-first via AsyncAPI; no public REST command is exposed.
 
-    - Publish jobs return 202 Accepted when status is PENDING.
+    - Publish jobs currently return 200 OK with clipboard-ready content.
 
     - Operation-level consumer metadata is expressed through x-consumers.
 
@@ -1669,9 +1670,19 @@ components:
               vendorInputCostPer1kTokens:
                 type: number
                 nullable: true
+              vendorCachedInputCostPer1kTokens:
+                type: number
+                nullable: true
               vendorOutputCostPer1kTokens:
                 type: number
                 nullable: true
+              costCurrency:
+                type: string
+                nullable: true
+                description: ISO 4217 currency code for vendor token costs.
+              enabled:
+                type: boolean
+                description: Whether the requesting user can select/use this model.
             required:
             - modelId
             - name

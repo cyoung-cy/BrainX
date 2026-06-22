@@ -67,7 +67,10 @@ class SettingsControllerTest {
                     "GPT-4o mini",
                     "openai",
                     new BigDecimal("0.150000"),
-                    new BigDecimal("0.600000")
+                    new BigDecimal("0.075000"),
+                    new BigDecimal("0.600000"),
+                    "USD",
+                    true
                 )),
                 List.of("gpt-4o-mini"),
                 new AiPricingPolicyView("TOKEN", "", Map.of())
@@ -81,7 +84,10 @@ class SettingsControllerTest {
             .andExpect(jsonPath("$.data.models[0].name").value("GPT-4o mini"))
             .andExpect(jsonPath("$.data.models[0].provider").value("openai"))
             .andExpect(jsonPath("$.data.models[0].vendorInputCostPer1kTokens").value(0.150000))
+            .andExpect(jsonPath("$.data.models[0].vendorCachedInputCostPer1kTokens").value(0.075000))
             .andExpect(jsonPath("$.data.models[0].vendorOutputCostPer1kTokens").value(0.600000))
+            .andExpect(jsonPath("$.data.models[0].costCurrency").value("USD"))
+            .andExpect(jsonPath("$.data.models[0].enabled").value(true))
             .andExpect(jsonPath("$.data.models[0].costPer1kTokens").doesNotExist())
             .andExpect(jsonPath("$.data.enabledModels[0]").value("gpt-4o-mini"))
             .andExpect(jsonPath("$.data.costInfo.billingUnit").value("TOKEN"));

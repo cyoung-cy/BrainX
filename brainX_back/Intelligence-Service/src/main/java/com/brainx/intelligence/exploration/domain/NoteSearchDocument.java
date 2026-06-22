@@ -12,11 +12,28 @@ public record NoteSearchDocument(
     String chunkText,
     List<String> keywordIds,
     String markdownHash,
-    Integer version
+    Integer version,
+    String sourcePath,
+    String sourceFilename
 ) {
 
     public NoteSearchDocument(String userId, String noteId, String title, String excerpt, List<String> keywordIds) {
-        this(userId, noteId, null, 0, title, excerpt, excerpt, keywordIds, null, null);
+        this(userId, noteId, null, 0, title, excerpt, excerpt, keywordIds, null, null, null, null);
+    }
+
+    public NoteSearchDocument(
+        String userId,
+        String noteId,
+        String chunkId,
+        int chunkIndex,
+        String title,
+        String excerpt,
+        String chunkText,
+        List<String> keywordIds,
+        String markdownHash,
+        Integer version
+    ) {
+        this(userId, noteId, chunkId, chunkIndex, title, excerpt, chunkText, keywordIds, markdownHash, version, null, null);
     }
 
     public NoteSearchDocument {
@@ -33,6 +50,8 @@ public record NoteSearchDocument(
             .filter(value -> value != null && !value.isBlank())
             .distinct()
             .toList();
+        sourcePath = normalizeOptionalText(sourcePath);
+        sourceFilename = normalizeOptionalText(sourceFilename);
     }
 
     private static String normalizeChunkId(String chunkId, String noteId, int chunkIndex) {
@@ -50,5 +69,12 @@ public record NoteSearchDocument(
             return excerpt;
         }
         return title;
+    }
+
+    private static String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

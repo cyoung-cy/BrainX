@@ -16,20 +16,21 @@ import java.time.Duration;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-class VoyageEmbeddingModelTest {
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort.AiEmbeddingRequest;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort.InputType;
+
+class VoyageEmbeddingAdapterTest {
 
     private static final String API_KEY = "test-secret";
 
     @Test
-    void documentEmbeddingUsesDocumentInputType() {
+    void documentEmbeddingUsesDocumentInputTypeAndReturnsUsage() {
         var fixture = fixture();
         fixture.server.expect(once(), requestTo("https://api.voyageai.test/v1/embeddings"))
             .andExpect(method(HttpMethod.POST))
@@ -49,14 +50,17 @@ class VoyageEmbeddingModelTest {
                 }
                 """, MediaType.APPLICATION_JSON));
 
-        List<float[]> embeddings = fixture.model.embed(
-            List.of(Document.builder().text("document text").build()),
-            EmbeddingOptions.builder().build(),
-            List::of
-        );
+        var response = fixture.adapter.embed(new AiEmbeddingRequest(
+            null,
+            List.of("document text"),
+            InputType.DOCUMENT
+        ));
 
-        assertThat(embeddings).hasSize(1);
-        assertThat(embeddings.getFirst()).containsExactly(0.1f, 0.2f);
+        assertThat(response.modelId()).isEqualTo("voyage-4-lite");
+        assertThat(response.totalTokens()).isEqualTo(3);
+        assertThat(response.vectors()).hasSize(1);
+        assertThat(response.vectors().getFirst().text()).isEqualTo("document text");
+        assertThat(response.vectors().getFirst().values()).containsExactly(0.1d, 0.2d);
         fixture.server.verify();
     }
 
@@ -75,9 +79,14 @@ class VoyageEmbeddingModelTest {
                 }
                 """, MediaType.APPLICATION_JSON));
 
-        float[] embedding = fixture.model.embed("semantic query");
+        var response = fixture.adapter.embed(new AiEmbeddingRequest(
+            null,
+            List.of("semantic query"),
+            InputType.QUERY
+        ));
 
-        assertThat(embedding).containsExactly(0.3f, 0.4f);
+        assertThat(response.totalTokens()).isNull();
+        assertThat(response.vectors().getFirst().values()).containsExactly(0.3d, 0.4d);
         fixture.server.verify();
     }
 
@@ -93,15 +102,22 @@ class VoyageEmbeddingModelTest {
                   "data": [
                     {"embedding": [3.0, 4.0], "index": 1},
                     {"embedding": [1.0, 2.0], "index": 0}
-                  ]
+                  ],
+                  "usage": {"total_tokens": 5}
                 }
                 """, MediaType.APPLICATION_JSON));
 
-        var response = fixture.model.embedForResponse(List.of("first", "second"));
+        var response = fixture.adapter.embed(new AiEmbeddingRequest(
+            "voyage-4",
+            List.of("first", "second"),
+            InputType.UNSPECIFIED
+        ));
 
-        assertThat(response.getResults()).hasSize(2);
-        assertThat(response.getResults().getFirst().getOutput()).containsExactly(1.0f, 2.0f);
-        assertThat(response.getResults().get(1).getOutput()).containsExactly(3.0f, 4.0f);
+        assertThat(response.modelId()).isEqualTo("voyage-4");
+        assertThat(response.totalTokens()).isEqualTo(5);
+        assertThat(response.vectors()).hasSize(2);
+        assertThat(response.vectors().getFirst().values()).containsExactly(1.0d, 2.0d);
+        assertThat(response.vectors().get(1).values()).containsExactly(3.0d, 4.0d);
         fixture.server.verify();
     }
 
@@ -111,7 +127,11 @@ class VoyageEmbeddingModelTest {
         fixture.server.expect(once(), requestTo("https://api.voyageai.test/v1/embeddings"))
             .andRespond(withServerError());
 
-        assertThatThrownBy(() -> fixture.model.embed("semantic query"))
+        assertThatThrownBy(() -> fixture.adapter.embed(new AiEmbeddingRequest(
+            null,
+            List.of("semantic query"),
+            InputType.QUERY
+        )))
             .isInstanceOf(VoyageEmbeddingException.class)
             .hasMessageContaining("status 500")
             .hasMessageNotContaining(API_KEY);
@@ -121,7 +141,7 @@ class VoyageEmbeddingModelTest {
     private static Fixture fixture() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.voyageai.test");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        return new Fixture(new VoyageEmbeddingModel(builder.build(), properties()), server);
+        return new Fixture(new VoyageEmbeddingAdapter(builder.build(), properties()), server);
     }
 
     private static VoyageEmbeddingProperties.Voyage properties() {
@@ -136,7 +156,7 @@ class VoyageEmbeddingModelTest {
     }
 
     private record Fixture(
-        VoyageEmbeddingModel model,
+        VoyageEmbeddingAdapter adapter,
         MockRestServiceServer server
     ) {
     }

@@ -16,7 +16,11 @@ public record NoteProjection(
     boolean trashed,
     boolean deleted,
     String lastEventId,
-    Instant updatedAt
+    Instant updatedAt,
+    NoteSearchIndexStatus searchIndexStatus,
+    Integer indexedVersion,
+    String indexedMarkdownHash,
+    Instant indexedAt
 ) {
 
     public NoteProjection {
@@ -28,6 +32,54 @@ public record NoteProjection(
             .distinct()
             .toList();
         updatedAt = updatedAt == null ? Instant.EPOCH : updatedAt;
+        searchIndexStatus = searchIndexStatus == null
+            ? defaultSearchIndexStatus(archived, trashed, deleted)
+            : searchIndexStatus;
+        if (indexedVersion != null && indexedVersion < 0) {
+            throw new IllegalArgumentException("indexedVersion must not be negative.");
+        }
+        if (searchIndexStatus == NoteSearchIndexStatus.NOT_INDEXED
+            || searchIndexStatus == NoteSearchIndexStatus.REMOVED) {
+            indexedVersion = null;
+            indexedMarkdownHash = null;
+            indexedAt = null;
+        }
+    }
+
+    public NoteProjection(
+        String userId,
+        String noteId,
+        String title,
+        String folderId,
+        List<String> tags,
+        int version,
+        String markdownHash,
+        boolean contentPending,
+        boolean archived,
+        boolean trashed,
+        boolean deleted,
+        String lastEventId,
+        Instant updatedAt
+    ) {
+        this(
+            userId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt,
+            defaultSearchIndexStatus(archived, trashed, deleted),
+            null,
+            null,
+            null
+        );
     }
 
     public static NoteProjection created(
@@ -71,6 +123,13 @@ public record NoteProjection(
             && markdownHash.equals(incomingMarkdownHash);
     }
 
+    public boolean indexedFor(int targetVersion, String targetMarkdownHash) {
+        return searchIndexStatus == NoteSearchIndexStatus.INDEXED
+            && indexedVersion != null
+            && indexedVersion == targetVersion
+            && sameValue(indexedMarkdownHash, targetMarkdownHash);
+    }
+
     public NoteProjection withSnapshot(
         String title,
         String folderId,
@@ -93,7 +152,11 @@ public record NoteProjection(
             trashed,
             deleted,
             eventId,
-            updatedAt
+            updatedAt,
+            targetStatus(version, markdownHash, archived, trashed, deleted),
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 
@@ -106,6 +169,7 @@ public record NoteProjection(
         String eventId,
         Instant updatedAt
     ) {
+        boolean nextArchived = archived == null ? this.archived : archived;
         return new NoteProjection(
             userId,
             noteId,
@@ -115,11 +179,15 @@ public record NoteProjection(
             version,
             markdownHash,
             contentPending,
-            archived == null ? this.archived : archived,
+            nextArchived,
             trashed,
             deleted,
             eventId,
-            updatedAt
+            updatedAt,
+            NoteSearchIndexStatus.STALE,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 
@@ -137,7 +205,11 @@ public record NoteProjection(
             trashed,
             deleted,
             eventId,
-            updatedAt
+            updatedAt,
+            NoteSearchIndexStatus.STALE,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 
@@ -155,7 +227,11 @@ public record NoteProjection(
             trashed,
             deleted,
             eventId,
-            updatedAt
+            updatedAt,
+            searchIndexStatus,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 
@@ -173,7 +249,11 @@ public record NoteProjection(
             true,
             deleted,
             eventId,
-            updatedAt
+            updatedAt,
+            NoteSearchIndexStatus.STALE,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 
@@ -191,8 +271,124 @@ public record NoteProjection(
             trashed,
             true,
             eventId,
-            updatedAt
+            updatedAt,
+            NoteSearchIndexStatus.STALE,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
+    }
+
+    public NoteProjection indexed(int version, String markdownHash, Instant indexedAt) {
+        return new NoteProjection(
+            userId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            this.version,
+            this.markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt,
+            NoteSearchIndexStatus.INDEXED,
+            version,
+            markdownHash,
+            indexedAt
+        );
+    }
+
+    public NoteProjection provisionallyIndexed(int version, Instant indexedAt) {
+        return new NoteProjection(
+            userId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            this.version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt,
+            NoteSearchIndexStatus.PROVISIONAL,
+            version,
+            null,
+            indexedAt
+        );
+    }
+
+    public NoteProjection indexFailed(String eventId, Instant updatedAt) {
+        return new NoteProjection(
+            userId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            eventId,
+            updatedAt,
+            NoteSearchIndexStatus.FAILED,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
+        );
+    }
+
+    public NoteProjection indexRemoved(String eventId, Instant updatedAt) {
+        return new NoteProjection(
+            userId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            eventId,
+            updatedAt,
+            NoteSearchIndexStatus.REMOVED,
+            null,
+            null,
+            null
+        );
+    }
+
+    private NoteSearchIndexStatus targetStatus(
+        int version,
+        String markdownHash,
+        boolean archived,
+        boolean trashed,
+        boolean deleted
+    ) {
+        if (archived || trashed || deleted) {
+            return NoteSearchIndexStatus.STALE;
+        }
+        return indexedFor(version, markdownHash) ? NoteSearchIndexStatus.INDEXED : NoteSearchIndexStatus.STALE;
+    }
+
+    private static NoteSearchIndexStatus defaultSearchIndexStatus(boolean archived, boolean trashed, boolean deleted) {
+        return archived || trashed || deleted ? NoteSearchIndexStatus.REMOVED : NoteSearchIndexStatus.NOT_INDEXED;
+    }
+
+    private static boolean sameValue(String left, String right) {
+        if (left == null) {
+            return right == null;
+        }
+        return left.equals(right);
     }
 
     private static String requireText(String value, String name) {

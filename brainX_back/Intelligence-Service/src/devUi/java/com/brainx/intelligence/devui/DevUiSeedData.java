@@ -22,23 +22,23 @@ class DevUiSeedData implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (aiModelJpaRepository.count() > 0) {
-            return;
-        }
-
         aiModelJpaRepository.save(new AiModelJpaEntity(
             "gpt-4o-mini",
             "GPT-4o mini",
             "openai",
             new BigDecimal("0.150000"),
-            new BigDecimal("0.600000")
+            new BigDecimal("0.075000"),
+            new BigDecimal("0.600000"),
+            "USD"
         ));
         aiModelJpaRepository.save(new AiModelJpaEntity(
             "gpt-4o",
             "GPT-4o",
             "openai",
             new BigDecimal("2.500000"),
-            new BigDecimal("10.000000")
+            new BigDecimal("1.250000"),
+            new BigDecimal("10.000000"),
+            "USD"
         ));
     }
 }

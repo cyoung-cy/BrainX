@@ -11,33 +11,25 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptions;
-import org.springframework.ai.embedding.EmbeddingRequest;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort;
-import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort;
 
 import reactor.core.publisher.Flux;
 
 /**
- * Spring AI chat/embedding model을 shared outbound port로 연결합니다.
+ * Spring AI chat model을 shared outbound port로 연결합니다.
  */
 @Component
-public class SpringAiAdapter implements AiChatPort, AiEmbeddingPort {
+public class SpringAiAdapter implements AiChatPort {
 
     private final ObjectProvider<ChatClient.Builder> chatClientBuilderProvider;
-    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
 
-    public SpringAiAdapter(
-        ObjectProvider<ChatClient.Builder> chatClientBuilderProvider,
-        ObjectProvider<EmbeddingModel> embeddingModelProvider
-    ) {
+    public SpringAiAdapter(ObjectProvider<ChatClient.Builder> chatClientBuilderProvider) {
         this.chatClientBuilderProvider = chatClientBuilderProvider;
-        this.embeddingModelProvider = embeddingModelProvider;
     }
 
     @Override
@@ -61,28 +53,6 @@ public class SpringAiAdapter implements AiChatPort, AiEmbeddingPort {
             .content()
             .map(delta -> new AiChatChunk(delta, false))
             .concatWithValues(new AiChatChunk("", true));
-    }
-
-    @Override
-    public AiEmbeddingResponse embed(AiEmbeddingRequest request) {
-        List<String> texts = request.texts() == null ? List.of() : request.texts();
-        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
-        if (embeddingModel == null) {
-            throw new IllegalStateException("EmbeddingModel bean is not configured.");
-        }
-
-        var optionsBuilder = EmbeddingOptions.builder();
-        if (StringUtils.hasText(request.modelId())) {
-            optionsBuilder.model(request.modelId());
-        }
-        var embeddingResponse = embeddingModel.call(new EmbeddingRequest(texts, optionsBuilder.build()));
-        List<AiEmbeddingVector> vectors = embeddingResponse.getResults().stream()
-            .map(result -> new AiEmbeddingVector(
-                textAt(texts, result.getIndex()),
-                toDoubleList(result.getOutput())
-            ))
-            .toList();
-        return new AiEmbeddingResponse(vectors);
     }
 
     private ChatClient chatClient() {
@@ -128,36 +98,29 @@ public class SpringAiAdapter implements AiChatPort, AiEmbeddingPort {
         return new AiTokenUsage(
             usage.getPromptTokens(),
             usage.getCompletionTokens(),
-            usage.getTotalTokens()
+            usage.getTotalTokens(),
+            cachedPromptTokens(usage.getNativeUsage()),
+            reasoningTokens(usage.getNativeUsage())
         );
     }
 
-    private static String textAt(List<String> texts, Integer index) {
-        if (index == null || index < 0 || index >= texts.size()) {
-            return "";
+    private static Integer cachedPromptTokens(Object nativeUsage) {
+        if (nativeUsage instanceof OpenAiApi.Usage openAiUsage
+            && openAiUsage.promptTokensDetails() != null) {
+            return openAiUsage.promptTokensDetails().cachedTokens();
         }
-        return texts.get(index);
+        return null;
     }
 
-    private static List<Double> toDoubleList(float[] values) {
-        return java.util.Arrays.stream(toDoubleArray(values))
-            .boxed()
-            .toList();
-    }
-
-    private static double[] toDoubleArray(float[] values) {
-        double[] doubles = new double[values.length];
-        for (int index = 0; index < values.length; index++) {
-            doubles[index] = values[index];
+    private static Integer reasoningTokens(Object nativeUsage) {
+        if (nativeUsage instanceof OpenAiApi.Usage openAiUsage
+            && openAiUsage.completionTokenDetails() != null) {
+            return openAiUsage.completionTokenDetails().reasoningTokens();
         }
-        return doubles;
+        return null;
     }
 
     ObjectProvider<ChatClient.Builder> chatClientBuilderProvider() {
         return chatClientBuilderProvider;
-    }
-
-    ObjectProvider<EmbeddingModel> embeddingModelProvider() {
-        return embeddingModelProvider;
     }
 }

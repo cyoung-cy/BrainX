@@ -3,8 +3,9 @@ package com.brainx.intelligence.infrastructure.ai.voyage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort;
 
 class VoyageEmbeddingConfigurationTest {
 
@@ -12,14 +13,14 @@ class VoyageEmbeddingConfigurationTest {
         .withUserConfiguration(VoyageEmbeddingConfiguration.class);
 
     @Test
-    void doesNotRegisterEmbeddingModelWhenProviderIsNone() {
+    void doesNotRegisterEmbeddingPortWhenProviderIsNone() {
         contextRunner
             .withPropertyValues("brainx.ai.embedding.provider=none")
-            .run(context -> assertThat(context).doesNotHaveBean(EmbeddingModel.class));
+            .run(context -> assertThat(context).doesNotHaveBean(AiEmbeddingPort.class));
     }
 
     @Test
-    void registersEmbeddingModelWhenVoyageProviderHasApiKey() {
+    void registersEmbeddingPortWhenVoyageProviderHasApiKey() {
         contextRunner
             .withPropertyValues(
                 "brainx.ai.embedding.provider=voyage",
@@ -29,8 +30,8 @@ class VoyageEmbeddingConfigurationTest {
                 "brainx.ai.embedding.voyage.dimensions=1024"
             )
             .run(context -> {
-                assertThat(context).hasSingleBean(EmbeddingModel.class);
-                assertThat(context.getBean(EmbeddingModel.class)).isInstanceOf(VoyageEmbeddingModel.class);
+                assertThat(context).hasSingleBean(AiEmbeddingPort.class);
+                assertThat(context.getBean(AiEmbeddingPort.class)).isInstanceOf(VoyageEmbeddingAdapter.class);
             });
     }
 

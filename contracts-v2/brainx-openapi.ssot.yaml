@@ -10395,9 +10395,19 @@ components:
               vendorInputCostPer1kTokens:
                 type: number
                 nullable: true
+              vendorCachedInputCostPer1kTokens:
+                type: number
+                nullable: true
               vendorOutputCostPer1kTokens:
                 type: number
                 nullable: true
+              costCurrency:
+                type: string
+                nullable: true
+                description: ISO 4217 currency code for vendor token costs.
+              enabled:
+                type: boolean
+                description: Whether the requesting user can select/use this model.
             required:
             - modelId
             - name

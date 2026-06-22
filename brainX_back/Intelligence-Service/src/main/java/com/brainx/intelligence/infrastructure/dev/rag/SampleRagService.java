@@ -1,7 +1,10 @@
 package com.brainx.intelligence.infrastructure.dev.rag;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -18,12 +21,19 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiChatMessage;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiChatRequest;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiRole;
+import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiTokenUsage;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
+import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
+import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator.TokenCostEstimate;
 
 @Service
 public class SampleRagService {
 
     private static final int CONTEXT_SNIPPET_LENGTH = 1_200;
     private static final String RETRIEVAL_ONLY_MODEL = "none";
+    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String RAG_CHAT_FEATURE_ID = "sample-rag-chat";
 
     private final SampleRagProperties properties;
     private final SampleNoteLoader sampleNoteLoader;
@@ -32,6 +42,8 @@ public class SampleRagService {
     private final NoteSearchIndexPort noteSearchIndexPort;
     private final NoteChunkRetrievalPort noteChunkRetrievalPort;
     private final ObjectProvider<AiChatPort> aiChatPortProvider;
+    private final TokenUsagePort tokenUsagePort;
+    private final AiTokenUsageCostEstimator usageCostEstimator;
 
     public SampleRagService(
         SampleRagProperties properties,
@@ -40,7 +52,9 @@ public class SampleRagService {
         MarkdownNoteChunker noteChunker,
         NoteSearchIndexPort noteSearchIndexPort,
         NoteChunkRetrievalPort noteChunkRetrievalPort,
-        ObjectProvider<AiChatPort> aiChatPortProvider
+        ObjectProvider<AiChatPort> aiChatPortProvider,
+        TokenUsagePort tokenUsagePort,
+        AiTokenUsageCostEstimator usageCostEstimator
     ) {
         this.properties = properties;
         this.sampleNoteLoader = sampleNoteLoader;
@@ -49,6 +63,8 @@ public class SampleRagService {
         this.noteSearchIndexPort = noteSearchIndexPort;
         this.noteChunkRetrievalPort = noteChunkRetrievalPort;
         this.aiChatPortProvider = aiChatPortProvider;
+        this.tokenUsagePort = tokenUsagePort;
+        this.usageCostEstimator = usageCostEstimator;
     }
 
     public SampleRagIngestionResult ingest() {
@@ -71,8 +87,6 @@ public class SampleRagService {
                 "sample-notes:" + snapshot.markdownHash().substring(0, 16),
                 snapshot.updatedAt() == null ? Instant.now() : snapshot.updatedAt()
             );
-            noteProjectionStore.save(projection);
-
             var chunks = noteChunker.chunk(
                 snapshot.userId(),
                 snapshot.noteId(),
@@ -80,9 +94,14 @@ public class SampleRagService {
                 snapshot.markdown(),
                 tags,
                 snapshot.markdownHash(),
-                projection.version()
+                projection.version(),
+                snapshot.relativePath(),
+                snapshot.filename()
             );
-            noteSearchIndexPort.replaceNoteChunks(snapshot.userId(), snapshot.noteId(), chunks);
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(snapshot.userId(), snapshot.noteId(), chunks);
+            noteProjectionStore.save(indexed
+                ? projection.indexed(projection.version(), projection.markdownHash(), Instant.now())
+                : projection);
             chunkCount += chunks.size();
         }
         return new SampleRagIngestionResult(
@@ -100,9 +119,12 @@ public class SampleRagService {
         List<SampleRagContext> contexts = noteChunkRetrievalPort.searchChunks(new NoteChunkSearchQuery(
                 properties.getUserId(),
                 query,
-                properties.getTopK()
+                retrievalTopK()
             )).stream()
+            .filter(result -> result.score() >= properties.getMinScore())
             .map(SampleRagService::toContext)
+            .filter(new PerNoteChunkLimit(properties.getMaxChunksPerNote())::allow)
+            .limit(contextLimit())
             .toList();
 
         if (contexts.isEmpty()) {
@@ -122,6 +144,7 @@ public class SampleRagService {
                     new AiChatMessage(AiRole.USER, userPrompt(query, contexts))
                 )
             ));
+            recordLlmTokenUsage(response.tokenUsage());
             return new SampleRagQueryResponse(
                 query,
                 "llm",
@@ -135,6 +158,50 @@ public class SampleRagService {
             }
             throw exception;
         }
+    }
+
+    private void recordLlmTokenUsage(AiTokenUsage tokenUsage) {
+        if (tokenUsage == null || !tokenUsage.hasKnownTokens()) {
+            return;
+        }
+        int inputTokens = tokenCount(tokenUsage.promptTokens());
+        int cachedInputTokens = tokenCount(tokenUsage.cachedPromptTokens());
+        int billableInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+        int outputTokens = tokenCount(tokenUsage.completionTokens());
+        int reasoningTokens = tokenCount(tokenUsage.reasoningTokens());
+        int totalTokens = tokenUsage.totalTokens() == null
+            ? inputTokens + outputTokens
+            : Math.max(0, tokenUsage.totalTokens());
+        TokenCostEstimate cost = usageCostEstimator.estimate(
+            properties.getChatModel(),
+            inputTokens,
+            cachedInputTokens,
+            outputTokens
+        );
+
+        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
+            UUID.randomUUID().toString(),
+            properties.getUserId(),
+            SOURCE_SERVICE,
+            RAG_CHAT_FEATURE_ID,
+            properties.getChatModel(),
+            inputTokens,
+            cachedInputTokens,
+            billableInputTokens,
+            outputTokens,
+            reasoningTokens,
+            totalTokens,
+            cost.inputCost(),
+            cost.cachedInputCost(),
+            cost.outputCost(),
+            cost.totalCost(),
+            cost.currencyCode(),
+            UUID.randomUUID().toString()
+        ));
+    }
+
+    private static int tokenCount(Integer value) {
+        return value == null ? 0 : Math.max(0, value);
     }
 
     private List<String> normalizedTags() {
@@ -155,6 +222,8 @@ public class SampleRagService {
             result.chunkId(),
             result.chunkIndex(),
             result.title(),
+            result.sourcePath(),
+            result.sourceFilename(),
             result.score(),
             snippet(result.text())
         );
@@ -191,6 +260,7 @@ public class SampleRagService {
             String header = "[" + (index + 1) + "] title=" + context.title()
                 + ", noteId=" + context.noteId()
                 + ", chunkIndex=" + context.chunkIndex()
+                + sourceLabel(context)
                 + ", score=" + context.score()
                 + "\n";
             String text = context.text();
@@ -202,6 +272,43 @@ public class SampleRagService {
             remainingChars -= header.length() + text.length() + 2;
         }
         return builder.toString();
+    }
+
+    private int contextLimit() {
+        return NoteChunkSearchQuery.normalizeTopK(properties.getTopK());
+    }
+
+    private int retrievalTopK() {
+        return NoteChunkSearchQuery.normalizeTopK(contextLimit() * Math.max(1, properties.getMaxChunksPerNote()));
+    }
+
+    private static String sourceLabel(SampleRagContext context) {
+        if (StringUtils.hasText(context.sourcePath())) {
+            return ", sourcePath=" + context.sourcePath();
+        }
+        if (StringUtils.hasText(context.sourceFilename())) {
+            return ", sourceFilename=" + context.sourceFilename();
+        }
+        return "";
+    }
+
+    private static final class PerNoteChunkLimit {
+
+        private final int maxChunksPerNote;
+        private final Map<String, Integer> counts = new LinkedHashMap<>();
+
+        private PerNoteChunkLimit(int maxChunksPerNote) {
+            this.maxChunksPerNote = Math.max(1, maxChunksPerNote);
+        }
+
+        private boolean allow(SampleRagContext context) {
+            int current = counts.getOrDefault(context.noteId(), 0);
+            if (current >= maxChunksPerNote) {
+                return false;
+            }
+            counts.put(context.noteId(), current + 1);
+            return true;
+        }
     }
 
     public record SampleRagIngestionResult(
@@ -226,6 +333,8 @@ public class SampleRagService {
         String chunkId,
         int chunkIndex,
         String title,
+        String sourcePath,
+        String sourceFilename,
         double score,
         String text
     ) {

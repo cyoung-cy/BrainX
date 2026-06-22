@@ -61,7 +61,10 @@ public class SettingsController {
                 model.name(),
                 model.provider(),
                 model.vendorInputCostPer1kTokens(),
-                model.vendorOutputCostPer1kTokens()
+                model.vendorCachedInputCostPer1kTokens(),
+                model.vendorOutputCostPer1kTokens(),
+                model.costCurrency(),
+                model.enabled()
             ))
             .toList();
 
@@ -145,7 +148,10 @@ public class SettingsController {
         String name,
         String provider,
         BigDecimal vendorInputCostPer1kTokens,
-        BigDecimal vendorOutputCostPer1kTokens
+        BigDecimal vendorCachedInputCostPer1kTokens,
+        BigDecimal vendorOutputCostPer1kTokens,
+        String costCurrency,
+        boolean enabled
     ) {
     }
 

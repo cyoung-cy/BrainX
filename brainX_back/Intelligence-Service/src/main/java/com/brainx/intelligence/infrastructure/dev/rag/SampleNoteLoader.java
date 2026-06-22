@@ -45,6 +45,7 @@ public class SampleNoteLoader {
                 "sample-" + sha256(relativePath).substring(0, 16),
                 title(path, markdown),
                 relativePath,
+                filename(path),
                 markdown,
                 markdownHash,
                 Files.getLastModifiedTime(path).toInstant()
@@ -59,15 +60,46 @@ public class SampleNoteLoader {
     }
 
     private static String title(Path path, String markdown) {
+        String frontmatterTitle = frontmatterTitle(markdown);
+        if (frontmatterTitle != null) {
+            return frontmatterTitle;
+        }
         for (String line : markdown.split("\\R")) {
             String trimmed = line.trim();
-            if (trimmed.startsWith("#")) {
-                String heading = trimmed.replaceFirst("^#{1,6}\\s*", "").trim();
+            if (trimmed.matches("^#\\s+.*")) {
+                String heading = trimmed.replaceFirst("^#\\s+", "").trim();
                 if (!heading.isBlank()) {
                     return heading;
                 }
             }
         }
+        return filenameStem(path);
+    }
+
+    private static String frontmatterTitle(String markdown) {
+        String[] lines = markdown.split("\\R");
+        if (lines.length < 3 || !"---".equals(lines[0].trim())) {
+            return null;
+        }
+        for (int index = 1; index < lines.length; index++) {
+            String trimmed = lines[index].trim();
+            if ("---".equals(trimmed)) {
+                return null;
+            }
+            if (trimmed.startsWith("title:")) {
+                String title = trimmed.substring("title:".length()).trim();
+                title = title.replaceFirst("^['\"]", "").replaceFirst("['\"]$", "").trim();
+                return title.isBlank() ? null : title;
+            }
+        }
+        return null;
+    }
+
+    private static String filename(Path path) {
+        return path.getFileName().toString();
+    }
+
+    private static String filenameStem(Path path) {
         String filename = path.getFileName().toString();
         return filename.endsWith(".md") ? filename.substring(0, filename.length() - 3) : filename;
     }
@@ -86,6 +118,7 @@ public class SampleNoteLoader {
         String noteId,
         String title,
         String relativePath,
+        String filename,
         String markdown,
         String markdownHash,
         Instant updatedAt

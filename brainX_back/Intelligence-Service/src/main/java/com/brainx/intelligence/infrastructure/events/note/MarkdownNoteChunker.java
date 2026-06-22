@@ -47,6 +47,20 @@ public class MarkdownNoteChunker {
         String markdownHash,
         Integer version
     ) {
+        return chunk(userId, noteId, title, markdown, keywordIds, markdownHash, version, null, null);
+    }
+
+    public List<NoteSearchDocument> chunk(
+        String userId,
+        String noteId,
+        String title,
+        String markdown,
+        List<String> keywordIds,
+        String markdownHash,
+        Integer version,
+        String sourcePath,
+        String sourceFilename
+    ) {
         String normalizedTitle = normalize(title);
         List<String> bodies = chunkBodies(normalizedTitle, parseBlocks(markdown));
         if (bodies.isEmpty()) {
@@ -66,7 +80,9 @@ public class MarkdownNoteChunker {
                 chunkText,
                 keywordIds,
                 markdownHash,
-                version
+                version,
+                sourcePath,
+                sourceFilename
             ));
         }
         return chunks;

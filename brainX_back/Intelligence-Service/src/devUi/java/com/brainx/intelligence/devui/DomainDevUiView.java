@@ -159,8 +159,11 @@ public class DomainDevUiView extends AppLayout {
         modelsGrid.addColumn(AiModelView::modelId).setHeader("Model ID").setAutoWidth(true);
         modelsGrid.addColumn(AiModelView::name).setHeader("Name").setAutoWidth(true);
         modelsGrid.addColumn(AiModelView::provider).setHeader("Provider").setAutoWidth(true);
+        modelsGrid.addColumn(AiModelView::enabled).setHeader("Enabled").setAutoWidth(true);
         modelsGrid.addColumn(AiModelView::vendorInputCostPer1kTokens).setHeader("Input / 1k").setAutoWidth(true);
+        modelsGrid.addColumn(AiModelView::vendorCachedInputCostPer1kTokens).setHeader("Cached / 1k").setAutoWidth(true);
         modelsGrid.addColumn(AiModelView::vendorOutputCostPer1kTokens).setHeader("Output / 1k").setAutoWidth(true);
+        modelsGrid.addColumn(AiModelView::costCurrency).setHeader("Currency").setAutoWidth(true);
         modelsGrid.setHeight("260px");
 
         userApiKeys.setValue("{\n  \"openai\": {\n    \"masked\": true\n  }\n}");

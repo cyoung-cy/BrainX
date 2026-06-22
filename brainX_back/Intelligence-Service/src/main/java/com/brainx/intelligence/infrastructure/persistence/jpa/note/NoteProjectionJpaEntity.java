@@ -4,11 +4,14 @@ import java.time.Instant;
 import java.util.List;
 
 import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
+import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
 import com.brainx.intelligence.infrastructure.persistence.jpa.JsonStringListAttributeConverter;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
@@ -62,6 +65,19 @@ public class NoteProjectionJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "search_index_status", length = 40)
+    private NoteSearchIndexStatus searchIndexStatus;
+
+    @Column(name = "indexed_version")
+    private Integer indexedVersion;
+
+    @Column(name = "indexed_markdown_hash", length = 160)
+    private String indexedMarkdownHash;
+
+    @Column(name = "indexed_at")
+    private Instant indexedAt;
+
     protected NoteProjectionJpaEntity() {
     }
 
@@ -81,6 +97,10 @@ public class NoteProjectionJpaEntity {
         entity.deleted = projection.deleted();
         entity.lastEventId = projection.lastEventId();
         entity.updatedAt = projection.updatedAt();
+        entity.searchIndexStatus = projection.searchIndexStatus();
+        entity.indexedVersion = projection.indexedVersion();
+        entity.indexedMarkdownHash = projection.indexedMarkdownHash();
+        entity.indexedAt = projection.indexedAt();
         return entity;
     }
 
@@ -98,7 +118,11 @@ public class NoteProjectionJpaEntity {
             trashed,
             deleted,
             lastEventId,
-            updatedAt
+            updatedAt,
+            searchIndexStatus,
+            indexedVersion,
+            indexedMarkdownHash,
+            indexedAt
         );
     }
 }

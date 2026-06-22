@@ -1,23 +1,22 @@
 package com.brainx.intelligence.infrastructure.ai.voyage;
 
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort;
 
 @Configuration
 @EnableConfigurationProperties(VoyageEmbeddingProperties.class)
 public class VoyageEmbeddingConfiguration {
 
     @Bean
-    @Primary
     @ConditionalOnProperty(prefix = "brainx.ai.embedding", name = "provider", havingValue = "voyage")
-    EmbeddingModel voyageEmbeddingModel(VoyageEmbeddingProperties properties) {
+    AiEmbeddingPort voyageEmbeddingAdapter(VoyageEmbeddingProperties properties) {
         VoyageEmbeddingProperties.Voyage voyage = properties.getVoyage();
         if (!StringUtils.hasText(voyage.getApiKey())) {
             throw new IllegalStateException("VOYAGE_API_KEY must be set when BRAINX_AI_EMBEDDING_PROVIDER=voyage.");
@@ -38,6 +37,6 @@ public class VoyageEmbeddingConfiguration {
             .requestFactory(requestFactory)
             .build();
 
-        return new VoyageEmbeddingModel(restClient, voyage);
+        return new VoyageEmbeddingAdapter(restClient, voyage);
     }
 }

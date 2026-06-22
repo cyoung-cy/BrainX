@@ -1,6 +1,5 @@
 package com.brainx.intelligence.exploration.application.usecase;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -23,19 +22,14 @@ import com.brainx.intelligence.exploration.domain.SemanticSearchResults;
 import com.brainx.intelligence.exploration.domain.TokenChargeDecision;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort.EntitlementRequest;
-import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
-import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.brainx.intelligence.shared.application.port.outbound.WorkspaceNotePort;
 
 @Service
 public class ExplorationService implements SemanticSearchUseCase, GetNoteSummaryUseCase {
 
-    private static final String SOURCE_SERVICE = "AI-Service";
-    private static final String SEMANTIC_SEARCH_FEATURE_ID = "semantic-search";
     private static final String SEMANTIC_SEARCH_CAPABILITY = "SEMANTIC_SEARCH";
 
     private final EntitlementPort entitlementPort;
-    private final TokenUsagePort tokenUsagePort;
     private final WorkspaceNotePort workspaceNotePort;
     private final NoteSearchIndexPort noteSearchIndexPort;
     private final NoteSummaryPort noteSummaryPort;
@@ -43,14 +37,12 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
 
     public ExplorationService(
         EntitlementPort entitlementPort,
-        TokenUsagePort tokenUsagePort,
         WorkspaceNotePort workspaceNotePort,
         NoteSearchIndexPort noteSearchIndexPort,
         NoteSummaryPort noteSummaryPort,
         ExplorationEventPort explorationEventPort
     ) {
         this.entitlementPort = entitlementPort;
-        this.tokenUsagePort = tokenUsagePort;
         this.workspaceNotePort = workspaceNotePort;
         this.noteSearchIndexPort = noteSearchIndexPort;
         this.noteSummaryPort = noteSummaryPort;
@@ -88,17 +80,6 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
         var results = new SemanticSearchResults(matches, TokenChargeDecision.charged(tokenEstimate));
         String causationId = UUID.randomUUID().toString();
 
-        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
-            UUID.randomUUID().toString(),
-            query.userId(),
-            SOURCE_SERVICE,
-            SEMANTIC_SEARCH_FEATURE_ID,
-            null,
-            tokenEstimate,
-            0,
-            (BigDecimal) null,
-            causationId
-        ));
         explorationEventPort.semanticSearchPerformed(new SemanticSearchPerformedEvent(
             query.userId(),
             sha256(query.userId() + "\n" + query.query()),

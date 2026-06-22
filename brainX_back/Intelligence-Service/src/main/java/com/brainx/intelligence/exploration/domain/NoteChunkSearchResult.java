@@ -9,8 +9,24 @@ public record NoteChunkSearchResult(
     String text,
     double score,
     String markdownHash,
-    Integer version
+    Integer version,
+    String sourcePath,
+    String sourceFilename
 ) {
+
+    public NoteChunkSearchResult(
+        String userId,
+        String noteId,
+        String chunkId,
+        int chunkIndex,
+        String title,
+        String text,
+        double score,
+        String markdownHash,
+        Integer version
+    ) {
+        this(userId, noteId, chunkId, chunkIndex, title, text, score, markdownHash, version, null, null);
+    }
 
     public NoteChunkSearchResult {
         userId = userId == null ? "" : userId;
@@ -21,5 +37,14 @@ public record NoteChunkSearchResult(
         }
         title = title == null ? "" : title;
         text = text == null ? "" : text;
+        sourcePath = normalizeOptionalText(sourcePath);
+        sourceFilename = normalizeOptionalText(sourceFilename);
+    }
+
+    private static String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

@@ -12,9 +12,9 @@ public interface NoteSearchIndexPort {
 
     NoteSearchDocument save(NoteSearchDocument document);
 
-    void replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks);
+    boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks);
 
-    void deleteByUserIdAndNoteId(String userId, String noteId);
+    boolean deleteByUserIdAndNoteId(String userId, String noteId);
 
     record NoteSearchQuery(
         String userId,

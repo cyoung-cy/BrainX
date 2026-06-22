@@ -2,76 +2,84 @@ package com.brainx.intelligence.infrastructure.vector.qdrant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort.NoteChunkSearchQuery;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteSearchQuery;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorPoint;
+import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorSearchHit;
+import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
+import com.brainx.intelligence.settings.domain.AiModel;
+import com.brainx.intelligence.settings.domain.VendorTokenCost;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
+import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
 
 class QdrantNoteSearchIndexAdapterTest {
 
-    private final FakeVectorStore vectorStore = new FakeVectorStore();
-    private final QdrantNoteSearchIndexAdapter adapter = adapter(vectorStore);
+    private final FakeQdrantVectorIndexClient vectorIndexClient = new FakeQdrantVectorIndexClient();
+    private final FakeEmbeddingPort embeddingPort = new FakeEmbeddingPort();
+    private final FakeTokenUsagePort tokenUsagePort = new FakeTokenUsagePort();
+    private final QdrantNoteSearchIndexAdapter adapter = adapter(vectorIndexClient, embeddingPort, tokenUsagePort);
 
     @Test
-    void saveStoresDocumentContentAndMetadata() {
-        adapter.save(new NoteSearchDocument(
-            "user-1",
-            "note-1",
-            "note-1::2",
-            2,
-            "RAG note",
-            "semantic search content",
-            "full chunk text",
-            List.of("keyword-1"),
-            "hash-1",
-            3
+    void replaceDeletesExistingNoteChunksEmbedsDocumentsAndUpsertsPoints() {
+        boolean indexed = adapter.replaceNoteChunks("user-1", "note-1", List.of(
+            new NoteSearchDocument("user-1", "note-1", "note-1::0", 0, "RAG note", "chunk 0", "chunk 0", List.of("keyword-1"), "hash-1", 1, "docs/rag.md", "rag.md"),
+            new NoteSearchDocument("user-1", "note-1", "note-1::1", 1, "RAG note", "chunk 1", "chunk 1", List.of(), "hash-1", 1)
         ));
 
-        assertThat(vectorStore.addedDocuments).hasSize(1);
-        Document document = vectorStore.addedDocuments.getFirst();
-        assertThat(UUID.fromString(document.getId())).isNotNull();
-        assertThat(document.getText()).isEqualTo("full chunk text");
-        assertThat(document.getMetadata())
+        assertThat(indexed).isTrue();
+        assertThat(vectorIndexClient.deletedKeys).containsExactly("user-1::note-1");
+        assertThat(embeddingPort.requests).hasSize(1);
+        assertThat(embeddingPort.requests.getFirst().inputType()).isEqualTo(AiEmbeddingPort.InputType.DOCUMENT);
+        assertThat(embeddingPort.requests.getFirst().texts()).containsExactly("chunk 0", "chunk 1");
+        assertThat(vectorIndexClient.upsertedPoints).hasSize(2);
+        assertThat(vectorIndexClient.upsertedPoints).extracting(point -> point.payload().get("chunkId"))
+            .containsExactly("note-1::0", "note-1::1");
+        assertThat(vectorIndexClient.upsertedPoints.getFirst().payload())
             .containsEntry("userId", "user-1")
             .containsEntry("noteId", "note-1")
-            .containsEntry("chunkId", "note-1::2")
-            .containsEntry("chunkIndex", 2)
-            .containsEntry("title", "RAG note")
-            .containsEntry("excerpt", "semantic search content")
-            .containsEntry("keywordIds", List.of("keyword-1"))
+            .containsEntry("doc_content", "chunk 0")
             .containsEntry("markdownHash", "hash-1")
-            .containsEntry("version", 3);
+            .containsEntry("version", 1)
+            .containsEntry("sourcePath", "docs/rag.md")
+            .containsEntry("sourceFilename", "rag.md");
+        assertThat(tokenUsagePort.records).hasSize(1);
+        assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("note-search-index-embedding");
+        assertThat(tokenUsagePort.records.getFirst().modelId()).isEqualTo("voyage-4-lite");
+        assertThat(tokenUsagePort.records.getFirst().inputTokens()).isEqualTo(10);
+        assertThat(tokenUsagePort.records.getFirst().estimatedCost()).isEqualByComparingTo("0.0000002");
     }
 
     @Test
-    void searchPassesQueryLimitAndUserFilterToVectorStore() {
-        vectorStore.searchResults = List.of(Document.builder()
-            .id("user-1::note-1::0")
-            .text("semantic search content")
-            .metadata(Map.of(
+    void searchEmbedsQuerySearchesQdrantAndDeduplicatesByBestNoteScore() {
+        vectorIndexClient.searchHits = List.of(
+            hit(0.4d, Map.of(
                 "userId", "user-1",
                 "noteId", "note-1",
-                "chunkId", "note-1::0",
-                "chunkIndex", 0,
                 "title", "RAG note",
-                "excerpt", "semantic search content",
+                "excerpt", "low",
+                "keywordIds", List.of()
+            )),
+            hit(0.9d, Map.of(
+                "userId", "user-1",
+                "noteId", "note-1",
+                "title", "RAG note",
+                "excerpt", "high",
                 "keywordIds", List.of("keyword-1")
             ))
-            .score(0.87d)
-            .build());
+        );
 
         var results = adapter.search(new NoteSearchQuery(
             "user-1",
@@ -81,30 +89,27 @@ class QdrantNoteSearchIndexAdapterTest {
             List.of("keyword-1")
         ));
 
-        assertThat(vectorStore.lastSearchRequest).isNotNull();
-        assertThat(vectorStore.lastSearchRequest.getQuery()).isEqualTo("semantic search");
-        assertThat(vectorStore.lastSearchRequest.getTopK()).isEqualTo(12);
-        assertThat(vectorStore.lastSearchRequest.hasFilterExpression()).isTrue();
-        assertThat(vectorStore.lastSearchRequest.getFilterExpression().toString()).contains("user-1");
+        assertThat(embeddingPort.requests).hasSize(1);
+        assertThat(embeddingPort.requests.getFirst().inputType()).isEqualTo(AiEmbeddingPort.InputType.QUERY);
+        assertThat(embeddingPort.requests.getFirst().texts()).containsExactly("semantic search");
+        assertThat(vectorIndexClient.lastSearchUserId).isEqualTo("user-1");
+        assertThat(vectorIndexClient.lastSearchLimit).isEqualTo(12);
+        assertThat(vectorIndexClient.lastSearchVector).containsExactly(1.0d, 2.0d);
         assertThat(results).hasSize(1);
-        assertThat(results.getFirst().noteId()).isEqualTo("note-1");
-        assertThat(results.getFirst().score()).isEqualTo(0.87d);
+        assertThat(results.getFirst().excerpt()).isEqualTo("high");
+        assertThat(results.getFirst().score()).isEqualTo(0.9d);
         assertThat(results.getFirst().matchedType()).isEqualTo(SearchMatchType.HYBRID);
+        assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("note-search-query-embedding");
     }
 
     @Test
     void searchMapsSemanticResultWhenKeywordDoesNotMatch() {
-        vectorStore.searchResults = List.of(Document.builder()
-            .id("user-1::note-1::0")
-            .text("semantic search content")
-            .metadata(Map.of(
-                "noteId", "note-1",
-                "title", "RAG note",
-                "excerpt", "semantic search content",
-                "keywordIds", List.of("keyword-2")
-            ))
-            .score(0.71d)
-            .build());
+        vectorIndexClient.searchHits = List.of(hit(0.71d, Map.of(
+            "noteId", "note-1",
+            "title", "RAG note",
+            "excerpt", "semantic search content",
+            "keywordIds", List.of("keyword-2")
+        )));
 
         var results = adapter.search(new NoteSearchQuery(
             "user-1",
@@ -118,150 +123,171 @@ class QdrantNoteSearchIndexAdapterTest {
     }
 
     @Test
-    void searchDeduplicatesChunksByNoteIdKeepingBestScore() {
-        vectorStore.searchResults = List.of(
-            Document.builder()
-                .id("user-1::note-1::0")
-                .text("low")
-                .metadata(Map.of(
-                    "noteId", "note-1",
-                    "title", "RAG note",
-                    "excerpt", "low",
-                    "keywordIds", List.of()
-                ))
-                .score(0.5d)
-                .build(),
-            Document.builder()
-                .id("user-1::note-1::1")
-                .text("high")
-                .metadata(Map.of(
-                    "noteId", "note-1",
-                    "title", "RAG note",
-                    "excerpt", "high",
-                    "keywordIds", List.of()
-                ))
-                .score(0.9d)
-                .build()
-        );
-
-        var results = adapter.search(new NoteSearchQuery(
-            "user-1",
-            "semantic search",
-            Map.of(),
-            3,
-            List.of()
-        ));
-
-        assertThat(results).hasSize(1);
-        assertThat(results.getFirst().excerpt()).isEqualTo("high");
-        assertThat(results.getFirst().score()).isEqualTo(0.9d);
-    }
-
-    @Test
     void searchChunksKeepsChunkLevelHitsWithoutDedupe() {
-        vectorStore.searchResults = List.of(
-            Document.builder()
-                .id("user-1::note-1::0")
-                .text("first chunk")
-                .metadata(Map.of(
-                    "userId", "user-1",
-                    "noteId", "note-1",
-                    "chunkId", "note-1::0",
-                    "chunkIndex", 0,
-                    "title", "RAG note",
-                    "markdownHash", "hash-1",
-                    "version", 1
-                ))
-                .score(0.5d)
-                .build(),
-            Document.builder()
-                .id("user-1::note-1::1")
-                .text("second chunk")
-                .metadata(Map.of(
-                    "userId", "user-1",
-                    "noteId", "note-1",
-                    "chunkId", "note-1::1",
-                    "chunkIndex", 1,
-                    "title", "RAG note",
-                    "markdownHash", "hash-1",
-                    "version", 1
-                ))
-                .score(0.9d)
-                .build()
+        vectorIndexClient.searchHits = List.of(
+            hit(0.5d, Map.of(
+                "userId", "user-1",
+                "noteId", "note-1",
+                "chunkId", "note-1::0",
+                "chunkIndex", 0,
+                "title", "RAG note",
+                "doc_content", "first chunk",
+                "markdownHash", "hash-1",
+                "version", 1
+            )),
+            hit(0.9d, Map.of(
+                "userId", "user-1",
+                "noteId", "note-1",
+                "chunkId", "note-1::1",
+                "chunkIndex", 1,
+                "title", "RAG note",
+                "doc_content", "second chunk",
+                "markdownHash", "hash-1",
+                "version", 1,
+                "sourcePath", "docs/rag.md",
+                "sourceFilename", "rag.md"
+            ))
         );
 
         var results = adapter.searchChunks(new NoteChunkSearchQuery("user-1", "semantic search", 2));
 
-        assertThat(vectorStore.lastSearchRequest.getQuery()).isEqualTo("semantic search");
-        assertThat(vectorStore.lastSearchRequest.getTopK()).isEqualTo(2);
-        assertThat(vectorStore.lastSearchRequest.getFilterExpression().toString()).contains("user-1");
+        assertThat(vectorIndexClient.lastSearchLimit).isEqualTo(2);
         assertThat(results).hasSize(2);
         assertThat(results).extracting("chunkId").containsExactly("note-1::1", "note-1::0");
         assertThat(results.getFirst().text()).isEqualTo("second chunk");
-    }
-
-    @Test
-    void replaceDeletesExistingNoteChunksThenAddsNewChunks() {
-        adapter.replaceNoteChunks("user-1", "note-1", List.of(
-            new NoteSearchDocument("user-1", "note-1", "note-1::0", 0, "RAG note", "chunk 0", "chunk 0", List.of(), "hash-1", 1),
-            new NoteSearchDocument("user-1", "note-1", "note-1::1", 1, "RAG note", "chunk 1", "chunk 1", List.of(), "hash-1", 1)
-        ));
-
-        assertThat(vectorStore.deletedFilters).hasSize(1);
-        assertThat(vectorStore.deletedFilters.getFirst()).contains("user-1").contains("note-1");
-        assertThat(vectorStore.addedDocuments).hasSize(2);
-        assertThat(vectorStore.addedDocuments).extracting(Document::getId)
-            .allSatisfy(id -> assertThat(UUID.fromString(id)).isNotNull());
-        assertThat(vectorStore.addedDocuments).extracting(document -> document.getMetadata().get("chunkId"))
-            .containsExactly("note-1::0", "note-1::1");
+        assertThat(results.getFirst().sourcePath()).isEqualTo("docs/rag.md");
+        assertThat(results.getFirst().sourceFilename()).isEqualTo("rag.md");
     }
 
     @Test
     void deleteUsesUserAndNoteFilter() {
-        adapter.deleteByUserIdAndNoteId("user-1", "note-1");
+        boolean deleted = adapter.deleteByUserIdAndNoteId("user-1", "note-1");
 
-        assertThat(vectorStore.deletedFilters).hasSize(1);
-        assertThat(vectorStore.deletedFilters.getFirst()).contains("user-1").contains("note-1");
+        assertThat(deleted).isTrue();
+        assertThat(vectorIndexClient.deletedKeys).containsExactly("user-1::note-1");
     }
 
-    private static final class FakeVectorStore implements VectorStore {
+    @Test
+    void missingQdrantClientOrEmbeddingProviderFallsBackWithoutMutation() {
+        QdrantNoteSearchIndexAdapter noClient = adapter(null, embeddingPort, new FakeTokenUsagePort());
+        QdrantNoteSearchIndexAdapter noEmbedding = adapter(vectorIndexClient, null, new FakeTokenUsagePort());
 
-        private final List<Document> addedDocuments = new ArrayList<>();
-        private final List<String> deletedIds = new ArrayList<>();
-        private final List<String> deletedFilters = new ArrayList<>();
-        private List<Document> searchResults = List.of();
-        private SearchRequest lastSearchRequest;
-
-        @Override
-        public void add(List<Document> documents) {
-            addedDocuments.addAll(documents);
-        }
-
-        @Override
-        public void delete(List<String> ids) {
-            deletedIds.addAll(ids);
-        }
-
-        @Override
-        public void delete(Filter.Expression filterExpression) {
-            deletedFilters.add(filterExpression.toString());
-        }
-
-        @Override
-        public List<Document> similaritySearch(SearchRequest request) {
-            lastSearchRequest = request;
-            return searchResults;
-        }
-
-        @Override
-        public <T> Optional<T> getNativeClient() {
-            return Optional.empty();
-        }
+        assertThat(noClient.replaceNoteChunks("user-1", "note-1", List.of())).isFalse();
+        assertThat(noClient.search(new NoteSearchQuery("user-1", "query", Map.of(), 3, List.of()))).isEmpty();
+        assertThat(noEmbedding.replaceNoteChunks("user-1", "note-1", List.of(
+            new NoteSearchDocument("user-1", "note-1", "title", "excerpt", List.of())
+        ))).isFalse();
+        assertThat(noEmbedding.searchChunks(new NoteChunkSearchQuery("user-1", "query", 2))).isEmpty();
     }
 
-    private static QdrantNoteSearchIndexAdapter adapter(VectorStore vectorStore) {
+    private static QdrantVectorSearchHit hit(double score, Map<String, Object> payload) {
+        return new QdrantVectorSearchHit("point-id", score, payload);
+    }
+
+    private static QdrantNoteSearchIndexAdapter adapter(
+        QdrantVectorIndexClient vectorIndexClient,
+        AiEmbeddingPort embeddingPort,
+        FakeTokenUsagePort tokenUsagePort
+    ) {
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-        beanFactory.registerSingleton("vectorStore", vectorStore);
-        return new QdrantNoteSearchIndexAdapter(beanFactory.getBeanProvider(VectorStore.class));
+        if (vectorIndexClient != null) {
+            beanFactory.registerSingleton("vectorIndexClient", vectorIndexClient);
+        }
+        if (embeddingPort != null) {
+            beanFactory.registerSingleton("embeddingPort", embeddingPort);
+        }
+        return new QdrantNoteSearchIndexAdapter(
+            beanFactory.getBeanProvider(QdrantVectorIndexClient.class),
+            beanFactory.getBeanProvider(AiEmbeddingPort.class),
+            tokenUsagePort,
+            new AiTokenUsageCostEstimator(new FakeAiModelCatalog())
+        );
+    }
+
+    private static final class FakeQdrantVectorIndexClient implements QdrantVectorIndexClient {
+
+        private final List<QdrantVectorPoint> upsertedPoints = new ArrayList<>();
+        private final List<String> deletedKeys = new ArrayList<>();
+        private List<QdrantVectorSearchHit> searchHits = List.of();
+        private String lastSearchUserId;
+        private List<Double> lastSearchVector;
+        private int lastSearchLimit;
+
+        @Override
+        public void upsert(List<QdrantVectorPoint> points) {
+            upsertedPoints.addAll(points);
+        }
+
+        @Override
+        public void deleteByUserIdAndNoteId(String userId, String noteId) {
+            deletedKeys.add(userId + "::" + noteId);
+        }
+
+        @Override
+        public List<QdrantVectorSearchHit> search(String userId, List<Double> vector, int limit) {
+            lastSearchUserId = userId;
+            lastSearchVector = vector;
+            lastSearchLimit = limit;
+            return searchHits;
+        }
+    }
+
+    private static final class FakeEmbeddingPort implements AiEmbeddingPort {
+
+        private final List<AiEmbeddingRequest> requests = new ArrayList<>();
+
+        @Override
+        public AiEmbeddingResponse embed(AiEmbeddingRequest request) {
+            requests.add(request);
+            List<AiEmbeddingVector> vectors = new ArrayList<>();
+            List<String> texts = request.texts() == null ? List.of() : request.texts();
+            for (int index = 0; index < texts.size(); index++) {
+                vectors.add(new AiEmbeddingVector(
+                    texts.get(index),
+                    List.of((double) index + 1.0d, (double) index + 2.0d)
+                ));
+            }
+            return new AiEmbeddingResponse("voyage-4-lite", 10, vectors);
+        }
+    }
+
+    private static final class FakeTokenUsagePort implements TokenUsagePort {
+
+        private final List<TokenUsageRecord> records = new ArrayList<>();
+
+        @Override
+        public void recordTokenUsage(TokenUsageRecord record) {
+            records.add(record);
+        }
+    }
+
+    private static final class FakeAiModelCatalog implements AiModelCatalogPort {
+
+        private static final AiModel MODEL = new AiModel(
+            "voyage-4-lite",
+            "Voyage 4 Lite",
+            "voyage",
+            new VendorTokenCost(
+                new BigDecimal("0.000020"),
+                null,
+                null,
+                "USD"
+            )
+        );
+
+        @Override
+        public List<AiModel> findAll() {
+            return List.of(MODEL);
+        }
+
+        @Override
+        public Optional<AiModel> findByModelId(String modelId) {
+            return MODEL.modelId().equals(modelId) ? Optional.of(MODEL) : Optional.empty();
+        }
+
+        @Override
+        public boolean existsByModelId(String modelId) {
+            return MODEL.modelId().equals(modelId);
+        }
     }
 }

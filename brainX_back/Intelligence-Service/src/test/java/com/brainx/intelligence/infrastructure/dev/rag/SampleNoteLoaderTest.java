@@ -29,6 +29,7 @@ class SampleNoteLoaderTest {
         assertThat(first.getFirst().userId()).isEqualTo("user-1");
         assertThat(first.getFirst().title()).isEqualTo("BrainX RAG");
         assertThat(first.getFirst().relativePath()).isEqualTo("note.md");
+        assertThat(first.getFirst().filename()).isEqualTo("note.md");
         assertThat(first.getFirst().noteId()).startsWith("sample-");
         assertThat(first.getFirst().noteId()).isEqualTo(second.getFirst().noteId());
         assertThat(first.getFirst().markdownHash()).hasSize(64);
@@ -44,5 +45,27 @@ class SampleNoteLoaderTest {
         var snapshots = new SampleNoteLoader().load(properties);
 
         assertThat(snapshots.getFirst().title()).isEqualTo("plain");
+    }
+
+    @Test
+    void prefersFrontmatterTitleAndDoesNotUseSectionHeadingAsDocumentTitle() throws Exception {
+        Files.writeString(tempDir.resolve("frontmatter.md"), """
+            ---
+            title: "Frontmatter Title"
+            ---
+
+            ## Section Heading
+
+            content
+            """);
+        Files.writeString(tempDir.resolve("section-only.md"), "## Section Heading\n\ncontent");
+
+        SampleRagProperties properties = new SampleRagProperties();
+        properties.setDirectory(tempDir);
+
+        var snapshots = new SampleNoteLoader().load(properties);
+
+        assertThat(snapshots).extracting("title")
+            .containsExactly("Frontmatter Title", "section-only");
     }
 }

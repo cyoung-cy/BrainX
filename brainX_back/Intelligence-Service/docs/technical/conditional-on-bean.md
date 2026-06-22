@@ -12,18 +12,17 @@
 
 선택적 infrastructure를 붙일 때 유용하다.
 
-예를 들어 Qdrant vector store는 local/test 환경에서는 없을 수 있지만, Qdrant starter와 `VectorStore` bean이 준비된 환경에서는 실제 adapter를 사용해야 한다. 이때 `@ConditionalOnBean(VectorStore.class)`를 붙이면 `VectorStore`가 없는 환경에서는 Qdrant adapter 자체가 등록되지 않는다.
+예를 들어 Qdrant Java client는 local/test 환경에서는 꺼둘 수 있지만, `QdrantClient` bean이 준비된 환경에서는 실제 Qdrant wrapper를 등록해야 한다. 이때 `@ConditionalOnBean(QdrantClient.class)`를 붙이면 client가 없는 환경에서는 wrapper가 등록되지 않는다.
 
 ```java
 @Component
-@Primary
-@ConditionalOnBean(VectorStore.class)
-public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort {
-    // VectorStore가 있을 때만 이 adapter가 Spring bean이 된다.
+@ConditionalOnBean(QdrantClient.class)
+class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
+    // QdrantClient가 있을 때만 실제 Qdrant wrapper가 등록된다.
 }
 ```
 
-이 프로젝트에서는 같은 port의 안전한 fallback으로 `NoOpNoteSearchIndexAdapter`도 둔다. 그래서 `VectorStore`가 있으면 `@Primary`인 Qdrant adapter가 선택되고, 없으면 no-op adapter가 context load를 유지한다.
+이 프로젝트에서는 `QdrantNoteSearchIndexAdapter`가 `ObjectProvider<QdrantVectorIndexClient>`와 `ObjectProvider<AiEmbeddingPort>`를 통해 런타임에 실제 client/provider 존재 여부를 확인한다. 둘 중 하나가 없으면 no-op 결과를 반환해 context load를 유지한다.
 
 ## 동작 방식
 
@@ -36,12 +35,12 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort {
 
 `@ConditionalOnBean`은 "지금까지 처리된 bean definition"만 볼 수 있다. 공식 문서도 이 이유 때문에 auto-configuration class에서 사용하는 것을 권장한다.
 
-따라서 일반 `@Component`에 붙이면 bean 등록 순서에 영향을 받을 수 있다. 이 프로젝트의 Qdrant adapter에서는 다음 이유로 허용한다.
+따라서 일반 `@Component`에 붙이면 bean 등록 순서에 영향을 받을 수 있다. 이 프로젝트의 Qdrant wrapper에서는 다음 이유로 허용한다.
 
-- `VectorStore`는 Spring AI auto-configuration에서 만들어지는 infrastructure bean이다.
-- `test`와 `dev-ui` profile은 Qdrant auto-configuration을 명시적으로 제외한다.
+- `QdrantClient`는 `QdrantVectorIndexConfiguration`의 `@Bean` method에서 명시적으로 만든 infrastructure bean이다.
+- `test`와 `dev-ui` profile은 `brainx.vector.qdrant.enabled=false`로 Qdrant client bean을 등록하지 않는다.
 - `NoOpNoteSearchIndexAdapter`가 항상 존재해 `NoteSearchIndexPort` 누락을 막는다.
-- Qdrant adapter는 `@Primary`라서 `VectorStore`가 있는 환경에서만 우선 선택된다.
+- `QdrantNoteSearchIndexAdapter`는 `@Primary`지만 provider/client가 없으면 mutation/search를 적용하지 않는다.
 
 새로운 기능에서 같은 패턴을 쓸 때는 fallback bean 또는 명시적 auto-configuration ordering 없이 `@ConditionalOnBean`만 믿지 않는다.
 

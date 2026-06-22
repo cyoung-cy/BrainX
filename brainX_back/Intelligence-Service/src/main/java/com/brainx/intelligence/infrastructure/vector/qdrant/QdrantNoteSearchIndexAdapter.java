@@ -10,10 +10,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpressionTextParser;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -25,6 +21,16 @@ import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
 import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
+import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorPoint;
+import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorSearchHit;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort.AiEmbeddingRequest;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort.AiEmbeddingResponse;
+import com.brainx.intelligence.shared.application.port.outbound.AiEmbeddingPort.InputType;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
+import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
+import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
+import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator.TokenCostEstimate;
 
 @Component
 @Primary
@@ -39,33 +45,58 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     private static final String KEYWORD_IDS = "keywordIds";
     private static final String MARKDOWN_HASH = "markdownHash";
     private static final String VERSION = "version";
+    private static final String DOC_CONTENT = "doc_content";
+    private static final String SOURCE_PATH = "sourcePath";
+    private static final String SOURCE_FILENAME = "sourceFilename";
+    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String INDEX_EMBEDDING_FEATURE_ID = "note-search-index-embedding";
+    private static final String QUERY_EMBEDDING_FEATURE_ID = "note-search-query-embedding";
     private static final int MIN_SEARCH_TOP_K = 10;
     private static final int SEARCH_OVERFETCH_FACTOR = 4;
     private static final int MAX_SEARCH_TOP_K = 80;
 
-    private final ObjectProvider<VectorStore> vectorStoreProvider;
-    private final FilterExpressionTextParser filterParser = new FilterExpressionTextParser();
+    private final ObjectProvider<QdrantVectorIndexClient> vectorIndexClientProvider;
+    private final ObjectProvider<AiEmbeddingPort> aiEmbeddingPortProvider;
+    private final TokenUsagePort tokenUsagePort;
+    private final AiTokenUsageCostEstimator usageCostEstimator;
 
-    public QdrantNoteSearchIndexAdapter(ObjectProvider<VectorStore> vectorStoreProvider) {
-        this.vectorStoreProvider = vectorStoreProvider;
+    public QdrantNoteSearchIndexAdapter(
+        ObjectProvider<QdrantVectorIndexClient> vectorIndexClientProvider,
+        ObjectProvider<AiEmbeddingPort> aiEmbeddingPortProvider,
+        TokenUsagePort tokenUsagePort,
+        AiTokenUsageCostEstimator usageCostEstimator
+    ) {
+        this.vectorIndexClientProvider = vectorIndexClientProvider;
+        this.aiEmbeddingPortProvider = aiEmbeddingPortProvider;
+        this.tokenUsagePort = tokenUsagePort;
+        this.usageCostEstimator = usageCostEstimator;
     }
 
     @Override
     public List<SemanticSearchResult> search(NoteSearchQuery query) {
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        if (vectorStore == null) {
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
+        if (vectorIndexClient == null || aiEmbeddingPort == null) {
             return List.of();
         }
-        SearchRequest searchRequest = SearchRequest.builder()
-            .query(query.queryText())
-            .topK(searchTopK(query.limit()))
-            .similarityThresholdAll()
-            .filterExpression(USER_ID + " == '" + escapeFilterValue(query.userId()) + "'")
-            .build();
+        AiEmbeddingResponse embedding = aiEmbeddingPort.embed(new AiEmbeddingRequest(
+            null,
+            List.of(query.queryText()),
+            InputType.QUERY
+        ));
+        recordEmbeddingUsage(query.userId(), QUERY_EMBEDDING_FEATURE_ID, embedding);
+        List<Double> queryVector = firstVector(embedding);
+        if (queryVector.isEmpty()) {
+            return List.of();
+        }
 
         Map<String, SemanticSearchResult> bestByNoteId = new LinkedHashMap<>();
-        for (Document document : vectorStore.similaritySearch(searchRequest)) {
-            SemanticSearchResult result = toSearchResult(document, query.hybridWithClientKeywordIds());
+        for (QdrantVectorSearchHit hit : vectorIndexClient.search(
+            query.userId(),
+            queryVector,
+            searchTopK(query.limit())
+        )) {
+            SemanticSearchResult result = toSearchResult(hit, query.hybridWithClientKeywordIds());
             SemanticSearchResult existing = bestByNoteId.get(result.noteId());
             if (existing == null || result.score() > existing.score()) {
                 bestByNoteId.put(result.noteId(), result);
@@ -79,18 +110,23 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     @Override
     public List<NoteChunkSearchResult> searchChunks(NoteChunkSearchQuery query) {
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        if (vectorStore == null) {
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
+        if (vectorIndexClient == null || aiEmbeddingPort == null) {
             return List.of();
         }
-        SearchRequest searchRequest = SearchRequest.builder()
-            .query(query.queryText())
-            .topK(query.topK())
-            .similarityThresholdAll()
-            .filterExpression(USER_ID + " == '" + escapeFilterValue(query.userId()) + "'")
-            .build();
+        AiEmbeddingResponse embedding = aiEmbeddingPort.embed(new AiEmbeddingRequest(
+            null,
+            List.of(query.queryText()),
+            InputType.QUERY
+        ));
+        recordEmbeddingUsage(query.userId(), QUERY_EMBEDDING_FEATURE_ID, embedding);
+        List<Double> queryVector = firstVector(embedding);
+        if (queryVector.isEmpty()) {
+            return List.of();
+        }
 
-        return vectorStore.similaritySearch(searchRequest).stream()
+        return vectorIndexClient.search(query.userId(), queryVector, query.topK()).stream()
             .map(QdrantNoteSearchIndexAdapter::toChunkSearchResult)
             .sorted(Comparator.comparingDouble(NoteChunkSearchResult::score).reversed())
             .limit(query.topK())
@@ -99,62 +135,141 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     @Override
     public NoteSearchDocument save(NoteSearchDocument document) {
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        if (vectorStore != null) {
-            vectorStore.add(List.of(toVectorDocument(document)));
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
+        if (vectorIndexClient != null && aiEmbeddingPort != null) {
+            AiEmbeddingResponse embedding = aiEmbeddingPort.embed(new AiEmbeddingRequest(
+                null,
+                List.of(document.chunkText()),
+                InputType.DOCUMENT
+            ));
+            recordEmbeddingUsage(document.userId(), INDEX_EMBEDDING_FEATURE_ID, embedding);
+            List<Double> vector = firstVector(embedding);
+            if (!vector.isEmpty()) {
+                vectorIndexClient.upsert(List.of(toVectorPoint(document, vector)));
+            }
         }
         return document;
     }
 
     @Override
-    public void replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
-        deleteByUserIdAndNoteId(userId, noteId);
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        if (vectorStore == null) {
-            return;
+    public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        if (vectorIndexClient == null) {
+            return false;
         }
-        if (chunks != null && !chunks.isEmpty()) {
-            vectorStore.add(chunks.stream()
-                .map(QdrantNoteSearchIndexAdapter::toVectorDocument)
-                .toList());
+        List<NoteSearchDocument> safeChunks = chunks == null ? List.of() : chunks;
+        AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
+        if (!safeChunks.isEmpty() && aiEmbeddingPort == null) {
+            return false;
         }
+
+        vectorIndexClient.deleteByUserIdAndNoteId(userId, noteId);
+        if (safeChunks.isEmpty()) {
+            return true;
+        }
+
+        AiEmbeddingResponse embedding = aiEmbeddingPort.embed(new AiEmbeddingRequest(
+            null,
+            safeChunks.stream().map(NoteSearchDocument::chunkText).toList(),
+            InputType.DOCUMENT
+        ));
+        recordEmbeddingUsage(userId, INDEX_EMBEDDING_FEATURE_ID, embedding);
+        List<QdrantVectorPoint> points = toVectorPoints(safeChunks, embedding);
+        if (points.isEmpty()) {
+            return false;
+        }
+        vectorIndexClient.upsert(points);
+        return true;
     }
 
     @Override
-    public void deleteByUserIdAndNoteId(String userId, String noteId) {
-        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
-        if (vectorStore == null) {
+    public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        if (vectorIndexClient == null) {
+            return false;
+        }
+        vectorIndexClient.deleteByUserIdAndNoteId(userId, noteId);
+        return true;
+    }
+
+    private void recordEmbeddingUsage(String userId, String featureId, AiEmbeddingResponse embedding) {
+        if (embedding == null || embedding.totalTokens() == null || embedding.totalTokens() <= 0) {
             return;
         }
-        vectorStore.delete(filterParser.parse(
-            USER_ID + " == '" + escapeFilterValue(userId) + "' && "
-                + NOTE_ID + " == '" + escapeFilterValue(noteId) + "'"
+        int inputTokens = embedding.totalTokens();
+        TokenCostEstimate cost = usageCostEstimator.estimate(embedding.modelId(), inputTokens, 0, 0);
+        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
+            UUID.randomUUID().toString(),
+            userId,
+            SOURCE_SERVICE,
+            featureId,
+            embedding.modelId(),
+            inputTokens,
+            0,
+            inputTokens,
+            0,
+            0,
+            inputTokens,
+            cost.inputCost(),
+            cost.cachedInputCost(),
+            cost.outputCost(),
+            cost.totalCost(),
+            cost.currencyCode(),
+            UUID.randomUUID().toString()
         ));
     }
 
-    static Document toVectorDocument(NoteSearchDocument document) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put(USER_ID, document.userId());
-        metadata.put(NOTE_ID, document.noteId());
-        metadata.put(CHUNK_ID, document.chunkId());
-        metadata.put(CHUNK_INDEX, document.chunkIndex());
-        metadata.put(TITLE, document.title());
-        metadata.put(EXCERPT, document.excerpt());
-        metadata.put(KEYWORD_IDS, document.keywordIds());
-        putIfNotNull(metadata, MARKDOWN_HASH, document.markdownHash());
-        putIfNotNull(metadata, VERSION, document.version());
-
-        return Document.builder()
-            .id(documentId(document.userId(), document.noteId(), document.chunkIndex()))
-            .text(content(document))
-            .metadata(metadata)
-            .build();
+    private static List<QdrantVectorPoint> toVectorPoints(
+        List<NoteSearchDocument> chunks,
+        AiEmbeddingResponse embedding
+    ) {
+        if (embedding == null || embedding.vectors() == null || chunks.size() != embedding.vectors().size()) {
+            return List.of();
+        }
+        List<QdrantVectorPoint> points = new ArrayList<>(chunks.size());
+        for (int index = 0; index < chunks.size(); index++) {
+            points.add(toVectorPoint(chunks.get(index), embedding.vectors().get(index).values()));
+        }
+        return points;
     }
 
-    private static String documentId(String userId, String noteId, int chunkIndex) {
+    private static QdrantVectorPoint toVectorPoint(NoteSearchDocument document, List<Double> vector) {
+        return new QdrantVectorPoint(
+            documentId(document.userId(), document.noteId(), document.chunkIndex()),
+            vector,
+            toPayload(document)
+        );
+    }
+
+    private static Map<String, Object> toPayload(NoteSearchDocument document) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(USER_ID, document.userId());
+        payload.put(NOTE_ID, document.noteId());
+        payload.put(CHUNK_ID, document.chunkId());
+        payload.put(CHUNK_INDEX, document.chunkIndex());
+        payload.put(TITLE, document.title());
+        payload.put(EXCERPT, document.excerpt());
+        payload.put(DOC_CONTENT, document.chunkText());
+        payload.put(KEYWORD_IDS, document.keywordIds());
+        putIfNotNull(payload, MARKDOWN_HASH, document.markdownHash());
+        putIfNotNull(payload, VERSION, document.version());
+        putIfNotNull(payload, SOURCE_PATH, document.sourcePath());
+        putIfNotNull(payload, SOURCE_FILENAME, document.sourceFilename());
+        return payload;
+    }
+
+    private static List<Double> firstVector(AiEmbeddingResponse embedding) {
+        if (embedding == null || embedding.vectors() == null || embedding.vectors().isEmpty()) {
+            return List.of();
+        }
+        List<Double> values = embedding.vectors().getFirst().values();
+        return values == null ? List.of() : values;
+    }
+
+    private static UUID documentId(String userId, String noteId, int chunkIndex) {
         return UUID.nameUUIDFromBytes((userId + "::" + noteId + "::" + chunkIndex)
-            .getBytes(StandardCharsets.UTF_8))
-            .toString();
+            .getBytes(StandardCharsets.UTF_8));
     }
 
     private static int searchTopK(int limit) {
@@ -167,37 +282,35 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         }
     }
 
-    private static SemanticSearchResult toSearchResult(Document document, List<String> requestedKeywordIds) {
-        Map<String, Object> metadata = document.getMetadata();
-        boolean keywordMatched = intersects(stringList(metadata.get(KEYWORD_IDS)), requestedKeywordIds);
+    private static SemanticSearchResult toSearchResult(QdrantVectorSearchHit hit, List<String> requestedKeywordIds) {
+        Map<String, Object> payload = hit.payload();
+        boolean keywordMatched = intersects(stringList(payload.get(KEYWORD_IDS)), requestedKeywordIds);
         return new SemanticSearchResult(
-            stringValue(metadata.get(NOTE_ID), document.getId()),
-            stringValue(metadata.get(TITLE), ""),
-            stringValue(metadata.get(EXCERPT), document.getText()),
-            document.getScore() == null ? 0.0d : document.getScore(),
+            stringValue(payload.get(NOTE_ID), hit.id()),
+            stringValue(payload.get(TITLE), ""),
+            stringValue(payload.get(EXCERPT), stringValue(payload.get(DOC_CONTENT), "")),
+            hit.score(),
             keywordMatched ? SearchMatchType.HYBRID : SearchMatchType.SEMANTIC
         );
     }
 
-    private static NoteChunkSearchResult toChunkSearchResult(Document document) {
-        Map<String, Object> metadata = document.getMetadata();
-        String noteId = stringValue(metadata.get(NOTE_ID), document.getId());
-        int chunkIndex = integerValue(metadata.get(CHUNK_INDEX), 0);
+    private static NoteChunkSearchResult toChunkSearchResult(QdrantVectorSearchHit hit) {
+        Map<String, Object> payload = hit.payload();
+        String noteId = stringValue(payload.get(NOTE_ID), hit.id());
+        int chunkIndex = integerValue(payload.get(CHUNK_INDEX), 0);
         return new NoteChunkSearchResult(
-            stringValue(metadata.get(USER_ID), ""),
+            stringValue(payload.get(USER_ID), ""),
             noteId,
-            stringValue(metadata.get(CHUNK_ID), noteId + "::" + chunkIndex),
+            stringValue(payload.get(CHUNK_ID), noteId + "::" + chunkIndex),
             chunkIndex,
-            stringValue(metadata.get(TITLE), ""),
-            stringValue(document.getText(), stringValue(metadata.get(EXCERPT), "")),
-            document.getScore() == null ? 0.0d : document.getScore(),
-            nullableString(metadata.get(MARKDOWN_HASH)),
-            nullableInteger(metadata.get(VERSION))
+            stringValue(payload.get(TITLE), ""),
+            stringValue(payload.get(DOC_CONTENT), stringValue(payload.get(EXCERPT), "")),
+            hit.score(),
+            nullableString(payload.get(MARKDOWN_HASH)),
+            nullableInteger(payload.get(VERSION)),
+            nullableString(payload.get(SOURCE_PATH)),
+            nullableString(payload.get(SOURCE_FILENAME))
         );
-    }
-
-    private static String content(NoteSearchDocument document) {
-        return document.chunkText();
     }
 
     private static String stringValue(Object value, String fallback) {
@@ -257,9 +370,5 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         }
         Set<String> values = new HashSet<>(left);
         return right.stream().anyMatch(values::contains);
-    }
-
-    private static String escapeFilterValue(String value) {
-        return value.replace("\\", "\\\\").replace("'", "\\'");
     }
 }

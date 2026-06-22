@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
+import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -37,13 +38,17 @@ class NoteProjectionJpaAdapterTest {
             false,
             "evt-1",
             Instant.parse("2026-06-19T00:00:00Z")
-        ));
+        ).indexed(2, "hash-2", Instant.parse("2026-06-19T00:00:01Z")));
 
         var projection = adapter.findByUserIdAndNoteId("user-1", "note-1").orElseThrow();
 
         assertThat(projection.tags()).containsExactly("tag-1", "tag-2");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
         assertThat(projection.contentPending()).isFalse();
+        assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
+        assertThat(projection.indexedVersion()).isEqualTo(2);
+        assertThat(projection.indexedMarkdownHash()).isEqualTo("hash-2");
+        assertThat(projection.indexedAt()).isEqualTo(Instant.parse("2026-06-19T00:00:01Z"));
     }
 
     @Test

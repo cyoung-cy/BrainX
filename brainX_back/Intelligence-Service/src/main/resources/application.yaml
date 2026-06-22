@@ -10,21 +10,11 @@ spring:
   ai:
     model:
       chat: ${SPRING_AI_MODEL_CHAT:none}
-      embedding: ${SPRING_AI_MODEL_EMBEDDING:none}
     openai:
       api-key: ${OPENAI_API_KEY:}
       chat:
         options:
           model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
-    vectorstore:
-      qdrant:
-        host: ${QDRANT_HOST:localhost}
-        port: ${QDRANT_GRPC_PORT:6334}
-        api-key: ${QDRANT_API_KEY:}
-        collection-name: ${QDRANT_COLLECTION:brainx_note_search}
-        content-field-name: doc_content
-        use-tls: ${QDRANT_USE_TLS:false}
-        initialize-schema: ${QDRANT_INITIALIZE_SCHEMA:true}
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/intelligence_service}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
@@ -39,6 +29,10 @@ spring:
 
 brainx:
   events:
+    producer:
+      enabled: ${BRAINX_EVENTS_PRODUCER_ENABLED:false}
+      semantic-search-performed-topic: ${BRAINX_EVENTS_TOPIC_SEMANTIC_SEARCH_PERFORMED:brainx.knowledge.intelligence.semantic-search-performed.v1}
+      token-usage-recorded-requested-topic: ${BRAINX_EVENTS_TOPIC_TOKEN_USAGE_RECORDED_REQUESTED:brainx.knowledge.intelligence.token-usage-recorded-requested.v1}
     consumer:
       enabled: ${BRAINX_EVENTS_CONSUMER_ENABLED:false}
       group-id: ${BRAINX_EVENTS_CONSUMER_GROUP_ID:intelligence-service}
@@ -52,6 +46,17 @@ brainx:
         dimensions: ${VOYAGE_EMBEDDING_DIMENSIONS:1024}
         truncation: ${VOYAGE_EMBEDDING_TRUNCATION:true}
         timeout: ${VOYAGE_EMBEDDING_TIMEOUT:10s}
+  vector:
+    qdrant:
+      enabled: ${BRAINX_VECTOR_QDRANT_ENABLED:true}
+      host: ${QDRANT_HOST:localhost}
+      port: ${QDRANT_GRPC_PORT:6334}
+      api-key: ${QDRANT_API_KEY:}
+      collection-name: ${QDRANT_COLLECTION:brainx_note_search}
+      use-tls: ${QDRANT_USE_TLS:false}
+      initialize-schema: ${QDRANT_INITIALIZE_SCHEMA:true}
+      dimensions: ${VOYAGE_EMBEDDING_DIMENSIONS:1024}
+      timeout: ${QDRANT_TIMEOUT:10s}
   workspace:
     base-url: ${BRAINX_WORKSPACE_BASE_URL:http://localhost:8081}
     service-token: ${BRAINX_WORKSPACE_SERVICE_TOKEN:}
@@ -65,5 +70,7 @@ brainx:
       folder-id: ${BRAINX_DEV_SAMPLE_RAG_FOLDER_ID:sample_notes}
       query: ${BRAINX_DEV_SAMPLE_RAG_QUERY:}
       top-k: ${BRAINX_DEV_SAMPLE_RAG_TOP_K:8}
+      min-score: ${BRAINX_DEV_SAMPLE_RAG_MIN_SCORE:0.35}
+      max-chunks-per-note: ${BRAINX_DEV_SAMPLE_RAG_MAX_CHUNKS_PER_NOTE:2}
       max-context-chars: ${BRAINX_DEV_SAMPLE_RAG_MAX_CONTEXT_CHARS:8000}
       chat-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}

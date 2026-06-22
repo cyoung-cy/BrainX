@@ -99,11 +99,10 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             context.envelope().occurredAt()
         );
         noteProjectionStore.save(projection);
-        boolean indexedFromSnapshot = tryIndexFromSnapshot(projection, version, null, context.eventId(), false);
-        if (!indexedFromSnapshot) {
-            noteSearchIndexPort.replaceNoteChunks(
-                payload.userId(),
-                payload.noteId(),
+        boolean snapshotAvailable = tryIndexFromSnapshot(projection, version, null, context.eventId(), false);
+        if (!snapshotAvailable) {
+            replaceProvisionalIndex(
+                projection,
                 noteChunker.chunk(
                     payload.userId(),
                     payload.noteId(),
@@ -112,7 +111,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                     payload.tags(),
                     null,
                     version
-                )
+                ),
+                context.eventId()
             );
         }
     }
@@ -128,7 +128,9 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         if (existing.isPresent() && existing.get().stale(version)) {
             return;
         }
-        if (existing.isPresent() && existing.get().sameContent(version, payload.markdownHash())) {
+        if (existing.isPresent()
+            && existing.get().sameContent(version, payload.markdownHash())
+            && existing.get().indexedFor(version, payload.markdownHash())) {
             return;
         }
 
@@ -181,25 +183,19 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         String folderId = payload.has("folderId") ? text(payload, "folderId") : base.folderId();
         List<String> tags = payload.has("tags") ? stringList(payload.get("tags")) : base.tags();
         Boolean archived = payload.hasNonNull("archived") ? payload.get("archived").asBoolean() : base.archived();
-        NoteProjection updated = new NoteProjection(
-            userId,
-            noteId,
+        NoteProjection updated = base.withMetadata(
             title,
             folderId,
             tags,
-            version,
-            base.markdownHash(),
-            base.contentPending(),
             archived,
-            base.trashed(),
-            base.deleted(),
+            version,
             context.eventId(),
             context.envelope().occurredAt()
         );
         noteProjectionStore.save(updated);
 
         if (!updated.searchable()) {
-            noteSearchIndexPort.deleteByUserIdAndNoteId(userId, noteId);
+            removeIndex(updated, context.eventId());
             return;
         }
         tryIndexFromSnapshot(updated, version, updated.markdownHash(), context.eventId(), true);
@@ -241,7 +237,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             .orElseGet(() -> minimalProjection(payload.userId(), payload.noteId(), context))
             .trashed(context.eventId(), context.envelope().occurredAt());
         noteProjectionStore.save(updated);
-        noteSearchIndexPort.deleteByUserIdAndNoteId(payload.userId(), payload.noteId());
+        removeIndex(updated, context.eventId());
     }
 
     private void handleNoteDeleted(EventProcessingContext context) {
@@ -252,7 +248,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             .orElseGet(() -> minimalProjection(payload.userId(), payload.noteId(), context))
             .deleted(context.eventId(), context.envelope().occurredAt());
         noteProjectionStore.save(updated);
-        noteSearchIndexPort.deleteByUserIdAndNoteId(payload.userId(), payload.noteId());
+        removeIndex(updated, context.eventId());
         noteSummaryPort.deleteByUserIdAndNoteId(payload.userId(), payload.noteId());
     }
 
@@ -306,9 +302,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         );
         noteProjectionStore.save(indexed);
         if (indexed.searchable()) {
-            noteSearchIndexPort.replaceNoteChunks(
-                indexed.userId(),
-                indexed.noteId(),
+            replaceIndex(
+                indexed,
                 noteChunker.chunk(
                     indexed.userId(),
                     indexed.noteId(),
@@ -317,10 +312,55 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                     indexed.tags(),
                     indexed.markdownHash(),
                     indexed.version()
-                )
+                ),
+                indexed.version(),
+                indexed.markdownHash(),
+                eventId
             );
         }
-        return indexed.searchable();
+        return true;
+    }
+
+    private void replaceProvisionalIndex(NoteProjection projection, List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks, String eventId) {
+        try {
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(projection.userId(), projection.noteId(), chunks);
+            if (indexed) {
+                noteProjectionStore.save(projection.provisionallyIndexed(projection.version(), Instant.now()));
+            }
+        } catch (RuntimeException exception) {
+            noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
+            throw exception;
+        }
+    }
+
+    private void replaceIndex(
+        NoteProjection projection,
+        List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks,
+        int indexedVersion,
+        String indexedMarkdownHash,
+        String eventId
+    ) {
+        try {
+            boolean indexed = noteSearchIndexPort.replaceNoteChunks(projection.userId(), projection.noteId(), chunks);
+            if (indexed) {
+                noteProjectionStore.save(projection.indexed(indexedVersion, indexedMarkdownHash, Instant.now()));
+            }
+        } catch (RuntimeException exception) {
+            noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
+            throw exception;
+        }
+    }
+
+    private void removeIndex(NoteProjection projection, String eventId) {
+        try {
+            boolean removed = noteSearchIndexPort.deleteByUserIdAndNoteId(projection.userId(), projection.noteId());
+            if (removed) {
+                noteProjectionStore.save(projection.indexRemoved(eventId, Instant.now()));
+            }
+        } catch (RuntimeException exception) {
+            noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
+            throw exception;
+        }
     }
 
     private <T> T readPayload(EventProcessingContext context, Class<T> payloadType) {

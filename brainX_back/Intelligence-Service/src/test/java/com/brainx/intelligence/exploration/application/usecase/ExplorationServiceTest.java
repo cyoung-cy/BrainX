@@ -30,7 +30,8 @@ import com.brainx.intelligence.shared.application.port.outbound.WorkspaceNotePor
 class ExplorationServiceTest {
 
     private final FakePorts ports = new FakePorts();
-    private final ExplorationService service = new ExplorationService(ports, ports, ports, ports, ports, ports);
+    private final FakeSummaryPort summaryPort = new FakeSummaryPort();
+    private final ExplorationService service = new ExplorationService(ports, ports, ports, summaryPort, ports);
 
     @Test
     void semanticSearchStopsBeforeVectorSearchWhenEntitlementDenied() {
@@ -52,7 +53,7 @@ class ExplorationServiceTest {
     }
 
     @Test
-    void semanticSearchDelegatesQueryTextToSearchIndexAndRecordsUsageAndEvent() {
+    void semanticSearchDelegatesQueryTextToSearchIndexAndRecordsEvent() {
         ports.searchResults = List.of(new SemanticSearchResult(
             "note-1",
             "RAG note",
@@ -78,9 +79,7 @@ class ExplorationServiceTest {
         assertThat(ports.lastSearchQuery.queryText()).isEqualTo("rag search");
         assertThat(ports.lastSearchQuery.limit()).isEqualTo(5);
         assertThat(ports.lastSearchQuery.hybridWithClientKeywordIds()).containsExactly("keyword-1");
-        assertThat(ports.tokenUsageRecords).hasSize(1);
-        assertThat(ports.tokenUsageRecords.getFirst().featureId()).isEqualTo("semantic-search");
-        assertThat(ports.tokenUsageRecords.getFirst().sourceService()).isEqualTo("AI-Service");
+        assertThat(ports.tokenUsageRecords).isEmpty();
         assertThat(ports.semanticSearchEvents).hasSize(1);
         assertThat(ports.semanticSearchEvents.getFirst().resultCount()).isEqualTo(1);
         assertThat(ports.semanticSearchEvents.getFirst().charged()).isTrue();
@@ -88,7 +87,7 @@ class ExplorationServiceTest {
 
     @Test
     void getNoteSummaryReturnsCachedAiSummary() {
-        ports.summaries.put("user-1::note-1", NoteSummary.ai("user-1", "note-1", "Cached AI summary"));
+        summaryPort.summaries.put("user-1::note-1", NoteSummary.ai("user-1", "note-1", "Cached AI summary"));
 
         var result = service.getNoteSummary(new GetNoteSummaryQuery("user-1", "note-1"));
 
@@ -117,7 +116,7 @@ class ExplorationServiceTest {
 
     private static final class FakePorts
         implements EntitlementPort, TokenUsagePort, WorkspaceNotePort, NoteSearchIndexPort,
-        NoteSummaryPort, ExplorationEventPort {
+        ExplorationEventPort {
 
         private boolean allowed = true;
         private int searchRequests;
@@ -132,7 +131,6 @@ class ExplorationServiceTest {
         );
         private final List<TokenUsageRecord> tokenUsageRecords = new ArrayList<>();
         private final List<SemanticSearchPerformedEvent> semanticSearchEvents = new ArrayList<>();
-        private final Map<String, NoteSummary> summaries = new LinkedHashMap<>();
 
         @Override
         public EntitlementDecision checkEntitlement(EntitlementRequest request) {
@@ -167,8 +165,24 @@ class ExplorationServiceTest {
         }
 
         @Override
-        public void replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+        public boolean replaceNoteChunks(String userId, String noteId, List<NoteSearchDocument> chunks) {
+            return true;
         }
+
+        @Override
+        public boolean deleteByUserIdAndNoteId(String userId, String noteId) {
+            return true;
+        }
+
+        @Override
+        public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
+            semanticSearchEvents.add(event);
+        }
+    }
+
+    private static final class FakeSummaryPort implements NoteSummaryPort {
+
+        private final Map<String, NoteSummary> summaries = new LinkedHashMap<>();
 
         @Override
         public Optional<NoteSummary> findByUserIdAndNoteId(String userId, String noteId) {
@@ -184,11 +198,6 @@ class ExplorationServiceTest {
         @Override
         public void deleteByUserIdAndNoteId(String userId, String noteId) {
             summaries.remove(userId + "::" + noteId);
-        }
-
-        @Override
-        public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
-            semanticSearchEvents.add(event);
         }
     }
 }

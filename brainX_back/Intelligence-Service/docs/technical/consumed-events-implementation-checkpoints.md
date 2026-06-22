@@ -115,6 +115,15 @@
 
 ## Intelligence Internal Events
 
+### `TokenUsageRecordedRequested`
+
+- [x] token usage는 event-first로 기록 요청만 만들고, Commerce Service가 ledger write의 source of truth가 된다.
+- [x] payload는 `inputTokens`, `cachedInputTokens`, `billableInputTokens`, `outputTokens`, `reasoningTokens`, `totalTokens`를 분리한다.
+- [x] estimated vendor cost는 model catalog의 `VendorTokenCost` 기준으로 `estimatedInputCost`, `estimatedCachedInputCost`, `estimatedOutputCost`, `estimatedCost`, `costCurrency`를 채운다.
+- [x] OpenAI chat usage의 cached input은 native usage `prompt_tokens_details.cached_tokens`에서 추출한다.
+- [x] `brainx.events.producer.enabled=true`이면 `TokenUsagePort`를 실제 `TokenUsageRecordedRequested` Kafka publish로 연결한다.
+- [x] semantic search/query embedding과 ingest embedding은 Voyage `usage.total_tokens` 기반 실제 provider token usage로 기록한다.
+
 ### `AiModelSettingsChanged`
 
 - [ ] `userId`, `defaultModelId`, `registeredProviders`를 model settings projection/cache에 반영한다.
@@ -180,7 +189,7 @@
 
 - [x] Workspace snapshot adapter가 실제 note title/markdown을 가져와야 한다.
 - [ ] `NoteSearchIndexPort`에 note 단위 delete와 user 단위 delete가 필요하다. note 단위 delete는 구현되었고 user 단위 delete는 `UserDeletionRequested` 처리 단계에서 추가한다.
-- [x] note projection에는 최소 `userId`, `noteId`, `title`, `folderId`, `tags`, `version`, `markdownHash`, `archived`, `trashed`가 필요하다.
+- [x] note projection에는 최소 `userId`, `noteId`, `title`, `folderId`, `tags`, `version`, `markdownHash`, `archived`, `trashed`가 필요하다. 현재는 search index 동기화 관측을 위해 `searchIndexStatus`, `indexedVersion`, `indexedMarkdownHash`, `indexedAt`도 함께 저장한다.
 - [ ] summary cache에는 `version` 또는 `markdownHash`가 필요하다.
 - [ ] vector index metadata에는 folder/tag/archive/trashed 상태를 filter 가능한 형태로 넣어야 한다. 현재 chunk metadata에는 `userId`, `noteId`, `chunkId`, `chunkIndex`, `title`, `excerpt`, `keywordIds`, `markdownHash`, `version`을 저장한다.
 - [ ] cluster/insight job 상태 저장소와 result 저장소가 필요하다.
