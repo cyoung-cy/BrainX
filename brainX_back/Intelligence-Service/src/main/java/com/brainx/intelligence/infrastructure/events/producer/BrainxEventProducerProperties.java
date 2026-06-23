@@ -13,6 +13,8 @@ public class BrainxEventProducerProperties {
     private String aiSuggestionCreatedTopic = "brainx.knowledge.intelligence.ai-suggestion-created.v1";
     private String aiSuggestionDecisionRecordedTopic =
         "brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1";
+    private String chatThreadCreatedTopic = "brainx.knowledge.intelligence.chat-thread-created.v1";
+    private String chatMessageCreatedTopic = "brainx.knowledge.intelligence.chat-message-created.v1";
 
     public boolean isEnabled() {
         return enabled;
@@ -52,5 +54,21 @@ public class BrainxEventProducerProperties {
 
     public void setAiSuggestionDecisionRecordedTopic(String aiSuggestionDecisionRecordedTopic) {
         this.aiSuggestionDecisionRecordedTopic = aiSuggestionDecisionRecordedTopic;
+    }
+
+    public String getChatThreadCreatedTopic() {
+        return chatThreadCreatedTopic;
+    }
+
+    public void setChatThreadCreatedTopic(String chatThreadCreatedTopic) {
+        this.chatThreadCreatedTopic = chatThreadCreatedTopic;
+    }
+
+    public String getChatMessageCreatedTopic() {
+        return chatMessageCreatedTopic;
+    }
+
+    public void setChatMessageCreatedTopic(String chatMessageCreatedTopic) {
+        this.chatMessageCreatedTopic = chatMessageCreatedTopic;
     }
 }

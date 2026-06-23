@@ -4,13 +4,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Component;
 
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
+import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
 import com.brainx.intelligence.infrastructure.events.producer.KafkaIntelligenceEventAdapter;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 
 @Component
 @ConditionalOnMissingBean(KafkaIntelligenceEventAdapter.class)
-public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort {
+public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort {
 
     @Override
     public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
@@ -29,6 +30,16 @@ public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, Token
 
     @Override
     public void aiSuggestionDecisionRecorded(AiSuggestionDecisionRecordedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void chatThreadCreated(ChatThreadCreatedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void chatMessageCreated(ChatMessageCreatedEvent event) {
         // Keeps local/test runs runnable when event producer is disabled.
     }
 }
