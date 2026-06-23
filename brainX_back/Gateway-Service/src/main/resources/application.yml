@@ -1,0 +1,82 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  config:
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:../env/gateway-service.env[.properties]
+  application:
+    name: Gateway-Service
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins:
+                  - ${FRONTEND_BASE_URL:http://localhost:3000}
+                allowed-methods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowed-headers:
+                  - '*'
+                allow-credentials: true
+          routes:
+            - id: commerce-service-user-subscription
+              uri: ${COMMERCE_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/users/me/subscription
+
+            - id: user-service-auth
+              uri: ${USER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/v1/auth/**
+
+            - id: user-service-users
+              uri: ${USER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/v1/users/**
+
+            - id: user-service-support
+              uri: ${USER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/v1/support/**
+
+            - id: workspace-service
+              uri: ${WORKSPACE_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/workspace/**,/api/v1/notes,/api/v1/notes/**,/api/v1/folders,/api/v1/folders/**,/api/v1/recent-activities,/api/v1/recent-activities/**,/api/v1/tags/**,/api/v1/favorites/**,/api/v1/graph,/api/v1/graph/**,/api/v1/share-links,/api/v1/share-links/**
+
+            - id: ingestion-service
+              uri: ${INGESTION_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/imports/**,/api/v1/exports,/api/v1/exports/**,/v1/publish-jobs,/v1/publish-jobs/**
+
+            - id: commerce-service
+              uri: ${COMMERCE_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/plans,/api/v1/plans/**,/api/v1/subscriptions/**,/api/v1/billing/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+brainx:
+  jwt:
+    secret: ${JWT_SECRET:replace_with_at_least_32_byte_secret}
+  gateway:
+    auth:
+      public-paths:
+        - /actuator/health
+        - /actuator/info
+        - /api/v1/auth/**
+        - /api/v1/plans
+        - /api/v1/plans/**
