@@ -174,9 +174,18 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
   ]);
   const [chatOpen, setChatOpen] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const aiRequestAbortRef = useRef<AbortController | null>(null);
+  const aiMockTimerRef = useRef<number | null>(null);
 
   const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
   const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
+
+  useEffect(() => {
+    return () => {
+      aiRequestAbortRef.current?.abort();
+      if (aiMockTimerRef.current !== null) window.clearInterval(aiMockTimerRef.current);
+    };
+  }, []);
 
   const sendAi = () => {
     if (!activeNote || !aiInput.trim()) return;
@@ -212,6 +221,13 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     const preview = selectedText ? (selectedText.length > 60 ? `${selectedText.slice(0, 60)}…` : selectedText) : "(선택된 텍스트 없음)";
     const label = type === "summarize" ? "선택한 텍스트 요약 요청" : "선택한 텍스트 다시쓰기 요청";
 
+    aiRequestAbortRef.current?.abort();
+    aiRequestAbortRef.current = null;
+    if (aiMockTimerRef.current !== null) {
+      window.clearInterval(aiMockTimerRef.current);
+      aiMockTimerRef.current = null;
+    }
+
     setChatOpen(true);
     setAiMessages((m) => [...m, { role: "user", text: `${label}: "${preview}"` }]);
 
@@ -234,6 +250,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
 
     if (type === "summarize") {
       const controller = new AbortController();
+      aiRequestAbortRef.current = controller;
       let streamedText = "";
 
       createInlineAssistStream(
@@ -259,6 +276,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
       )
         .then((done) => {
           if (!done) throw new Error("AI 요약 완료 이벤트를 받지 못했습니다.");
+          if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
           setAiMessages((m) => {
             const next = [...m];
             next[next.length - 1] = { role: "ai", text: streamedText || "요약 결과가 비어 있습니다.", streaming: false };
@@ -268,6 +286,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         })
         .catch((error) => {
           if (controller.signal.aborted) return;
+          if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
           const message = error instanceof Error ? error.message : "AI 요약 요청에 실패했습니다.";
           setAiMessages((m) => {
             const next = [...m];
@@ -277,7 +296,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         });
 
       onAiRequestHandled?.();
-      return () => controller.abort();
+      return;
     }
 
     const answer = `다시쓰기 제안: "${preview}"를 더 간결하고 명확한 문장으로 다듬어 보세요. (Mock 응답)`;
@@ -291,11 +310,13 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
       });
       if (idx >= answer.length) {
         window.clearInterval(timer);
+        if (aiMockTimerRef.current === timer) aiMockTimerRef.current = null;
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }, 16);
+    aiMockTimerRef.current = timer;
     onAiRequestHandled?.();
-    return () => window.clearInterval(timer);
+    return;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAiRequest?.nonce]);
 
