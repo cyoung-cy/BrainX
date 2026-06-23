@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
+import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
@@ -19,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 @ConditionalOnProperty(prefix = "brainx.events.producer", name = "enabled", havingValue = "true")
-public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort {
+public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort {
 
     private static final String PRODUCER = "AI-Service";
     private static final int EVENT_VERSION = 1;
@@ -27,6 +28,8 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     private static final String TOKEN_USAGE_RECORDED_REQUESTED = "TokenUsageRecordedRequested";
     private static final String AI_SUGGESTION_CREATED = "AiSuggestionCreated";
     private static final String AI_SUGGESTION_DECISION_RECORDED = "AiSuggestionDecisionRecorded";
+    private static final String CHAT_THREAD_CREATED = "ChatThreadCreated";
+    private static final String CHAT_MESSAGE_CREATED = "ChatMessageCreated";
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -125,6 +128,47 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
             event.userId(),
             event.suggestionId(),
             event.suggestionId() + ":" + event.decision().name(),
+            payload
+        );
+    }
+
+    @Override
+    public void chatThreadCreated(ChatThreadCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("threadId", event.threadId());
+        payload.put("userId", event.userId());
+        payload.put("documentGroupId", DocumentGroups.normalize(event.documentGroupId()));
+        payload.put("modelId", event.modelId());
+        payload.put("title", event.title());
+        publish(
+            properties.getChatThreadCreatedTopic(),
+            event.userId(),
+            CHAT_THREAD_CREATED,
+            event.userId(),
+            null,
+            event.threadId(),
+            payload
+        );
+    }
+
+    @Override
+    public void chatMessageCreated(ChatMessageCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("threadId", event.threadId());
+        payload.put("messageId", event.messageId());
+        payload.put("userId", event.userId());
+        payload.put("documentGroupId", DocumentGroups.normalize(event.documentGroupId()));
+        payload.put("modelId", event.modelId());
+        payload.put("inputTokens", event.inputTokens());
+        payload.put("outputTokens", event.outputTokens());
+        payload.put("citationNoteIds", event.citationNoteIds());
+        publish(
+            properties.getChatMessageCreatedTopic(),
+            event.userId(),
+            CHAT_MESSAGE_CREATED,
+            event.userId(),
+            event.threadId(),
+            event.messageId(),
             payload
         );
     }

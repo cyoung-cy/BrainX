@@ -15,9 +15,9 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { Link2, Highlighter, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink } from "lucide-react";
+import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment, Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { typographyCssVars } from "@/lib/notes/typography";
@@ -31,6 +31,7 @@ import { WikiLink } from "./WikiLinkNode";
 import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
 import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
 import { useWikiLinkContext } from "./WikiLinkContext";
+import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
 // 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
 // Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
 // 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
@@ -43,13 +44,20 @@ import { lowlight } from "./lowlightSetup";
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
 
+const INLINE_REWRITE_CONTEXT_CHARS = 1000;
+
 /* ── Markdown → HTML (초기 로딩) ─────────────────────────────────────── */
 function escHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function inlineHtml(text: string) {
-  return text
+  return escHtml(text)
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, href: string) => {
+      const safeHref = href.replace(/"/g, "&quot;");
+      return `<a href="${safeHref}">${label}</a>`;
+    })
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -139,6 +147,151 @@ function resolveEditorHtml(rawContent: string): string {
   if (trimmed === "") return "";
   if (trimmed.startsWith("<")) return rawContent;
   return markdownToHtml(rawContent);
+}
+
+function markdownToEditorInsertionHtml(rawContent: string): string {
+  const trimmed = rawContent.trim();
+  if (trimmed === "") return "";
+  if (trimmed.startsWith("<")) return trimmed;
+  if (isInlineMarkdown(trimmed)) return inlineHtml(trimmed);
+  return markdownToHtml(trimmed);
+}
+
+function isInlineMarkdown(value: string) {
+  if (value.includes("\n")) return false;
+  return !/^(#{1,6}\s|>\s|([-*]|\d+\.)\s|```)/.test(value);
+}
+
+function escapeMarkdownText(text: string) {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/~/g, "\\~");
+}
+
+function escapeMarkdownCode(text: string) {
+  return text.replace(/`/g, "\\`");
+}
+
+function escapeMarkdownLinkUrl(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function serializeRangeAsMarkdown(editor: Editor, range: { from: number; to: number }) {
+  return serializeFragmentAsMarkdown(editor.state.doc.slice(range.from, range.to).content).trim();
+}
+
+function serializeFragmentAsMarkdown(fragment: Fragment, depth = 0) {
+  const blocks: string[] = [];
+  fragment.forEach((node) => {
+    const serialized = serializeNodeAsMarkdown(node, depth).trimEnd();
+    if (serialized.trim()) blocks.push(serialized);
+  });
+  return blocks.join("\n\n");
+}
+
+function serializeNodeAsMarkdown(node: ProseMirrorNode, depth = 0): string {
+  switch (node.type.name) {
+    case "paragraph":
+      return serializeInlineContent(node);
+    case "heading": {
+      const level = Math.min(6, Math.max(1, Number(node.attrs.level ?? 1)));
+      return `${"#".repeat(level)} ${serializeInlineContent(node)}`;
+    }
+    case "blockquote":
+      return serializeFragmentAsMarkdown(node.content, depth)
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+    case "bulletList":
+      return serializeListAsMarkdown(node, false, depth);
+    case "orderedList":
+      return serializeListAsMarkdown(node, true, depth);
+    case "listItem":
+      return serializeListItemAsMarkdown(node, "- ", depth);
+    case "codeBlock": {
+      const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+      return `\`\`\`${language}\n${node.textContent}\n\`\`\``;
+    }
+    case "horizontalRule":
+      return "---";
+    case "image": {
+      const alt = typeof node.attrs.alt === "string" ? escapeMarkdownText(node.attrs.alt) : "";
+      const src = typeof node.attrs.src === "string" ? escapeMarkdownLinkUrl(node.attrs.src) : "";
+      return src ? `![${alt}](${src})` : alt;
+    }
+    default:
+      if (node.isText) return serializeMarkedText(node.text ?? "", node.marks);
+      if (node.isTextblock) return serializeInlineContent(node);
+      if (node.isLeaf) return node.textContent ? escapeMarkdownText(node.textContent) : "";
+      return serializeFragmentAsMarkdown(node.content, depth);
+  }
+}
+
+function serializeInlineContent(node: ProseMirrorNode) {
+  let output = "";
+  node.forEach((child) => {
+    if (child.isText) {
+      output += serializeMarkedText(child.text ?? "", child.marks);
+    } else if (child.type.name === "hardBreak") {
+      output += "\n";
+    } else if (child.type.name === "image") {
+      output += serializeNodeAsMarkdown(child);
+    } else {
+      output += child.textContent ? escapeMarkdownText(child.textContent) : "";
+    }
+  });
+  return output;
+}
+
+function serializeMarkedText(text: string, marks: readonly Mark[]) {
+  if (!text) return "";
+  const codeMark = marks.find((mark) => mark.type.name === "code");
+  let output = codeMark ? `\`${escapeMarkdownCode(text)}\`` : escapeMarkdownText(text);
+
+  for (const mark of marks) {
+    if (mark.type.name === "code") continue;
+    if (mark.type.name === "bold") output = `**${output}**`;
+    else if (mark.type.name === "italic") output = `*${output}*`;
+    else if (mark.type.name === "strike") output = `~~${output}~~`;
+    else if (mark.type.name === "link" && typeof mark.attrs.href === "string") {
+      output = `[${output}](${escapeMarkdownLinkUrl(mark.attrs.href)})`;
+    }
+  }
+  return output;
+}
+
+function serializeListAsMarkdown(node: ProseMirrorNode, ordered: boolean, depth: number) {
+  const items: string[] = [];
+  let number = Number(node.attrs.start ?? 1);
+  node.forEach((child) => {
+    if (child.type.name !== "listItem") return;
+    const marker = ordered ? `${number}. ` : "- ";
+    items.push(serializeListItemAsMarkdown(child, marker, depth));
+    number += 1;
+  });
+  return items.join("\n");
+}
+
+function serializeListItemAsMarkdown(node: ProseMirrorNode, marker: string, depth: number) {
+  const indent = "  ".repeat(depth);
+  const childBlocks: string[] = [];
+  node.forEach((child) => {
+    if (child.type.name === "paragraph") childBlocks.push(serializeInlineContent(child));
+    else childBlocks.push(serializeNodeAsMarkdown(child, depth + 1));
+  });
+
+  const [first = "", ...rest] = childBlocks.filter((block) => block.trim());
+  const continuation = `${indent}${" ".repeat(marker.length)}`;
+  const lines = [`${indent}${marker}${first}`];
+  for (const block of rest) {
+    lines.push(...block.split("\n").map((line) => `${continuation}${line}`));
+  }
+  return lines.join("\n");
 }
 
 /* ── Obsidian Live Preview ────────────────────────────────────────────── */
@@ -636,11 +789,13 @@ function BubbleBtn({
   onClick,
   title,
   children,
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -648,9 +803,14 @@ function BubbleBtn({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={cx(
         "grid h-[26px] min-w-[26px] place-items-center rounded px-1 transition-colors",
-        active ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+        disabled
+          ? "cursor-not-allowed text-txt3/50"
+          : active
+            ? "bg-primary/15 text-primary"
+            : "text-txt2 hover:bg-surface2/70 hover:text-txt"
       )}
     >
       {children}
@@ -976,12 +1136,85 @@ function LinkPopover({
   );
 }
 
+type RewriteRange = {
+  from: number;
+  to: number;
+};
+
+type RewriteSuggestionState =
+  | {
+      status: "loading";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+    }
+  | {
+      status: "ready";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      suggestionId: string;
+      modelId: string;
+    }
+  | {
+      status: "error";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      message: string;
+      suggestionId?: string;
+    };
+
+function selectedText(editor: Editor, range: RewriteRange) {
+  return editor.state.doc.textBetween(range.from, range.to, " ");
+}
+
+function inlineContext(editor: Editor, range: RewriteRange) {
+  const docSize = editor.state.doc.content.size;
+  return {
+    contextBefore: serializeRangeAsMarkdown(editor, {
+      from: Math.max(0, range.from - INLINE_REWRITE_CONTEXT_CHARS),
+      to: range.from,
+    }),
+    contextAfter: serializeRangeAsMarkdown(editor, {
+      from: range.to,
+      to: Math.min(docSize, range.to + INLINE_REWRITE_CONTEXT_CHARS),
+    }),
+  };
+}
+
+function insertMarkdownContent(editor: Editor, range: RewriteRange, text: string) {
+  editor
+    .chain()
+    .focus()
+    .insertContentAt({ from: range.from, to: range.to }, markdownToEditorInsertionHtml(text))
+    .run();
+}
+
+function messageFromUnknown(error: unknown) {
+  return error instanceof Error ? error.message : "AI 다시쓰기 요청에 실패했습니다.";
+}
+
 function BubbleToolbar({
   editor,
+  noteId,
   onAiAction,
   popoverOpenRef,
 }: {
   editor: Editor;
+  noteId: string;
   onAiAction: (type: AiActionType, text: string) => void;
   popoverOpenRef: React.MutableRefObject<boolean>;
 }) {
@@ -990,12 +1223,166 @@ function BubbleToolbar({
     return editor.state.doc.textBetween(from, to, " ");
   }, [editor]);
 
+  const [rewriteSuggestion, setRewriteSuggestion] = useState<RewriteSuggestionState | null>(null);
+  const rewriteRequestIdRef = useRef(0);
+  const rewriteAbortRef = useRef<AbortController | null>(null);
+  const rewritePanelOpen = rewriteSuggestion !== null;
+
+  useEffect(() => {
+    if (!rewritePanelOpen) return;
+    popoverOpenRef.current = true;
+    return () => { popoverOpenRef.current = false; };
+  }, [rewritePanelOpen, popoverOpenRef]);
+
+  useEffect(() => {
+    return () => rewriteAbortRef.current?.abort();
+  }, []);
+
+  const requestRewrite = useCallback(async (saved?: RewriteSuggestionState) => {
+    const range = saved?.range ?? { from: editor.state.selection.from, to: editor.state.selection.to };
+    if (range.from === range.to) return;
+
+    const originalPlainText = saved?.originalPlainText ?? selectedText(editor, range);
+    if (!originalPlainText.trim()) return;
+
+    const selectedMarkdown = saved?.selectedMarkdown ?? (serializeRangeAsMarkdown(editor, range) || originalPlainText);
+
+    const context = saved
+      ? { contextBefore: saved.contextBefore, contextAfter: saved.contextAfter }
+      : inlineContext(editor, range);
+    const requestId = rewriteRequestIdRef.current + 1;
+    rewriteRequestIdRef.current = requestId;
+    rewriteAbortRef.current?.abort();
+    const controller = new AbortController();
+    rewriteAbortRef.current = controller;
+
+    setRewriteSuggestion({
+      status: "loading",
+      requestId,
+      range,
+      originalPlainText,
+      selectedMarkdown,
+      contextBefore: context.contextBefore,
+      contextAfter: context.contextAfter,
+      text: "",
+    });
+
+    let streamedText = "";
+    try {
+      const done = await createInlineAssistStream(
+        {
+          noteId,
+          selectedText: selectedMarkdown,
+          contextBefore: context.contextBefore,
+          contextAfter: context.contextAfter,
+          action: "REWRITE",
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (text) => {
+            streamedText += text;
+            setRewriteSuggestion((current) =>
+              current?.requestId === requestId
+                ? { ...current, status: "loading", text: streamedText }
+                : current
+            );
+          },
+        }
+      );
+      if (!done) throw new Error("AI 다시쓰기 완료 이벤트를 받지 못했습니다.");
+
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "ready",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              suggestionId: done.suggestionId,
+              modelId: done.modelId,
+            }
+          : current
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "error",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              message: messageFromUnknown(error),
+            }
+          : current
+      );
+    }
+  }, [editor, noteId]);
+
+  const acceptRewrite = useCallback(async () => {
+    if (!rewriteSuggestion || rewriteSuggestion.status !== "ready") return;
+    const currentText = selectedText(editor, rewriteSuggestion.range);
+    if (currentText !== rewriteSuggestion.originalPlainText) {
+      setRewriteSuggestion({
+        ...rewriteSuggestion,
+        status: "error",
+        message: "선택 영역이 변경되어 제안을 적용할 수 없습니다.",
+        suggestionId: rewriteSuggestion.suggestionId,
+      });
+      return;
+    }
+
+    insertMarkdownContent(editor, rewriteSuggestion.range, rewriteSuggestion.text);
+    setRewriteSuggestion(null);
+    decideAiSuggestion(rewriteSuggestion.suggestionId, { decision: "ACCEPTED" }).catch((error) => {
+      console.warn("Failed to record accepted AI suggestion.", error);
+    });
+  }, [editor, rewriteSuggestion]);
+
+  const rejectRewrite = useCallback(() => {
+    const suggestionId = rewriteSuggestion?.status === "ready" || rewriteSuggestion?.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    setRewriteSuggestion(null);
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REJECTED" }).catch((error) => {
+        console.warn("Failed to record rejected AI suggestion.", error);
+      });
+    }
+  }, [rewriteSuggestion]);
+
+  const regenerateRewrite = useCallback(() => {
+    if (!rewriteSuggestion) return;
+    const suggestionId = rewriteSuggestion.status === "ready" || rewriteSuggestion.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REGENERATED" }).catch((error) => {
+        console.warn("Failed to record regenerated AI suggestion.", error);
+      });
+    }
+    void requestRewrite(rewriteSuggestion);
+  }, [requestRewrite, rewriteSuggestion]);
+
   const [recentTextColors, setRecentTextColors] = useState<string[]>([]);
   const [recentHighlights, setRecentHighlights] = useState<string[]>([]);
   const pushRecent = (list: string[], value: string) => [value, ...list.filter((v) => v !== value)].slice(0, 4);
 
   const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
   const currentHighlight = (editor.getAttributes("highlight").color as string) ?? null;
+  const rewritePreviewHtml =
+    rewriteSuggestion && rewriteSuggestion.status !== "error" && rewriteSuggestion.text.trim()
+      ? markdownToHtml(rewriteSuggestion.text)
+      : null;
 
   return (
     <div
@@ -1098,13 +1485,82 @@ function BubbleToolbar({
       >
         <Sparkles size={13} />
       </BubbleBtn>
-      <BubbleBtn
-        active={false}
-        onClick={() => onAiAction("rewrite", getSelectedText())}
-        title="AI로 다시쓰기"
-      >
-        <Wand2 size={13} />
-      </BubbleBtn>
+      <div className="relative">
+        <BubbleBtn
+          active={rewritePanelOpen}
+          disabled={rewriteSuggestion?.status === "loading"}
+          onClick={() => void requestRewrite()}
+          title="AI로 다시쓰기"
+        >
+          {rewriteSuggestion?.status === "loading" ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+        </BubbleBtn>
+        {rewriteSuggestion ? (
+          <div
+            className="absolute right-0 top-full z-50 mt-1.5 w-[320px] overflow-hidden rounded-lg border border-line/60 p-2.5"
+            style={{ background: "rgb(var(--surface))", boxShadow: "0 10px 28px -6px rgba(2,6,23,0.48)" }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[11.5px] font-semibold text-txt2">
+              <Wand2 size={13} className="text-primary" />
+              <span className="flex-1">AI 다시쓰기 제안</span>
+              {rewriteSuggestion.status === "ready" ? (
+                <span className="rounded bg-surface2/70 px-1.5 py-0.5 text-[10.5px] text-txt3">{rewriteSuggestion.modelId}</span>
+              ) : null}
+            </div>
+            <div className="max-h-44 overflow-y-auto rounded-md border border-line/40 bg-surface2/30 px-2.5 py-2 text-[12.5px] leading-relaxed text-txt2">
+              {rewriteSuggestion.status === "error" ? (
+                <span className="text-red-400">{rewriteSuggestion.message}</span>
+              ) : rewritePreviewHtml ? (
+                <div className="tiptap-note-content" dangerouslySetInnerHTML={{ __html: rewritePreviewHtml }} />
+              ) : (
+                <span className="text-txt3">다시 쓰는 중...</span>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              {rewriteSuggestion.status === "ready" ? (
+                <>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={regenerateRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="다시 생성"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={rejectRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="거절"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void acceptRewrite()}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:brightness-110"
+                  >
+                    <Check size={13} />
+                    수락
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={rejectRewrite}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-semibold text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                >
+                  <X size={13} />
+                  닫기
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1490,7 +1946,15 @@ function rangeToAnchorRect(range: Range): { left: number; top: number; bottom: n
   return null;
 }
 
-function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: (type: AiActionType, text: string) => void }) {
+function CustomBubbleMenu({
+  editor,
+  noteId,
+  onAiAction,
+}: {
+  editor: Editor;
+  noteId: string;
+  onAiAction: (type: AiActionType, text: string) => void;
+}) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number; bottom: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -1647,7 +2111,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         zIndex: 2000,
       }}
     >
-      <BubbleToolbar editor={editor} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
+      <BubbleToolbar editor={editor} noteId={noteId} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
     </div>,
     document.body
   );
@@ -1913,7 +2377,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           event.target.value = "";
         }}
       />
-      {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
+      {editor && <CustomBubbleMenu editor={editor} noteId={note.id} onAiAction={onAiAction} />}
       {editor && <TableToolbar editor={editor} />}
       {editor && <WikiLinkAutocomplete editor={editor} />}
       {editor && contextMenu && (
