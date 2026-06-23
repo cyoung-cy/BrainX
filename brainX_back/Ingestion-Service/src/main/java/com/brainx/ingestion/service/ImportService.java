@@ -89,6 +89,10 @@ public class ImportService {
         }
 
         // 실제 Notion API로 code → access_token 교환
+        log.info("Notion 토큰 교환 시도: redirectUri={}, codeLen={}, codePrefix={}",
+                account.getRedirectUri(),
+                request.getCode() == null ? -1 : request.getCode().length(),
+                request.getCode() == null ? "null" : request.getCode().substring(0, Math.min(8, request.getCode().length())));
         NotionTokenResult token = notionApiService.exchangeToken(
                 request.getCode(), account.getRedirectUri());
 

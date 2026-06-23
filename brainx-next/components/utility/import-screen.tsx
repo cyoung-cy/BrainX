@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { cx, createId } from "@/lib/utils";
 
@@ -21,8 +22,6 @@ import {
   type NotionIntegration,
   type NotionPage
 } from "@/lib/ingestion-api";
-import { getNote } from "@/lib/workspace-api";
-import { addImportedNote, NOTION_IMPORTED_FOLDER_LABEL, type NoteData } from "@/components/editor-lab/brainx-note-demo/mockData";
 
 type ImportedNote = {
   id: string;
@@ -53,6 +52,7 @@ const IMPORT_HISTORY: ImportJob[] = [
 
 export function ImportScreen() {
   const { pushToast } = useBrainX();
+  const router = useRouter();
   const [tab, setTab] = useState<"browse" | "done">("browse");
   const [dragOver, setDragOver] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -189,38 +189,21 @@ export function ImportScreen() {
         { id: createId("job"), source: `Notion · ${page.title}`, files: "1개 페이지", status: "완료", when: "방금" },
         ...current.slice(0, 4)
       ]);
-      setImportedNotionNotes((current) => [{ id: createId("note"), title: page.title }, ...current]);
       pushToast(`${page.title} 가져오기를 완료했어요`, "ok");
 
       try {
         const jobStatus = await getImportJobStatus(result.importJobId);
         const noteIds = jobStatus.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
-        let addedCount = 0;
-        for (const noteId of noteIds) {
-          const note = await getNote(noteId);
-          const demoNote: NoteData = {
-            id: note.noteId,
-            title: note.title,
-            folder: NOTION_IMPORTED_FOLDER_LABEL,
-            tags: note.tags.length ? note.tags : ["notion"],
-            aliases: [],
-            status: "active",
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            content: note.markdown,
-            backlinks: [],
-            outgoingLinks: [],
-            aiSummary: "",
-            aiSuggestions: []
-          };
-          addImportedNote(demoNote);
-          addedCount += 1;
-        }
-        if (addedCount > 0) {
-          pushToast(`노트 ${addedCount}개를 노트 데모에서도 볼 수 있어요`, "ok");
+        if (noteIds.length > 0) {
+          setImportedNotionNotes((current) => [
+            ...noteIds.map((noteId) => ({ id: noteId, title: page.title })),
+            ...current
+          ]);
+          pushToast(`노트 ${noteIds.length}개를 /notes에서 확인할 수 있어요`, "ok");
+          router.push(`/notes/${noteIds[0]}`);
         }
       } catch (error) {
-        pushToast(error instanceof Error ? error.message : "노트 데모에 추가하지 못했습니다.", "err");
+        pushToast(error instanceof Error ? error.message : "가져온 노트를 확인하지 못했습니다.", "err");
       }
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Notion 가져오기에 실패했습니다.", "err");
@@ -337,10 +320,15 @@ export function ImportScreen() {
                     <div className="mb-1.5 text-[12px] font-semibold text-txt3">가져온 노트</div>
                     <div className="space-y-1.5">
                       {importedNotionNotes.map((note) => (
-                        <div key={note.id} className="flex items-center gap-2 rounded-lg bg-surface/40 px-3 py-1.5">
+                        <button
+                          key={note.id}
+                          type="button"
+                          onClick={() => router.push(`/notes/${note.id}`)}
+                          className="flex w-full items-center gap-2 rounded-lg bg-surface/40 px-3 py-1.5 text-left transition-colors hover:bg-surface/70"
+                        >
                           <Icon name="check" size={14} className="shrink-0 text-cyan" />
                           <span className="min-w-0 flex-1 truncate text-[13px] text-txt2">{note.title}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>

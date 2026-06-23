@@ -430,6 +430,7 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
   - Import job이 SSOT 계약상 async이나 현재 동기 처리 중. Kafka 이벤트(ImportJobRequested, ImportJobCompleted, IntegrationConnected) 미발행.
   - 노트 생성이 `bulkCreateNotesInternal` 대신 신규 `Workspace-Service`의 `POST /api/v1/notes`를 직접 호출 중 (구 `knowledge-workspace-service`가 아님). 정식 internal API 전환 필요.
   - `brainx-next` import 화면은 `lib/ingestion-api.ts`로 실제 API와 연동되어 있습니다 (더 이상 mock 아님). Notion OAuth는 팝업 + `postMessage` 방식.
+  - **(2026-06-23 수정)** Notion 가져오기 완료 후 노트가 `/editor-lab`(테스트 전용 데모)에만 추가되고 실제 `/notes` 화면에는 보이지 않던 배선 문제를 고쳤습니다. `components/utility/import-screen.tsx`가 가져온 노트를 `/notes/{noteId}`로 바로 라우팅하도록 변경했고, `app/(app)/notes/layout.tsx`의 초기 탭 판별 로직이 mock 시드 데이터(`getNoteById`)에만 의존하던 것을 `NEXT_PUBLIC_NOTES_USE_MOCK=false`(실 백엔드 모드)에서는 URL의 noteId를 그대로 신뢰하도록 고쳐, `NotesWorkspace`의 `listNotes()` 결과로 막 가져온 노트도 정상적으로 열립니다.
   - **TEMP**: 실제 로그인 연동 전까지 `/api/v1/imports/notion/**`, `/api/v1/imports/{importJobId}`(GET)를 인증 없이 허용하고(`SecurityConfig` permitAll), 인증이 없으면 고정 `dev-test-user`로 동작하도록 임시 우회되어 있습니다. 코드에 `TEMP` 주석으로 표시. 실제 로그인 연동 완료 후 제거 필요.
 - **Workspace-Service**: `POST /api/v1/notes`, `GET /api/v1/notes/{noteId}`도 위와 동일한 사유로 임시 인증 우회(`CurrentUser`가 인증 없으면 `dev-test-user` 반환) 적용 중. 같은 이유로 추후 제거 필요.
 - **Commerce-Service (신규, 2026-06-19 추가)**:
