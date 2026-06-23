@@ -51,6 +51,7 @@ BrainX/
 ├─ brainX_front/          # 이전 Vite/React 프론트엔드 실험 코드
 ├─ brainX_back/           # Spring Boot MSA 백엔드 워크스페이스
 │  ├─ User-Service/       # 인증/사용자 서비스 (포트 8080)
+│  ├─ Gateway-Service/    # 프론트 단일 진입점/API 라우팅 서비스 (포트 8088)
 │  ├─ Ingestion-Service/  # 가져오기/내보내기 서비스 (포트 8083) — 구현 중
 │  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
 │  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
@@ -265,6 +266,7 @@ API와 이벤트 계약의 기준은 `contracts-v2`입니다.
 ```powershell
 cd C:\Edu\Final\BrainX\brainX_back
 Copy-Item .env.example .env
+Copy-Item .\env\gateway-service.env.example .\env\gateway-service.env
 Copy-Item .\env\user-service.env.example .\env\user-service.env
 Copy-Item .\env\workspace-service.env.example .\env\workspace-service.env
 Copy-Item .\env\ingestion-service.env.example .\env\ingestion-service.env
@@ -282,19 +284,20 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build
 ```
 
-`apps` 프로필은 `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084)를 모두 실행합니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
+`apps` 프로필은 `Gateway-Service`(8088), `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084)를 모두 실행합니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
 
 각 서비스는 자기 폴더 기준으로 실행하면 아래 파일을 자동으로 읽습니다.
 
 | Service | 자동 import |
 | --- | --- |
+| Gateway-Service | `../.env`, `../env/gateway-service.env` |
 | User-Service | `../.env`, `../env/user-service.env` |
 | Workspace-Service | Docker 실행 시 `env/workspace-service.env`; 로컬 IDE 실행 시 동일한 값을 Run Configuration에 지정 |
 | Ingestion-Service | `../.env`, `../env/ingestion-service.env` |
 | Commerce-Service | `../.env`, `../env/commerce-service.env` |
 
-`JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. `DB_URL`처럼 서비스마다 달라지는 값만 `env/{service}.env`에 둡니다. 같은 이름의 값이 있으면 서비스별 env 파일 값이 우선합니다.
-Docker Compose로 앱을 실행할 때는 각 서비스의 `DB_URL`을 컨테이너 네트워크용 주소인 `postgres:5432`로 자동 덮어씁니다. 그래서 `env/{service}.env`의 `localhost:5432` 값은 로컬 Gradle/IDE 실행용으로 유지해도 됩니다.
+`JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`으로 관리합니다.
+Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=postgres`를 자동으로 덮어씁니다. 로컬 Gradle/IDE 실행은 `.env`의 `POSTGRES_HOST=localhost`를 그대로 사용합니다.
 
 기본 DB 접속 정보:
 
@@ -305,7 +308,40 @@ Docker Compose로 앱을 실행할 때는 각 서비스의 `DB_URL`을 컨테이
 | Ingestion-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_ingestion` |
 | Commerce-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_commerce` |
 
-DB 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 여러 백엔드를 IDE에서 동시에 실행할 때도 서비스별로 달라지는 값은 `DB_URL`만 보면 됩니다.
+DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
+
+### Backend: Gateway-Service (포트 8088)
+
+프론트가 바라보는 단일 API 진입점입니다. Docker Compose 내부에서는 서비스명으로 라우팅합니다.
+
+| Path | Target |
+| --- | --- |
+| `/api/v1/auth/**`, `/api/v1/users/**`, `/api/v1/support/**` | User-Service |
+| `/api/v1/notes/**`, `/api/v1/folders/**`, `/api/v1/graph/**`, `/api/v1/share-links/**` | Workspace-Service |
+| `/api/v1/imports/**`, `/api/v1/exports/**`, `/v1/publish-jobs/**` | Ingestion-Service |
+| `/api/v1/plans/**`, `/api/v1/subscriptions/**`, `/api/v1/users/me/subscription` | Commerce-Service |
+
+Gateway는 보호 API에 대해 `Authorization: Bearer <access-token>`을 검증하고, 통과한 요청에 내부 식별 헤더를 추가합니다.
+
+| 구분 | Path |
+| --- | --- |
+| 공개 | `OPTIONS /**`, `/actuator/health`, `/actuator/info`, `/api/v1/auth/**`, `/api/v1/plans`, `/api/v1/plans/**` |
+| 보호 | 위 공개 경로를 제외한 모든 Gateway 라우팅 경로 |
+
+검증 성공 시 내부 서비스로 전달되는 헤더:
+
+| Header | Value |
+| --- | --- |
+| `X-User-Id` | JWT `sub` |
+| `X-User-Email` | JWT `email` |
+| `X-User-Role` | JWT `role` |
+
+클라이언트가 임의로 보낸 `X-User-*` 헤더는 Gateway에서 제거한 뒤 JWT 클레임 기준으로 다시 설정합니다. 로그인/회원가입/OAuth 콜백은 JWT가 아직 없으므로 `/api/v1/auth/**` 공개 경로로 유지합니다.
+
+```powershell
+cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
+.\gradlew.bat bootRun
+```
 
 ### Frontend
 

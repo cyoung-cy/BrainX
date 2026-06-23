@@ -9,7 +9,7 @@ spring:
   application:
     name: Workspace-Service
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/brainx_workspace}
+    url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${WORKSPACE_DB_NAME:brainx_workspace}}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
