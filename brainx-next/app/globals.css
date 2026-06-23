@@ -790,6 +790,44 @@ html.light .aurora b {
   background: rgb(var(--primary) / 0.12);
 }
 
+/* 표 테두리/래퍼 클릭으로 표 전체가 NodeSelection으로 선택됐을 때(NoteEditor.tsx의
+   handleClickOn/BrainXTableView.selectNode) — 셀 단위 선택(.selectedCell)과 구분되는
+   표 전체 outline. */
+.tiptap-note-content .ProseMirror table.note-table[data-node-selected="true"] {
+  outline: 2px solid rgb(var(--primary));
+  outline-offset: 2px;
+}
+
+/* 표 전체 선택용 그립(BrainXTableView) — border-collapse라 표 안에는 "셀이 아닌" 픽셀이
+   없어서 테두리 자체를 클릭 타겟으로 쓸 수 없다. 좌상단 바깥에 작게 떠 있다가 표에 마우스를
+   올리면(또는 이미 선택된 상태면) 보이고, 클릭하면 표 전체가 NodeSelection으로 선택된다. */
+.tiptap-note-content .ProseMirror .note-table-grip {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid rgb(var(--border) / 0.6);
+  background: rgb(var(--surface));
+  color: rgb(var(--txt3));
+  opacity: 0;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+.tiptap-note-content .ProseMirror .tableWrapper:hover .note-table-grip,
+.tiptap-note-content .ProseMirror table.note-table[data-node-selected="true"] ~ .note-table-grip {
+  opacity: 1;
+}
+.tiptap-note-content .ProseMirror .note-table-grip:hover {
+  color: rgb(var(--primary));
+  border-color: rgb(var(--primary) / 0.6);
+}
+
 .tiptap-note-content .ProseMirror table.note-table .column-resize-handle {
   position: absolute;
   right: -2px;

@@ -41,6 +41,7 @@ interface Props {
   onAddNoteTab: (noteId: string, targetIndex?: number) => void;
   onReorderTab: (tabId: string, targetIndex: number) => void;
   onMoveTabToPane: (sourcePaneId: string, sourceTabId: string, noteId: string, targetIndex?: number) => void;
+  onMoveTabToSplit: (sourcePaneId: string, sourceTabId: string, noteId: string, zone: DropZone) => void;
   onTabDragStart: (tabId: string, noteId: string) => void;
   onTabDragEnd: () => void;
   onCloseOtherTabs: (tabId: string) => void;
@@ -80,6 +81,7 @@ export default function EditorPanel({
   onAddNoteTab,
   onReorderTab,
   onMoveTabToPane,
+  onMoveTabToSplit,
   onTabDragStart,
   onTabDragEnd,
   onCloseOtherTabs,
@@ -186,10 +188,10 @@ export default function EditorPanel({
   }
 
   const isEdit = mode === "edit";
-  /* "교체"는 이 패널이 비어있을 때만 적용된다 — 빈 시작 화면(start 탭)뿐 아니라, "+"로 막 생성된
-     본문이 비어있는 노트 탭(kind는 "note"지만 content==="")도 "빈 탭"으로 취급한다. 실제 내용이
+  /* "교체"는 이 패널이 비어있을 때만 적용된다 — 노트를 찾을 수 없는 경우(삭제된 노트 등)뿐 아니라,
+     "+"로 막 생성된 본문이 비어있는 노트 탭(content==="")도 "빈 탭"으로 취급한다. 실제 내용이
      있는 노트가 열려 있으면 항상 기존처럼 좌/우/상/하 분할(zone) 동작을 유지한다. */
-  const isEmptyTarget = activeTab.kind === "start" || !note || note.content.trim() === "";
+  const isEmptyTarget = !note || note.content.trim() === "";
 
   return (
     <div
@@ -229,8 +231,10 @@ export default function EditorPanel({
         onSplitTabDown={onSplitTabDown}
       />
 
-      {/* ── 콘텐츠 */}
-      {activeTab.kind === "start" || !note ? (
+      {/* ── 콘텐츠 — 탭이 가리키는 노트를 찾을 수 없을 때(삭제된 노트 등)는 복구용으로
+          Welcome 화면과 동일한 컴포넌트를 보여준다. 탭이 0개인 진짜 Welcome 상태는
+          NotesWorkspace 최상위에서 처리하므로 여기서는 일어나지 않는다. */}
+      {!note ? (
         // QuickSwitcher가 떠 있을 때는 그 뒤로 Welcome Screen의 버튼이 반투명 배경을 통해
         // 겹쳐 보이지 않도록 숨긴다(두 기능이 동시에 보이는 것처럼 느껴지는 문제 방지)
         !quickSwitcherOpen && (
@@ -253,9 +257,13 @@ export default function EditorPanel({
               좌측 정렬(.ProseMirror 기본값)이고, 이 wrapper의 좌우 여백만 중앙 정렬된다. 분할
               패널에서도 각 패널이 독립적으로 이 wrapper를 가지므로 패널마다 동일하게 적용되고,
               패널이 max-w보다 좁아지면 mx-auto가 더 이상 여백을 만들지 않아 자연스럽게
-              반응형으로 줄어든다(별도 미디어 쿼리 불필요 — 패널 자체 폭 기준으로 줄어듦). */}
+              반응형으로 줄어든다(별도 미디어 쿼리 불필요 — 패널 자체 폭 기준으로 줄어듦).
+              max-w-3xl(768px)은 분할 안 한 일반적인 패널 폭과 비교해 상대적으로 넓어서 좌우
+              여백이 작게 나와 "중앙 정렬된 느낌"이 약했다 — 680px로 좁혀 같은 패널 폭에서도
+              여백이 더 분명하게 느껴지도록 조정했다. 제목/태그/본문이 이 wrapper 하나를 공유하므로
+              셋 다 항상 같은 컬럼 기준을 따른다. */}
           <div
-            className="mx-auto max-w-3xl px-8 py-7"
+            className="mx-auto max-w-[680px] px-8 py-7"
             onClick={(e) => {
               if (isEdit && e.target === e.currentTarget) editorRef.current?.focusEnd();
             }}
@@ -378,7 +386,13 @@ export default function EditorPanel({
               }
             } else {
               const zone = getZone(e);
-              onDrop(zone, dragPayload.noteId);
+              if (dragPayload.kind === "tab") {
+                // 탭을 다른(비어있지 않은) 패널의 본문에 드롭 → 새 분할을 만들면서 원본 패널에서는
+                // 제거한다(이동, 복제 아님). 사이드바 노트 드래그는 그대로 onDrop(복제=새로 열기) 유지.
+                onMoveTabToSplit(dragPayload.paneId, dragPayload.tabId, dragPayload.noteId, zone);
+              } else {
+                onDrop(zone, dragPayload.noteId);
+              }
             }
           }}
         >

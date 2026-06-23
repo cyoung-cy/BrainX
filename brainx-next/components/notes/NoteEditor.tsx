@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import { Extension, textblockTypeInputRule } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, EditorView } from "@tiptap/pm/view";
@@ -1137,6 +1137,9 @@ function BubbleToolbar({
    재발하기 쉽다. 모든 인스턴스가 이 단일 배열을 공유하도록 모듈 스코프에 한 번만
    정의한다. (link/underline은 StarterKit 내장분만 사용) */
 class BrainXTableView extends TableView {
+  private editorView?: EditorView;
+  private gripHandle: HTMLButtonElement;
+
   constructor(
     node: ProseMirrorNode,
     cellMinWidth: number,
@@ -1147,13 +1150,66 @@ class BrainXTableView extends TableView {
     // columnResizing plugin은 View 생성 시 extension의 HTMLAttributes를 넘기지 않는다.
     // 표 스타일 계약이 리사이즈 활성화 여부에 따라 사라지지 않도록 NodeView가 직접 보장한다.
     this.table.classList.add("note-table");
+    this.editorView = view;
     this.syncDisplayAttributes(node);
+
+    // 표 전체 선택용 그립 핸들 — border-collapse라 표 안에는 셀이 아닌 픽셀이 없어서("표
+    // 테두리"가 시각적으로만 존재하고 실제로는 항상 어떤 셀의 border) 테두리를 직접 클릭하는
+    // 방식은 신뢰할 수 없다(실측: 클릭 좌표가 항상 셀로 hit-test됨). 대신 Notion처럼 표
+    // 좌상단에 hover 시 나타나는 작은 그립을 두고, 클릭 시 그 좌표 아래의 표를 찾아
+    // NodeSelection으로 선택한다 — TableToolbar의 updateAnchor와 동일한 "좌표 → posAtCoords →
+    // 조상에서 table 탐색" 패턴을 재사용한다.
+    this.gripHandle = document.createElement("button");
+    this.gripHandle.type = "button";
+    this.gripHandle.contentEditable = "false";
+    this.gripHandle.title = "표 전체 선택";
+    this.gripHandle.className = "note-table-grip";
+    this.gripHandle.innerHTML =
+      '<svg width="9" height="9" viewBox="0 0 9 9" fill="none"><circle cx="1.5" cy="1.5" r="1.2" fill="currentColor"/><circle cx="7.5" cy="1.5" r="1.2" fill="currentColor"/><circle cx="1.5" cy="7.5" r="1.2" fill="currentColor"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg>';
+    this.gripHandle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const ev = this.editorView;
+      if (!ev) return;
+      // 그립이 표 모서리 바로 바깥에 떠 있어 클릭 좌표 자체로 hit-test하면 표 밖(앞 문단)으로
+      // 잡힐 수 있다 — 항상 표 영역 안쪽의 한 점(좌상단에서 4px 들어간 지점)을 기준으로
+      // posAtCoords를 조회해 어떤 표인지를 신뢰성 있게 찾는다.
+      const rect = this.table.getBoundingClientRect();
+      const coords = ev.posAtCoords({ left: rect.left + 4, top: rect.top + 4 });
+      if (!coords) return;
+      const $pos = ev.state.doc.resolve(coords.pos);
+      for (let d = $pos.depth; d >= 0; d--) {
+        if ($pos.node(d).type.name === "table") {
+          const tablePos = $pos.before(d);
+          ev.dispatch(ev.state.tr.setSelection(NodeSelection.create(ev.state.doc, tablePos)));
+          ev.focus();
+          break;
+        }
+      }
+    });
+    this.dom.style.position = "relative";
+    this.dom.appendChild(this.gripHandle);
   }
 
   update(node: ProseMirrorNode) {
     const updated = super.update(node);
     if (updated) this.syncDisplayAttributes(node);
     return updated;
+  }
+
+  /* 표 전체가 NodeSelection으로 선택되면(그립 클릭) PM이 호출 — outline으로 표시한다.
+     Backspace/Delete는 별도 키맵 없이 tiptap 기본 Keymap의 deleteSelection이 처리한다(NodeSelection은
+     selection.empty가 false라 deleteSelection이 그대로 표 노드를 지운다). */
+  selectNode() {
+    this.table.dataset.nodeSelected = "true";
+  }
+
+  deselectNode() {
+    delete this.table.dataset.nodeSelected;
+  }
+
+  destroy() {
+    this.gripHandle.remove();
   }
 
   private syncDisplayAttributes(node: ProseMirrorNode) {
@@ -1232,6 +1288,11 @@ const BrainXTable = Table.extend({
   resizable: true,
   View: BrainXTableView,
   HTMLAttributes: { class: "note-table" },
+  // prosemirror-tables의 tableEditing()은 기본적으로(false) 표 노드 자체의 NodeSelection을
+  // 항상 CellSelection으로 정규화해버린다 — 그립 클릭으로 만든 NodeSelection이 dispatch
+  // 직후 appendTransaction에서 도로 CellSelection으로 바뀌어 selectNode()가 전혀 호출되지
+  // 않는 문제였다(실측 확인). true로 켜면 표 전체 NodeSelection이 그대로 유지된다.
+  allowTableNodeSelection: true,
 });
 
 /** 셀 단위 배경색·정렬 — 표 전체(BrainXTable) 색과 별개로, 선택한 셀(들)에만 적용된다.
@@ -1746,6 +1807,20 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
         if (files.length === 0) return false;
         event.preventDefault();
         files.forEach((file) => insertImageBlockFromFile(view, file));
+        return true;
+      },
+      // 표 테두리/래퍼 영역(셀 내부가 아닌 곳) 클릭 → 표 전체를 NodeSelection으로 선택한다.
+      // handleClickOn은 클릭 좌표가 속한 모든 조상 노드에 대해 안쪽→바깥쪽 순서로 호출되므로,
+      // 셀 안을 클릭해도 결국 그 조상인 table에 대해서도 호출된다 — 그래서 node.type만으로는
+      // "셀 안 클릭"과 "표 테두리 클릭"을 구분할 수 없고, 실제 클릭된 DOM(event.target)이
+      // td/th 내부인지로 판정해야 한다. 셀 안이면 false를 반환해 기존 커서 배치/선택 동작을
+      // 그대로 둔다.
+      handleClickOn: (view, pos, node, nodePos, event) => {
+        if (node.type.name !== "table") return false;
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("td, th")) return false;
+        const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos));
+        view.dispatch(tr);
         return true;
       },
       // 사이드바 노트 드래그(EditorPanel의 dragPayload 오버레이)는 이 핸들러와 무관하게

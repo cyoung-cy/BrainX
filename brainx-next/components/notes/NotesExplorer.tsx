@@ -227,6 +227,7 @@ interface Props {
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onDeleteNote: (noteId: string) => void;
   onDragStart: (noteId: string) => void;
   onDragEnd: () => void;
   onMoveNoteToFolder: (noteId: string, targetFolderId: string | null) => void;
@@ -249,6 +250,7 @@ export default function NotesExplorer({
   onChangeFolderColor,
   onToggleFolderFavorite,
   onDeleteFolder,
+  onDeleteNote,
   onDragStart,
   onDragEnd,
   onMoveNoteToFolder,
@@ -262,6 +264,18 @@ export default function NotesExplorer({
     () => new Set(["spring", "brainx-arch", "rag-flow"])
   );
   const [favExpanded, setFavExpanded] = useState(true);
+
+  /* 노트 삭제 시 즐겨찾기 Set에도 남지 않도록 함께 정리 — filtered가 이미 notes 기준이라
+     화면에는 영향 없지만(고아 id), 상태를 깨끗하게 유지한다. */
+  const handleDeleteNote = useCallback((noteId: string) => {
+    setFavorites((prev) => {
+      if (!prev.has(noteId)) return prev;
+      const next = new Set(prev);
+      next.delete(noteId);
+      return next;
+    });
+    onDeleteNote(noteId);
+  }, [onDeleteNote]);
 
   /* 새 폴더(루트) 생성 — 즐겨찾기 바로 아래에 배치해 탐색기 맨 아래까지 내려가지 않아도
      쉽게 찾을 수 있게 한다 */
@@ -489,6 +503,7 @@ export default function NotesExplorer({
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
               onDeleteFolder={onDeleteFolder}
+              onDeleteNote={handleDeleteNote}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               onMoveNoteToFolder={onMoveNoteToFolder}

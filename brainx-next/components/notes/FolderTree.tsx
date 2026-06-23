@@ -35,6 +35,7 @@ import { MockFolder, MockNote } from "@/lib/notes/noteTypes";
 import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
 import { CollapseChevron } from "./CollapseChevron";
 import { HoverInfoCard } from "./HoverInfoCard";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   resolveDrop,
   type DragActiveData,
@@ -110,6 +111,7 @@ interface FolderTreeProps {
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onDeleteNote: (noteId: string) => void;
   onDragStart: (noteId: string) => void;
   onDragEnd: () => void;
   onMoveNoteToFolder: (noteId: string, targetFolderId: string | null) => void;
@@ -131,6 +133,7 @@ export default function FolderTree({
   onChangeFolderColor,
   onToggleFolderFavorite,
   onDeleteFolder,
+  onDeleteNote,
   onDragStart,
   onDragEnd,
   onMoveNoteToFolder,
@@ -223,6 +226,7 @@ export default function FolderTree({
             activeDrag={activeDrag}
             overIndicator={overIndicator}
             onNoteClick={onNoteClick}
+            onDeleteNote={onDeleteNote}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
           />
@@ -245,6 +249,7 @@ export default function FolderTree({
             onChangeFolderColor={onChangeFolderColor}
             onToggleFolderFavorite={onToggleFolderFavorite}
             onDeleteFolder={onDeleteFolder}
+            onDeleteNote={onDeleteNote}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
           />
@@ -429,6 +434,7 @@ interface FolderNodeProps {
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onDeleteNote: (noteId: string) => void;
   onDragStart: (noteId: string) => void;
   onDragEnd: () => void;
 }
@@ -448,6 +454,7 @@ function FolderNode({
   onChangeFolderColor,
   onToggleFolderFavorite,
   onDeleteFolder,
+  onDeleteNote,
   onDragStart,
   onDragEnd,
 }: FolderNodeProps) {
@@ -677,6 +684,7 @@ function FolderNode({
               activeDrag={activeDrag}
               overIndicator={overIndicator}
               onNoteClick={onNoteClick}
+              onDeleteNote={onDeleteNote}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />
@@ -699,6 +707,7 @@ function FolderNode({
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
               onDeleteFolder={onDeleteFolder}
+              onDeleteNote={onDeleteNote}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
             />
@@ -717,6 +726,7 @@ function NoteRow({
   activeDrag,
   overIndicator,
   onNoteClick,
+  onDeleteNote,
   onDragStart,
   onDragEnd,
 }: {
@@ -726,13 +736,26 @@ function NoteRow({
   activeDrag: DragActiveData | null;
   overIndicator: OverIndicator | null;
   onNoteClick: (id: string) => void;
+  onDeleteNote: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const indent = depth * 14 + 6 + 16;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   const dndId = `note:${note.id}`;
   const isBeingDragged = activeDrag?.dragType === "note" && activeDrag.id === note.id;
@@ -806,13 +829,49 @@ function NoteRow({
       />
       <span className="flex-1 truncate">{note.title}</span>
 
-      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !dragging}>
+      {hovered && !dragging && (
+        <div className="relative shrink-0" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            title="더보기"
+            className="grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary"
+          >
+            <MoreHorizontal size={11} />
+          </button>
+          {menuOpen && (
+            <div
+              className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-lg border border-line/60 py-1"
+              style={{ background: "rgb(var(--surface))", boxShadow: "0 8px 24px -4px rgba(2,6,23,0.45)" }}
+            >
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                onClick={() => { setMenuOpen(false); setConfirmOpen(true); }}
+              >
+                <Trash2 size={12} className="shrink-0" /> 삭제
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !dragging && !menuOpen}>
         <p className="mb-1 truncate font-semibold text-txt">{note.title}</p>
         <p className="text-txt3">마지막 수정</p>
         <p className="mb-1.5 text-txt2">{formatRelativeTime(note.updatedAt)}</p>
         <p className="text-txt3">생성일</p>
         <p className="text-txt2">{formatAbsoluteDateTime(note.createdAt)}</p>
       </HoverInfoCard>
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title="노트를 삭제할까요?"
+          description={`"${note.title}" 노트를 삭제합니다. 열려 있는 모든 탭에서도 닫히고, 이 작업은 되돌릴 수 없습니다.`}
+          onConfirm={() => { setConfirmOpen(false); onDeleteNote(note.id); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
     </div>
   );
 }

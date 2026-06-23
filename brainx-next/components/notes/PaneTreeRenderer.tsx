@@ -40,6 +40,7 @@ interface Props {
   onAddNoteTab: (paneId: string, noteId: string, targetIndex?: number) => void;
   onReorderTab: (paneId: string, tabId: string, targetIndex: number) => void;
   onMoveTabToPane: (sourcePaneId: string, sourceTabId: string, noteId: string, targetPaneId: string, targetIndex?: number) => void;
+  onMoveTabToSplit: (sourcePaneId: string, sourceTabId: string, noteId: string, targetPaneId: string, zone: DropZone) => void;
   onTabDragStart: (paneId: string, tabId: string, noteId: string) => void;
   onTabDragEnd: () => void;
   onCloseOtherTabs: (paneId: string, tabId: string) => void;
@@ -75,6 +76,7 @@ export default function PaneTreeRenderer({
   onAddNoteTab,
   onReorderTab,
   onMoveTabToPane,
+  onMoveTabToSplit,
   onTabDragStart,
   onTabDragEnd,
   onCloseOtherTabs,
@@ -123,6 +125,9 @@ export default function PaneTreeRenderer({
         onMoveTabToPane={(sourcePaneId, sourceTabId, noteId, targetIndex) =>
           onMoveTabToPane(sourcePaneId, sourceTabId, noteId, node.id, targetIndex)
         }
+        onMoveTabToSplit={(sourcePaneId, sourceTabId, noteId, zone) =>
+          onMoveTabToSplit(sourcePaneId, sourceTabId, noteId, node.id, zone)
+        }
         onTabDragStart={(tabId, noteId) => onTabDragStart(node.id, tabId, noteId)}
         onTabDragEnd={onTabDragEnd}
         onCloseOtherTabs={(tabId) => onCloseOtherTabs(node.id, tabId)}
@@ -168,6 +173,7 @@ export default function PaneTreeRenderer({
               onAddNoteTab={onAddNoteTab}
               onReorderTab={onReorderTab}
               onMoveTabToPane={onMoveTabToPane}
+              onMoveTabToSplit={onMoveTabToSplit}
               onTabDragStart={onTabDragStart}
               onTabDragEnd={onTabDragEnd}
               onCloseOtherTabs={onCloseOtherTabs}
