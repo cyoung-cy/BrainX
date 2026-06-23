@@ -9,9 +9,9 @@ spring:
   application:
     name: Workspace-Service
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/brainx_workspace}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:change_me}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/brainx_workspace}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:
