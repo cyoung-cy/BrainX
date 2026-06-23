@@ -93,12 +93,17 @@ class AssistServiceTest {
         assertThat(chatPort.calls).isEqualTo(1);
         assertThat(chatPort.lastRequest.modelId()).isEqualTo("user-model");
         assertThat(chatPort.lastRequest.messages().get(0).role()).isEqualTo(AiRole.SYSTEM);
+        assertThat(chatPort.lastRequest.messages().get(0).content())
+            .contains("Before and After are immutable reference context only")
+            .contains("return only a replacement for Selected")
+            .contains("Never include, paraphrase, move, summarize, or rewrite Before/After");
         assertThat(chatPort.lastRequest.messages().get(1).content())
             .contains("Action: REWRITE")
             .contains("Language: en")
-            .contains("Before:\nbefore")
-            .contains("Selected:\n selected ")
-            .contains("After:\nafter");
+            .contains("Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\nbefore")
+            .contains("Selected (only this section may be replaced for REWRITE/TRANSLATE):\n selected ")
+            .contains("Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\nafter")
+            .contains("If Action is REWRITE, return only the replacement for Selected");
 
         assertThat(tokenUsagePort.records).hasSize(1);
         var usage = tokenUsagePort.records.getFirst();
@@ -188,9 +193,10 @@ class AssistServiceTest {
         assertThat(chatPort.lastRequest.messages().get(1).content())
             .contains("Action: SUMMARIZE")
             .contains("Language: ko")
-            .contains("Before:\ncontext before")
-            .contains("Selected:\n(empty)")
-            .contains("After:\ncontext after");
+            .contains("Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\ncontext before")
+            .contains("Selected (only this section may be replaced for REWRITE/TRANSLATE):\n(empty)")
+            .contains("Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\ncontext after")
+            .contains("If Action is SUMMARIZE, return only the summary");
     }
 
     @Test

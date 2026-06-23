@@ -14,6 +14,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort.AiSuggestionCreatedEvent;
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort.AiSuggestionDecisionRecordedEvent;
 import com.brainx.intelligence.assist.domain.AiSuggestionDecision;
+import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatMessageCreatedEvent;
+import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatThreadCreatedEvent;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort.SemanticSearchPerformedEvent;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -151,12 +153,77 @@ class KafkaIntelligenceEventAdapterTest {
         assertThat(root.get("payload").get("appliedNoteId").isNull()).isTrue();
     }
 
+    @Test
+    void chatThreadCreatedPublishesChatThreadCreatedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.chatThreadCreated(new ChatThreadCreatedEvent(
+            "user-1",
+            "thread-1",
+            "group-1",
+            "gpt-test",
+            "RAG 질문"
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("chat-thread-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("ChatThreadCreated");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("thread-1");
+        assertThat(root.get("payload").get("threadId").asText()).isEqualTo("thread-1");
+        assertThat(root.get("payload").get("documentGroupId").asText()).isEqualTo("group-1");
+        assertThat(root.get("payload").get("modelId").asText()).isEqualTo("gpt-test");
+        assertThat(root.get("payload").get("title").asText()).isEqualTo("RAG 질문");
+    }
+
+    @Test
+    void chatMessageCreatedPublishesChatMessageCreatedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.chatMessageCreated(new ChatMessageCreatedEvent(
+            "user-1",
+            "thread-1",
+            "message-1",
+            "group-1",
+            "gpt-test",
+            30,
+            12,
+            java.util.List.of("note-1", "note-2")
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("chat-message-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("ChatMessageCreated");
+        assertThat(root.get("correlationId").asText()).isEqualTo("thread-1");
+        assertThat(root.get("causationId").asText()).isEqualTo("thread-1");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("message-1");
+        assertThat(root.get("payload").get("messageId").asText()).isEqualTo("message-1");
+        assertThat(root.get("payload").get("inputTokens").asInt()).isEqualTo(30);
+        assertThat(root.get("payload").get("outputTokens").asInt()).isEqualTo(12);
+        assertThat(root.get("payload").get("citationNoteIds")).hasSize(2);
+    }
+
     private static BrainxEventProducerProperties properties() {
         BrainxEventProducerProperties properties = new BrainxEventProducerProperties();
         properties.setSemanticSearchPerformedTopic("semantic-search-topic");
         properties.setTokenUsageRecordedRequestedTopic("token-usage-topic");
         properties.setAiSuggestionCreatedTopic("ai-suggestion-created-topic");
         properties.setAiSuggestionDecisionRecordedTopic("ai-suggestion-decision-topic");
+        properties.setChatThreadCreatedTopic("chat-thread-topic");
+        properties.setChatMessageCreatedTopic("chat-message-topic");
         return properties;
     }
 

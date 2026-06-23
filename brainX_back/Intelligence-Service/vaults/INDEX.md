@@ -3,6 +3,7 @@
 이 vault는 agent가 필요한 문맥만 늦게 읽기 위한 저장소입니다. 루트 `AGENTS.md`는 항상 읽는 규칙만 담고, 세부 사양과 반복 workflow는 여기서 라우팅합니다.
 
 - `vaults/agents/intelligence-service.md`: Intelligence Service의 API 계약 기준, 클린 아키텍처 package 규칙, 외부 의존성 port 처리 방식, persistence/AI/testing 규칙을 설명합니다. API 구현, usecase 설계, 외부 연동 경계, 계약 불일치 검토를 할 때 읽습니다.
+- `vaults/agents/frontend-integration.md`: 상위 `brainx-next` 프론트엔드 프로젝트 위치, `/api/v1` proxy 기준, 프론트 요구를 Intelligence Service API 구현으로 연결하는 절차를 설명합니다. 프론트 화면/API client/mock을 기준으로 백엔드 구현 범위를 확인할 때 읽습니다.
 - `vaults/agents/domain-implementation-order.md`: API 명세 기준 기능 구현 순서를 도메인 TODO list로 정리합니다. 기술 설계가 아니라 어떤 사용자/지식 기능을 먼저 만들지 결정할 때 읽습니다.
 - `vaults/workflows/verification.md`: 이 저장소의 Gradle 검증과 문서 변경 검증 기준을 설명합니다. 코드, 설정, 계약, 문서 변경 후 final response 전에 읽습니다.
 - `vaults/worklogs/YYYY-MM.md`: 월별 file-log fallback입니다. substantial work를 마친 뒤 worklog 채널이 없을 때 append합니다.
@@ -34,6 +35,7 @@
 ## Routing Rules
 
 - API 사양 질문은 먼저 OpenAPI 계약을 확인한 뒤 `vaults/agents/intelligence-service.md`의 일반 구현 규칙과 대조합니다.
+- `brainx-next` 프론트 요구를 기준으로 Intelligence Service API 구현 범위를 확인할 때는 `vaults/agents/frontend-integration.md`를 함께 읽습니다.
 - 기능 구현 순서 질문은 `vaults/agents/domain-implementation-order.md`를 기준으로 답합니다.
 - 도메인 흐름이나 기획자와 공유할 설명은 `docs/domain/knowledge-intelligence-domain-flow.md`를 기준으로 답합니다.
 - AI-Service가 consumer로 받는 이벤트와 도메인 기능 연결은 `docs/domain/consumed-events-domain-map.md`를 기준으로 답합니다.
