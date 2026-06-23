@@ -1477,8 +1477,7 @@ function UpgradePanel({
 
     const popup = window.open(
       `/billing/checkout?planId=${encodeURIComponent(plan.planId)}`,
-      "brainx-payment",
-      "width=480,height=720,noopener=no,noreferrer=no"
+      "brainx-payment"
     );
     if (!popup) {
       pushToast("팝업이 차단되었습니다. 팝업 차단을 해제한 뒤 다시 시도해 주세요.", "err");
@@ -1611,7 +1610,7 @@ function PlanCard({
         onClick={onClick}
         className={cx(
           "mt-4 h-8 w-full rounded-[7px] text-[12px] font-bold transition disabled:cursor-not-allowed disabled:opacity-75",
-          primary ? "bg-[#6c55f6] text-white hover:brightness-110" : "border border-[#ded8cf] text-[#6d6861] hover:bg-[#fbfaf8]"
+          !active ? "bg-[#6c55f6] text-white hover:brightness-110" : "border border-[#ded8cf] text-[#6d6861] hover:bg-[#fbfaf8]"
         )}
       >
         {button}
@@ -1619,7 +1618,7 @@ function PlanCard({
       <div className="mt-4 space-y-3">
         {features.map((feature) => (
           <div key={feature} className="flex items-center gap-2 text-[12px] text-[#4d4944]">
-            <Icon name="check" size={14} className={primary || active ? "text-[#6c55f6]" : "text-[#8c877f]"} />
+            <Icon name="check" size={14} className="text-[#6c55f6]" />
             {feature}
           </div>
         ))}

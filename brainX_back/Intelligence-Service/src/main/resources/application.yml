@@ -4,10 +4,8 @@ server:
 spring:
   config:
     import:
-    - optional:file:../.env[.properties]
-    - optional:file:../env/ingestion-service.env[.properties]
-    - optional:file:./.env[.properties]
-    - optional:file:./env/ingestion-service.env[.properties]
+      - optional:file:../.env[.properties]
+      - optional:file:../env/ingestion-service.env[.properties]
   application:
     name: ingestion-service
   datasource:

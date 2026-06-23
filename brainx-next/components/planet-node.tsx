@@ -39,7 +39,7 @@ export function PlanetNode({ data }: NodeProps) {
       perspective={800}
       transitionSpeed={800}
       scale={1}
-      className="cursor-pointer"
+      className={`cursor-pointer ${dimmed ? 'pointer-events-none' : ''}`}
     >
       <motion.div
         animate={{ 

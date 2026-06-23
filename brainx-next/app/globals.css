@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/** import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/web/variable/pretendardvariable-dynamic-subset.min.css");*/
+
 :root {
   --bg: 10 12 26;
   --bg2: 13 18 38;
@@ -538,9 +540,8 @@ html.light .aurora b {
   outline: none;
   min-height: 300px;
   max-width: 72ch;
-  /* 문서 전체 타이포그래피 설정(--note-fs-*)이 지정되지 않으면 기존 고정값으로 그대로 폴백 —
-     기본값(설정 안 한 노트)은 기존과 100% 동일한 모양을 유지한다 */
-  font-size: var(--note-fs-body, 0.9375rem);
+  /* 문서 전체 타이포그래피 설정(--note-fs-*)이 지정되지 않으면 14px로 폴백 */
+  font-size: var(--note-fs-body, 14px);
   font-family: var(--note-font-family, inherit);
   line-height: 1.8;
   color: rgb(var(--txt2));
@@ -812,10 +813,10 @@ html.light .tiptap-note-content .ProseMirror table.note-table :is(td, th) {
   min-height: 0;
   max-width: none;
   /* 이 셀렉터가 .tiptap-note-content .ProseMirror보다 specificity가 높아 그냥 font-size를
-     박아두면 문서 기본 타이포그래피(--note-fs-body)가 적용돼도 항상 13px로 덮어써진다 —
-     여기도 같은 var()로 맞춰 폴백(0.8125rem, 기존과 동일)은 유지하면서 설정값이 있으면
+     박아두면 문서 기본 타이포그래피(--note-fs-body)가 적용돼도 항상 14px로 덮어써진다 —
+     여기도 같은 var()로 맞춰 폴백(14px)은 유지하면서 설정값이 있으면
      반영되게 한다 */
-  font-size: var(--note-fs-body, 0.8125rem);  /* 13px — ReadMarkdown과 동일 */
+  font-size: var(--note-fs-body, 14px);
   line-height: 1.85;
 }
 
