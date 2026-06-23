@@ -1,0 +1,286 @@
+"use client";
+
+import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import type { components } from "@/lib/generated/intelligence-openapi";
+
+type Schemas = components["schemas"];
+
+export type SemanticSearchRequest = Schemas["SemanticSearchRequest"];
+export type SemanticSearchData = Schemas["SemanticSearchData"];
+export type InlineAssistRequest = Schemas["InlineAssistRequest"];
+export type AiSuggestionDecisionRequest = Schemas["AiSuggestionDecisionRequest"];
+export type AiSuggestionDecisionData = Schemas["AiSuggestionDecisionData"];
+export type ChatThreadCreateRequest = Schemas["ChatThreadCreateRequest"];
+export type ChatThreadData = Schemas["ChatThreadData"];
+export type ChatMessageCreateRequest = Schemas["ChatMessageCreateRequest"];
+export type ChatThreadDetailData = Schemas["ChatThreadDetailData"];
+export type AiModelsData = Schemas["AiModelsData"];
+export type AiModelSettingsPutRequest = Schemas["AiModelSettingsPutRequest"];
+export type AiModelSettingsData = Schemas["AiModelSettingsData"];
+export type NoteSummaryData = Schemas["NoteSummaryData"];
+export type StyleProfileData = Schemas["StyleProfileData"];
+export type StyleProfilePutRequest = Schemas["StyleProfilePutRequest"];
+
+export type InlineAssistDoneEvent = {
+  suggestionId: string;
+  action: InlineAssistRequest["action"];
+  modelId: string;
+};
+
+export type ChatMessageDoneEvent = {
+  messageId: string;
+};
+
+export type IntelligenceRequestOptions = {
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+};
+
+export type IntelligenceStreamHandlers<TDone> = IntelligenceRequestOptions & {
+  onDelta?: (text: string) => void;
+  onDone?: (data: TDone) => void;
+  onError?: (error: unknown) => void;
+};
+
+type SseFrame = {
+  event: string;
+  data: string;
+};
+
+const INTELLIGENCE_API_BASE_URL = "";
+
+function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
+  return response.message ?? response.error?.message ?? fallback;
+}
+
+async function authedRequest<T>(path: string, init?: RequestInit, options?: IntelligenceRequestOptions): Promise<T> {
+  const response = await fetch(`${INTELLIGENCE_API_BASE_URL}${path}`, {
+    ...init,
+    signal: options?.signal ?? init?.signal,
+    headers: buildHeaders(init?.headers, options),
+  });
+
+  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
+  if (response.status === 401 || response.status === 403) {
+    clearAuthSession();
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
+  if (!payload) {
+    throw new Error("서버 응답을 읽을 수 없습니다.");
+  }
+  if (!response.ok || !payload.success) {
+    throw new Error(messageFromResponse(payload, "요청 처리에 실패했습니다."));
+  }
+  return payload.data as T;
+}
+
+async function streamRequest<TDone>(
+  path: string,
+  body: unknown,
+  handlers: IntelligenceStreamHandlers<TDone> = {}
+): Promise<TDone | null> {
+  const response = await fetch(`${INTELLIGENCE_API_BASE_URL}${path}`, {
+    method: "POST",
+    signal: handlers.signal,
+    headers: buildHeaders({ Accept: "text/event-stream" }, handlers),
+    body: JSON.stringify(body),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    clearAuthSession();
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
+    throw new Error(payload ? messageFromResponse(payload, "요청 처리에 실패했습니다.") : "요청 처리에 실패했습니다.");
+  }
+  if (!response.body) {
+    throw new Error("스트림 응답을 읽을 수 없습니다.");
+  }
+
+  return readSseStream(response.body, handlers);
+}
+
+async function readSseStream<TDone>(
+  body: ReadableStream<Uint8Array>,
+  handlers: IntelligenceStreamHandlers<TDone>
+): Promise<TDone | null> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let donePayload: TDone | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split(/\r?\n\r?\n/);
+    buffer = parts.pop() ?? "";
+
+    for (const part of parts) {
+      const frame = parseSseFrame(part);
+      const parsed = parseJson(frame.data);
+
+      if (frame.event === "delta") {
+        const text = typeof parsed === "object" && parsed && "text" in parsed ? String(parsed.text ?? "") : frame.data;
+        handlers.onDelta?.(text);
+      } else if (frame.event === "done") {
+        donePayload = parsed as TDone;
+        handlers.onDone?.(donePayload);
+      } else if (frame.event === "error") {
+        handlers.onError?.(parsed ?? frame.data);
+      }
+    }
+  }
+
+  const tail = buffer.trim();
+  if (tail) {
+    const frame = parseSseFrame(tail);
+    if (frame.event === "done") {
+      donePayload = parseJson(frame.data) as TDone;
+      handlers.onDone?.(donePayload);
+    }
+  }
+
+  return donePayload;
+}
+
+function parseSseFrame(raw: string): SseFrame {
+  let event = "message";
+  const data: string[] = [];
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      data.push(line.slice("data:".length).trimStart());
+    }
+  }
+
+  return { event, data: data.join("\n") };
+}
+
+function parseJson(value: string): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function buildHeaders(headers?: HeadersInit, options?: IntelligenceRequestOptions) {
+  const session = readAuthSession();
+  const next = new Headers(headers);
+  next.set("Content-Type", "application/json");
+  if (session?.accessToken) {
+    next.set("Authorization", `${session.tokenType ?? "Bearer"} ${session.accessToken}`);
+  }
+  if (options?.idempotencyKey) {
+    next.set("Idempotency-Key", options.idempotencyKey);
+  }
+  return next;
+}
+
+export function semanticSearch(payload: SemanticSearchRequest, options?: IntelligenceRequestOptions) {
+  return authedRequest<SemanticSearchData>(
+    "/api/intelligence/intelligence/semantic-search",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function createInlineAssistStream(
+  payload: InlineAssistRequest,
+  handlers?: IntelligenceStreamHandlers<InlineAssistDoneEvent>
+) {
+  return streamRequest<InlineAssistDoneEvent>("/api/intelligence/ai/inline-assists", payload, handlers);
+}
+
+export function decideAiSuggestion(
+  suggestionId: string,
+  payload: AiSuggestionDecisionRequest,
+  options?: IntelligenceRequestOptions
+) {
+  return authedRequest<AiSuggestionDecisionData>(
+    `/api/intelligence/ai/suggestions/${encodeURIComponent(suggestionId)}/decision`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function createChatThread(payload: ChatThreadCreateRequest, options?: IntelligenceRequestOptions) {
+  return authedRequest<ChatThreadData>(
+    "/api/intelligence/ai/chat-threads",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function sendChatMessageStream(
+  threadId: string,
+  payload: ChatMessageCreateRequest,
+  handlers?: IntelligenceStreamHandlers<ChatMessageDoneEvent>
+) {
+  return streamRequest<ChatMessageDoneEvent>(
+    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}/messages`,
+    payload,
+    handlers
+  );
+}
+
+export function getChatThread(threadId: string, options?: IntelligenceRequestOptions) {
+  return authedRequest<ChatThreadDetailData>(
+    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    undefined,
+    options
+  );
+}
+
+export function listAiModels(options?: IntelligenceRequestOptions) {
+  return authedRequest<AiModelsData>("/api/intelligence/ai/models", undefined, options);
+}
+
+export function putAiModelSettings(payload: AiModelSettingsPutRequest, options?: IntelligenceRequestOptions) {
+  return authedRequest<AiModelSettingsData>(
+    "/api/intelligence/ai/model-settings",
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function getNoteSummary(noteId: string, options?: IntelligenceRequestOptions) {
+  return authedRequest<NoteSummaryData>(
+    `/api/intelligence/notes/${encodeURIComponent(noteId)}/summary`,
+    undefined,
+    options
+  );
+}
+
+export function getStyleProfile(options?: IntelligenceRequestOptions) {
+  return authedRequest<StyleProfileData>("/api/intelligence/users/me/style-profile", undefined, options);
+}
+
+export function putStyleProfile(payload: StyleProfilePutRequest, options?: IntelligenceRequestOptions) {
+  return authedRequest<StyleProfileData>(
+    "/api/intelligence/users/me/style-profile",
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
