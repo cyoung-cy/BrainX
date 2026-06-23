@@ -10,8 +10,8 @@ spring:
     name: Commerce-Service
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/brainx_commerce}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:change_me}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:

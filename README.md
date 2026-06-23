@@ -293,7 +293,7 @@ docker compose --profile apps up -d --build
 | Ingestion-Service | `../.env`, `../env/ingestion-service.env` |
 | Commerce-Service | `../.env`, `../env/commerce-service.env` |
 
-`JWT_SECRET`처럼 모든 서비스가 공유하는 값은 `.env`에 두고, `DB_URL`처럼 서비스마다 달라지는 값은 `env/{service}.env`에 둡니다. 같은 이름의 값이 있으면 서비스별 env 파일 값이 우선합니다.
+`JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. `DB_URL`처럼 서비스마다 달라지는 값만 `env/{service}.env`에 둡니다. 같은 이름의 값이 있으면 서비스별 env 파일 값이 우선합니다.
 Docker Compose로 앱을 실행할 때는 각 서비스의 `DB_URL`을 컨테이너 네트워크용 주소인 `postgres:5432`로 자동 덮어씁니다. 그래서 `env/{service}.env`의 `localhost:5432` 값은 로컬 Gradle/IDE 실행용으로 유지해도 됩니다.
 
 기본 DB 접속 정보:
@@ -305,7 +305,7 @@ Docker Compose로 앱을 실행할 때는 각 서비스의 `DB_URL`을 컨테이
 | Ingestion-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_ingestion` |
 | Commerce-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_commerce` |
 
-`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`는 세 Spring 서비스가 같은 env 이름을 쓰므로, 여러 백엔드를 IDE에서 동시에 실행할 때는 서비스별 Run Configuration에 맞는 DB 값을 따로 넣습니다.
+DB 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 여러 백엔드를 IDE에서 동시에 실행할 때도 서비스별로 달라지는 값은 `DB_URL`만 보면 됩니다.
 
 ### Frontend
 
