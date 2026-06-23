@@ -17,6 +17,7 @@ import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import { Link2, Highlighter, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
+import { TaskList, TaskItem } from "@tiptap/extension-list";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
@@ -31,6 +32,9 @@ import { WikiLink } from "./WikiLinkNode";
 import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
 import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
 import { useWikiLinkContext } from "./WikiLinkContext";
+import { SlashCommandSuggestion } from "./SlashCommand";
+import { SlashCommandMenu } from "./SlashCommandMenu";
+import { TaskListMarkdownBridge } from "./TaskListMarkdownBridge";
 // 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
 // Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
 // 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
@@ -61,17 +65,30 @@ function markdownToHtml(md: string): string {
   let inCode = false;
   const codeLines: string[] = [];
   let codeLang = "";
-  let listType: "ul" | "ol" | null = null;
-  const listItems: string[] = [];
+  let listType: "ul" | "ol" | "task" | null = null;
+  const listItems: { text: string; checked?: boolean }[] = [];
 
   function flushList() {
     if (!listType || listItems.length === 0) return;
-    const tag = listType;
-    out.push(
-      `<${tag}>${listItems
-        .map((t) => `<li><p>${inlineHtml(t)}</p></li>`)
-        .join("")}</${tag}>`
-    );
+    if (listType === "task") {
+      out.push(
+        `<ul data-type="taskList">${listItems
+          .map(
+            (it) =>
+              `<li data-type="taskItem" data-checked="${it.checked ? "true" : "false"}">` +
+              `<label><input type="checkbox"${it.checked ? " checked" : ""}><span></span></label>` +
+              `<div><p>${inlineHtml(it.text)}</p></div></li>`
+          )
+          .join("")}</ul>`
+      );
+    } else {
+      const tag = listType;
+      out.push(
+        `<${tag}>${listItems
+          .map((it) => `<li><p>${inlineHtml(it.text)}</p></li>`)
+          .join("")}</${tag}>`
+      );
+    }
     listItems.length = 0;
     listType = null;
   }
@@ -106,15 +123,20 @@ function markdownToHtml(md: string): string {
       flushList();
       out.push(`<blockquote><p>${inlineHtml(line.slice(2))}</p></blockquote>`);
     } else {
+      const taskMatch = /^[-*] \[([ xX])\] (.*)$/.exec(line);
       const olMatch = /^(\d+)\. (.+)/.exec(line);
-      if (olMatch) {
-        if (listType === "ul") flushList();
+      if (taskMatch) {
+        if (listType && listType !== "task") flushList();
+        listType = "task";
+        listItems.push({ text: taskMatch[2], checked: taskMatch[1].toLowerCase() === "x" });
+      } else if (olMatch) {
+        if (listType && listType !== "ol") flushList();
         listType = "ol";
-        listItems.push(olMatch[2]);
+        listItems.push({ text: olMatch[2] });
       } else if (line.startsWith("- ") || line.startsWith("* ")) {
-        if (listType === "ol") flushList();
+        if (listType && listType !== "ul") flushList();
         listType = "ul";
-        listItems.push(line.slice(2));
+        listItems.push({ text: line.slice(2) });
       } else if (line.trim() === "") {
         flushList(); out.push("<p></p>");
       } else {
@@ -1431,6 +1453,10 @@ const NOTE_EDITOR_EXTENSIONS = [
   BrainXTableCell,
   WikiLink,
   WikiLinkSuggestion,
+  TaskList,
+  TaskItem.configure({ nested: true }),
+  TaskListMarkdownBridge,
+  SlashCommandSuggestion,
 ];
 
 export interface NoteEditorHandle {
@@ -1916,6 +1942,9 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
       {editor && <TableToolbar editor={editor} />}
       {editor && <WikiLinkAutocomplete editor={editor} />}
+      {editor && (
+        <SlashCommandMenu editor={editor} onPickImage={() => fileInputRef.current?.click()} />
+      )}
       {editor && contextMenu && (
         <EditorContextMenu
           target={contextMenu}
