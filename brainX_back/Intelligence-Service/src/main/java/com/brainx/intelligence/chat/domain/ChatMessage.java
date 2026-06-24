@@ -15,6 +15,7 @@ public record ChatMessage(
     String content,
     String modelId,
     Map<String, Object> noteScope,
+    Map<String, Object> clientContext,
     List<ChatCitation> citations,
     ChatTokenUsage tokenUsage,
     Instant createdAt
@@ -30,6 +31,7 @@ public record ChatMessage(
         content = requireText(content, "content");
         modelId = modelId == null || modelId.isBlank() ? null : modelId.trim();
         noteScope = immutableMap(noteScope);
+        clientContext = immutableMap(clientContext);
         citations = immutableList(citations);
         createdAt = createdAt == null ? Instant.now() : createdAt;
     }
@@ -41,6 +43,7 @@ public record ChatMessage(
         String content,
         String modelId,
         Map<String, Object> noteScope,
+        Map<String, Object> clientContext,
         Instant createdAt
     ) {
         return new ChatMessage(
@@ -51,6 +54,7 @@ public record ChatMessage(
             content,
             modelId,
             noteScope,
+            clientContext,
             List.of(),
             null,
             createdAt
@@ -74,6 +78,7 @@ public record ChatMessage(
             ChatRole.ASSISTANT,
             content,
             modelId,
+            Map.of(),
             Map.of(),
             citations,
             tokenUsage,

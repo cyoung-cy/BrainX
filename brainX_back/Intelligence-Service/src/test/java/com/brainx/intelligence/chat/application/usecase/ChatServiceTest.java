@@ -120,6 +120,7 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of("documentGroupId", "group-1"),
+            Map.of(),
             "gpt-test"
         )).collectList().block();
 
@@ -154,6 +155,45 @@ class ChatServiceTest {
     }
 
     @Test
+    void clientContextSkipsRetrievalAndIsUsedInPrompt() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var clientContext = Map.<String, Object>of(
+            "mode", "SELECTION",
+            "source", "RIGHT_SIDEBAR",
+            "items", List.of(Map.of(
+                "type", "SELECTION",
+                "noteId", "note-1",
+                "documentGroupId", "group-1",
+                "text", "프론트가 선택한 문맥"
+            ))
+        );
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "선택 영역을 설명해줘",
+            Map.of("documentGroupId", "group-1"),
+            clientContext,
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events).hasSize(3);
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isEqualTo(1);
+        assertThat(aiChatPort.lastRequest.messages().getLast().content())
+            .contains("Frontend selected context")
+            .contains("mode=SELECTION")
+            .contains("source=RIGHT_SIDEBAR")
+            .contains("type=SELECTION")
+            .contains("프론트가 선택한 문맥");
+        assertThat(persistencePort.messages.getFirst().clientContext())
+            .containsEntry("mode", "SELECTION")
+            .containsEntry("source", "RIGHT_SIDEBAR");
+    }
+
+    @Test
     void emptyContextSkipsAiCallAndStoresNoContextAnswer() {
         ChatThread thread = existingThread();
         persistencePort.saveThread(thread);
@@ -162,6 +202,7 @@ class ChatServiceTest {
             "user-1",
             thread.threadId(),
             "없는 내용?",
+            Map.of(),
             Map.of(),
             "gpt-test"
         )).collectList().block();
@@ -202,6 +243,7 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of(),
+            Map.of(),
             "gpt-test"
         )))
             .isInstanceOf(ChatDomainException.class)
@@ -223,6 +265,7 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of("documentGroupId", "other-group"),
+            Map.of(),
             "gpt-test"
         )))
             .isInstanceOf(ChatDomainException.class)
@@ -256,6 +299,7 @@ class ChatServiceTest {
             "user-1",
             thread.threadId(),
             "RAG란?",
+            Map.of(),
             Map.of(),
             "gpt-test"
         )).collectList().block();

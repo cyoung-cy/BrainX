@@ -17,6 +17,7 @@ import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRe
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteSearchQuery;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorPoint;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorSearchHit;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
@@ -142,6 +143,52 @@ class QdrantNoteSearchIndexAdapterTest {
     }
 
     @Test
+    void userScopeSearchDoesNotFilterByDocumentGroupAndStillDeduplicatesByBestNoteScore() {
+        vectorIndexClient.searchHits = List.of(
+            hit(0.4d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-1",
+                "noteId", "note-1",
+                "title", "Group 1 note",
+                "excerpt", "low",
+                "keywordIds", List.of()
+            )),
+            hit(0.8d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-2",
+                "noteId", "note-1",
+                "title", "Group 2 same note",
+                "excerpt", "high",
+                "keywordIds", List.of()
+            )),
+            hit(0.7d, Map.of(
+                "userId", "other-user",
+                "documentGroupId", "group-3",
+                "noteId", "note-2",
+                "title", "Other user",
+                "excerpt", "must not leak",
+                "keywordIds", List.of()
+            ))
+        );
+
+        var results = adapter.search(new NoteSearchQuery(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "semantic search",
+            Map.of(),
+            3,
+            List.of()
+        ));
+
+        assertThat(vectorIndexClient.lastSearchUserId).isEqualTo("user-1");
+        assertThat(vectorIndexClient.lastSearchDocumentGroupId).isNull();
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().title()).isEqualTo("Group 2 same note");
+        assertThat(results.getFirst().score()).isEqualTo(0.8d);
+    }
+
+    @Test
     void searchChunksKeepsChunkLevelHitsWithoutDedupe() {
         vectorIndexClient.searchHits = List.of(
             hit(0.5d, Map.of(
@@ -255,7 +302,8 @@ class QdrantNoteSearchIndexAdapterTest {
             lastSearchLimit = limit;
             return searchHits.stream()
                 .filter(hit -> userId.equals(hit.payload().getOrDefault("userId", userId)))
-                .filter(hit -> documentGroupId.equals(hit.payload().getOrDefault("documentGroupId", documentGroupId)))
+                .filter(hit -> documentGroupId == null
+                    || documentGroupId.equals(hit.payload().getOrDefault("documentGroupId", documentGroupId)))
                 .toList();
         }
     }

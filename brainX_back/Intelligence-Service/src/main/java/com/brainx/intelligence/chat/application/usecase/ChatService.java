@@ -129,14 +129,19 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             message,
             modelId,
             noteScope,
+            command.clientContext(),
             Instant.now()
         ));
         List<ChatMessage> history = chatPersistencePort.findMessagesByUserIdAndThreadId(userId, threadId).stream()
             .filter(messageItem -> !messageItem.messageId().equals(userMessage.messageId()))
             .toList();
-        List<RagContext> contexts = retrieveContexts(thread, message);
+        String clientContextPrompt = clientContextPrompt(command.clientContext());
+        boolean hasClientContext = StringUtils.hasText(clientContextPrompt);
+        List<RagContext> contexts = hasClientContext ? List.of() : retrieveContexts(thread, message);
         String systemPrompt = systemPrompt();
-        String userPrompt = userPrompt(message, contexts);
+        String userPrompt = hasClientContext
+            ? userPromptFromClientContext(message, clientContextPrompt)
+            : userPrompt(message, contexts);
         int tokenEstimate = estimateTokens(systemPrompt + "\n" + historyPrompt(history) + "\n" + userPrompt);
         var entitlement = entitlementPort.checkEntitlement(new EntitlementRequest(
             userId,
@@ -147,7 +152,7 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             throw new ChatDomainException("AI capability is not available: " + entitlement.reasonCode());
         }
 
-        if (contexts.isEmpty()) {
+        if (!hasClientContext && contexts.isEmpty()) {
             return noContextStream(thread, userMessage, modelId, NO_CONTEXT_ANSWER);
         }
         return aiStream(thread, userMessage, modelId, systemPrompt, history, userPrompt, contexts);
@@ -351,6 +356,53 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         return builder.toString();
     }
 
+    private static String userPromptFromClientContext(String message, String clientContextPrompt) {
+        return "Question:\n" + message + "\n\nFrontend selected context:\n" + clientContextPrompt;
+    }
+
+    private static String clientContextPrompt(Map<String, Object> clientContext) {
+        if (clientContext == null || clientContext.isEmpty()) {
+            return "";
+        }
+        Object itemsValue = clientContext.get("items");
+        if (!(itemsValue instanceof List<?> items) || items.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        Object mode = clientContext.get("mode");
+        Object source = clientContext.get("source");
+        builder.append("mode=").append(mode == null ? "UNKNOWN" : mode)
+            .append(", source=").append(source == null ? "UNKNOWN" : source)
+            .append('\n');
+
+        int index = 1;
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> item)) {
+                continue;
+            }
+            String text = stringValue(item.get("text"));
+            if (!StringUtils.hasText(text)) {
+                continue;
+            }
+            builder.append('[').append(index).append("] type=").append(stringValue(item.get("type")));
+            String noteId = stringValue(item.get("noteId"));
+            if (StringUtils.hasText(noteId)) {
+                builder.append(", noteId=").append(noteId);
+            }
+            String documentGroupId = stringValue(item.get("documentGroupId"));
+            if (StringUtils.hasText(documentGroupId)) {
+                builder.append(", documentGroupId=").append(documentGroupId);
+            }
+            if (Boolean.TRUE.equals(item.get("truncated"))) {
+                builder.append(", truncated=true");
+            }
+            builder.append('\n').append(text).append("\n\n");
+            index += 1;
+        }
+        return index == 1 ? "" : builder.toString().trim();
+    }
+
     private static List<AiChatMessage> promptMessages(
         String systemPrompt,
         List<ChatMessage> history,
@@ -428,6 +480,7 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         values.put("content", message.content());
         values.put("modelId", message.modelId());
         values.put("noteScope", message.noteScope());
+        values.put("clientContext", message.clientContext());
         values.put("citations", message.citations().stream().map(ChatCitation::toMap).toList());
         values.put("tokenUsage", message.tokenUsage() == null ? null : message.tokenUsage().toMap());
         values.put("createdAt", message.createdAt());
@@ -469,6 +522,10 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             throw new ChatDomainException(name + " must not be blank.");
         }
         return value.trim();
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     private static int estimateTokens(String text) {

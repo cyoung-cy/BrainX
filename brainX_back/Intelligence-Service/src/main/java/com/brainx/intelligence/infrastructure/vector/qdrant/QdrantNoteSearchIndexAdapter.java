@@ -20,6 +20,7 @@ import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchI
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorPoint;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorSearchHit;
@@ -95,7 +96,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         Map<String, SemanticSearchResult> bestByNoteId = new LinkedHashMap<>();
         for (QdrantVectorSearchHit hit : vectorIndexClient.search(
             query.userId(),
-            query.documentGroupId(),
+            query.scope() == SearchScope.USER ? null : query.documentGroupId(),
             queryVector,
             searchTopK(query.limit())
         )) {

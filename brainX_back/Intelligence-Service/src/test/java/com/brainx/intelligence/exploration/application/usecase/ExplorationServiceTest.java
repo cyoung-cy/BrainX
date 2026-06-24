@@ -21,6 +21,7 @@ import com.brainx.intelligence.exploration.domain.ExplorationDomainException;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.NoteSummary;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
 import com.brainx.intelligence.exploration.domain.SummarySource;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
@@ -77,15 +78,66 @@ class ExplorationServiceTest {
         assertThat(result.charged()).isTrue();
         assertThat(result.tokenEstimate()).isPositive();
         assertThat(ports.searchRequests).isEqualTo(1);
+        assertThat(ports.lastSearchQuery.scope()).isEqualTo(SearchScope.DOCUMENT_GROUP);
         assertThat(ports.lastSearchQuery.documentGroupId()).isEqualTo("group-1");
         assertThat(ports.lastSearchQuery.queryText()).isEqualTo("rag search");
         assertThat(ports.lastSearchQuery.limit()).isEqualTo(5);
         assertThat(ports.lastSearchQuery.hybridWithClientKeywordIds()).containsExactly("keyword-1");
         assertThat(ports.tokenUsageRecords).isEmpty();
         assertThat(ports.semanticSearchEvents).hasSize(1);
+        assertThat(ports.semanticSearchEvents.getFirst().scope()).isEqualTo(SearchScope.DOCUMENT_GROUP);
         assertThat(ports.semanticSearchEvents.getFirst().documentGroupId()).isEqualTo("group-1");
         assertThat(ports.semanticSearchEvents.getFirst().resultCount()).isEqualTo(1);
         assertThat(ports.semanticSearchEvents.getFirst().charged()).isTrue();
+    }
+
+    @Test
+    void semanticSearchDefaultsToDocumentGroupDefaultScope() {
+        service.semanticSearch(new SemanticSearchCommand(
+            "user-1",
+            "rag search",
+            Map.of(),
+            null,
+            List.of()
+        ));
+
+        assertThat(ports.lastSearchQuery.scope()).isEqualTo(SearchScope.DOCUMENT_GROUP);
+        assertThat(ports.lastSearchQuery.documentGroupId()).isEqualTo("default");
+        assertThat(ports.semanticSearchEvents.getFirst().scope()).isEqualTo(SearchScope.DOCUMENT_GROUP);
+        assertThat(ports.semanticSearchEvents.getFirst().documentGroupId()).isEqualTo("default");
+    }
+
+    @Test
+    void semanticSearchUserScopeSearchesWithoutDocumentGroup() {
+        service.semanticSearch(new SemanticSearchCommand(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "rag search",
+            Map.of(),
+            5,
+            List.of()
+        ));
+
+        assertThat(ports.lastSearchQuery.scope()).isEqualTo(SearchScope.USER);
+        assertThat(ports.lastSearchQuery.documentGroupId()).isNull();
+        assertThat(ports.semanticSearchEvents.getFirst().scope()).isEqualTo(SearchScope.USER);
+        assertThat(ports.semanticSearchEvents.getFirst().documentGroupId()).isNull();
+    }
+
+    @Test
+    void semanticSearchUserScopeRejectsDocumentGroupId() {
+        assertThatThrownBy(() -> service.semanticSearch(new SemanticSearchCommand(
+            "user-1",
+            SearchScope.USER,
+            "group-1",
+            "rag search",
+            Map.of(),
+            5,
+            List.of()
+        )))
+            .isInstanceOf(ExplorationDomainException.class)
+            .hasMessageContaining("documentGroupId");
     }
 
     @Test

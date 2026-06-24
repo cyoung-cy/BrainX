@@ -335,6 +335,12 @@ export interface components {
         /** @enum {string} */
         JobStatus: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
         SemanticSearchRequest: {
+            /**
+             * @description Search scope. DOCUMENT_GROUP searches within documentGroupId (default group if omitted). USER searches all note chunks owned by the user and must not include documentGroupId.
+             * @default DOCUMENT_GROUP
+             * @enum {string}
+             */
+            scope?: "DOCUMENT_GROUP" | "USER";
             /** @description Logical document group boundary for RAG/search isolation. If omitted, Knowledge Intelligence treats it as default. */
             documentGroupId?: string;
             query: string;
@@ -395,7 +401,27 @@ export interface components {
             noteScope?: {
                 [key: string]: unknown;
             };
+            clientContext?: components["schemas"]["AiClientContext"];
             modelId: string;
+        };
+        /** @description Frontend-selected AI context for the current task. The user message and client context are separate so the model can distinguish instructions from source material. */
+        AiClientContext: {
+            /** @enum {string} */
+            mode: "SELECTION" | "AROUND_CURSOR" | "FULL_NOTE" | "NOTE_EXCERPT" | "NONE";
+            /** @enum {string} */
+            source: "RIGHT_SIDEBAR" | "EDITOR_INLINE" | "WORKSPACE_CHAT";
+            items: components["schemas"]["AiContextItem"][];
+        };
+        AiContextItem: {
+            /** @enum {string} */
+            type: "NOTE_TITLE" | "NOTE_TEXT" | "SELECTION" | "CONTEXT_BEFORE" | "CONTEXT_AFTER";
+            noteId?: string;
+            documentGroupId?: string;
+            text: string;
+            truncated?: boolean;
+            metadata?: {
+                [key: string]: unknown;
+            };
         };
         ChatThreadDetailData: {
             thread: components["schemas"]["ChatThreadData"];

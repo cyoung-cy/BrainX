@@ -13,6 +13,7 @@ public interface SendChatMessageUseCase {
         String threadId,
         String message,
         Map<String, Object> noteScope,
+        Map<String, Object> clientContext,
         String modelId
     ) {
     }

@@ -4572,8 +4572,15 @@ components:
       properties:
         userId:
           type: string
+        scope:
+          type: string
+          enum:
+          - DOCUMENT_GROUP
+          - USER
+          default: DOCUMENT_GROUP
         documentGroupId:
           type: string
+          nullable: true
         queryHash:
           type: string
         resultCount:
@@ -4582,6 +4589,7 @@ components:
           type: boolean
       required:
       - userId
+      - scope
       - queryHash
       - resultCount
       - charged

@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -49,7 +50,10 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
-        payload.put("documentGroupId", DocumentGroups.normalize(event.documentGroupId()));
+        payload.put("scope", event.scope().name());
+        payload.put("documentGroupId", event.scope() == SearchScope.USER
+            ? null
+            : DocumentGroups.normalize(event.documentGroupId()));
         payload.put("queryHash", event.queryHash());
         payload.put("resultCount", event.resultCount());
         payload.put("charged", event.charged());

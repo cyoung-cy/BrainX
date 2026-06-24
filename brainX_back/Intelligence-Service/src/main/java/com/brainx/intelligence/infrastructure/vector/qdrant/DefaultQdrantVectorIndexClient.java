@@ -76,10 +76,7 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
             .setCollectionName(properties.getCollectionName())
             .addAllVector(toFloats(vector))
             .setLimit(limit)
-            .setFilter(Filter.newBuilder()
-                .addMust(matchKeyword(USER_ID, userId))
-                .addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId))
-                .build())
+            .setFilter(searchFilter(userId, documentGroupId))
             .setWithPayload(WithPayloadSelectorFactory.enable(true))
             .setWithVectors(WithVectorsSelectorFactory.enable(false))
             .build();
@@ -128,6 +125,15 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
             .addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId))
             .addMust(matchKeyword(NOTE_ID, noteId))
             .build();
+    }
+
+    private static Filter searchFilter(String userId, String documentGroupId) {
+        Filter.Builder builder = Filter.newBuilder()
+            .addMust(matchKeyword(USER_ID, userId));
+        if (documentGroupId != null && !documentGroupId.isBlank()) {
+            builder.addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId));
+        }
+        return builder.build();
     }
 
     private static QdrantVectorSearchHit toSearchHit(ScoredPoint point) {

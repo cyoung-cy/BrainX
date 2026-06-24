@@ -17,6 +17,7 @@ import com.brainx.intelligence.assist.domain.AiSuggestionDecision;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatMessageCreatedEvent;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatThreadCreatedEvent;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort.SemanticSearchPerformedEvent;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -91,10 +92,40 @@ class KafkaIntelligenceEventAdapterTest {
         var root = objectMapper.readTree(payload.getValue());
 
         assertThat(root.get("eventType").asText()).isEqualTo("SemanticSearchPerformed");
+        assertThat(root.get("payload").get("scope").asText()).isEqualTo("DOCUMENT_GROUP");
         assertThat(root.get("payload").get("documentGroupId").asText()).isEqualTo("group-1");
         assertThat(root.get("payload").get("queryHash").asText()).isEqualTo("hash");
         assertThat(root.get("payload").get("resultCount").asInt()).isEqualTo(3);
         assertThat(root.get("payload").get("charged").asBoolean()).isTrue();
+    }
+
+    @Test
+    void semanticSearchPerformedPublishesUserScopeWithoutDocumentGroup() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.semanticSearchPerformed(new SemanticSearchPerformedEvent(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "hash",
+            2,
+            true
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("semantic-search-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("SemanticSearchPerformed");
+        assertThat(root.get("payload").get("scope").asText()).isEqualTo("USER");
+        assertThat(root.get("payload").get("documentGroupId").isNull()).isTrue();
+        assertThat(root.get("payload").get("queryHash").asText()).isEqualTo("hash");
+        assertThat(root.get("payload").get("resultCount").asInt()).isEqualTo(2);
     }
 
     @Test

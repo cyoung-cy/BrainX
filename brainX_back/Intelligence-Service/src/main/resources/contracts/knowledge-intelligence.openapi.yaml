@@ -1488,6 +1488,14 @@ components:
     SemanticSearchRequest:
       type: object
       properties:
+        scope:
+          type: string
+          enum:
+          - DOCUMENT_GROUP
+          - USER
+          default: DOCUMENT_GROUP
+          description: Search scope. DOCUMENT_GROUP searches within documentGroupId (default group if omitted). USER searches
+            all note chunks owned by the user and must not include documentGroupId.
         documentGroupId:
           type: string
           description: Logical document group boundary for RAG/search isolation. If omitted, Knowledge Intelligence treats
@@ -1643,11 +1651,67 @@ components:
           description: Optional narrowing scope inside the chat thread documentGroupId. noteScope.documentGroupId must match
             the thread documentGroupId when supplied.
           additionalProperties: true
+        clientContext:
+          $ref: '#/components/schemas/AiClientContext'
         modelId:
           type: string
       required:
       - message
       - modelId
+      additionalProperties: false
+    AiClientContext:
+      type: object
+      description: Frontend-selected AI context for the current task. The user message and client context are separate so
+        the model can distinguish instructions from source material.
+      properties:
+        mode:
+          type: string
+          enum:
+          - SELECTION
+          - AROUND_CURSOR
+          - FULL_NOTE
+          - NOTE_EXCERPT
+          - NONE
+        source:
+          type: string
+          enum:
+          - RIGHT_SIDEBAR
+          - EDITOR_INLINE
+          - WORKSPACE_CHAT
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiContextItem'
+      required:
+      - mode
+      - source
+      - items
+      additionalProperties: false
+    AiContextItem:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - NOTE_TITLE
+          - NOTE_TEXT
+          - SELECTION
+          - CONTEXT_BEFORE
+          - CONTEXT_AFTER
+        noteId:
+          type: string
+        documentGroupId:
+          type: string
+        text:
+          type: string
+        truncated:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+      - type
+      - text
       additionalProperties: false
     ChatThreadDetailData:
       type: object

@@ -33,6 +33,7 @@ import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
 import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
 import { useWikiLinkContext } from "./WikiLinkContext";
 import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
+import { AI_CONTEXT_AROUND_CURSOR_CHARS, buildInlineAssistContext } from "@/lib/ai-context";
 // 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
 // Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
 // 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
@@ -44,8 +45,6 @@ import { lowlight } from "./lowlightSetup";
 
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
-
-const INLINE_REWRITE_CONTEXT_CHARS = 1000;
 
 /* ── Markdown → HTML (초기 로딩) ─────────────────────────────────────── */
 function escHtml(s: string) {
@@ -1221,16 +1220,17 @@ function selectedText(editor: Editor, range: RewriteRange) {
 
 function inlineContext(editor: Editor, range: RewriteRange) {
   const docSize = editor.state.doc.content.size;
-  return {
+  return buildInlineAssistContext({
+    task: range.from === range.to ? "editor.continue" : "editor.rewrite",
     contextBefore: serializeRangeAsMarkdown(editor, {
-      from: Math.max(0, range.from - INLINE_REWRITE_CONTEXT_CHARS),
+      from: Math.max(0, range.from - AI_CONTEXT_AROUND_CURSOR_CHARS),
       to: range.from,
     }),
     contextAfter: serializeRangeAsMarkdown(editor, {
       from: range.to,
-      to: Math.min(docSize, range.to + INLINE_REWRITE_CONTEXT_CHARS),
+      to: Math.min(docSize, range.to + AI_CONTEXT_AROUND_CURSOR_CHARS),
     }),
-  };
+  });
 }
 
 function insertMarkdownContent(editor: Editor, range: RewriteRange, text: string) {
@@ -1468,9 +1468,15 @@ function BubbleToolbar({
 
     const selectedMarkdown = saved?.selectedMarkdown ?? (serializeRangeAsMarkdown(editor, range) || originalPlainText);
 
-    const context = saved
+    const rawContext = saved
       ? { contextBefore: saved.contextBefore, contextAfter: saved.contextAfter }
       : inlineContext(editor, range);
+    const context = buildInlineAssistContext({
+      task: "editor.rewrite",
+      selectedText: saved?.selectedMarkdown ?? selectedMarkdown,
+      contextBefore: rawContext.contextBefore,
+      contextAfter: rawContext.contextAfter,
+    });
     const requestId = rewriteRequestIdRef.current + 1;
     rewriteRequestIdRef.current = requestId;
     rewriteAbortRef.current?.abort();
@@ -1482,7 +1488,7 @@ function BubbleToolbar({
       requestId,
       range,
       originalPlainText,
-      selectedMarkdown,
+      selectedMarkdown: context.selectedText || selectedMarkdown,
       contextBefore: context.contextBefore,
       contextAfter: context.contextAfter,
       text: "",
@@ -1493,7 +1499,7 @@ function BubbleToolbar({
       const done = await createInlineAssistStream(
         {
           noteId,
-          selectedText: selectedMarkdown,
+          selectedText: context.selectedText || selectedMarkdown,
           contextBefore: context.contextBefore,
           contextAfter: context.contextAfter,
           action: "REWRITE",
@@ -1520,7 +1526,7 @@ function BubbleToolbar({
               requestId,
               range,
               originalPlainText,
-              selectedMarkdown,
+              selectedMarkdown: context.selectedText || selectedMarkdown,
               contextBefore: context.contextBefore,
               contextAfter: context.contextAfter,
               text: streamedText,
@@ -1538,7 +1544,7 @@ function BubbleToolbar({
               requestId,
               range,
               originalPlainText,
-              selectedMarkdown,
+              selectedMarkdown: context.selectedText || selectedMarkdown,
               contextBefore: context.contextBefore,
               contextAfter: context.contextAfter,
               text: streamedText,
