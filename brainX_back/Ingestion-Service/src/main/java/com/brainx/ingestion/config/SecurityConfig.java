@@ -28,12 +28,22 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            // 노트 안 PDF 임베드 뷰어(iframe)가 GET /api/v1/assets/{assetId}/file을 그리려면
+            // 기본 X-Frame-Options: DENY를 풀어야 한다. frame-ancestors로 brainx-next 오리진만 허용.
+            .headers(headers -> headers
+                .frameOptions(frameOptions -> frameOptions.disable())
+                .contentSecurityPolicy(csp -> csp.policyDirectives(
+                    "frame-ancestors 'self' http://localhost:3000 http://localhost:5173"))
+            )
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/v1/publish-jobs/**").permitAll()
-                // TEMP: 로그인 없이 Notion 가져오기 기능 테스트용. 실제 로그인 연동 완료 후 제거할 것.
+                // TEMP: 로그인 없이 가져오기 기능 테스트용. 실제 로그인 연동 완료 후 제거할 것.
                 .requestMatchers("/api/v1/imports/notion/**").permitAll()
+                .requestMatchers("/api/v1/imports/obsidian/**").permitAll()
+                .requestMatchers("/api/v1/imports/file/**").permitAll()
+                .requestMatchers("/api/v1/assets/**").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/imports/*").permitAll()
                 .anyRequest().authenticated()
             )

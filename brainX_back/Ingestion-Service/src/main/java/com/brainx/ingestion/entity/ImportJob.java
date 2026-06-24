@@ -50,13 +50,16 @@ public class ImportJob {
     @Column(name = "target_folder_id", length = 36)
     private String targetFolderId;
 
+    // OBSIDIAN(ZIP)뿐 아니라 FILE(단일 파일) 가져오기에도 업로드된 asset id로 재사용한다.
     @Column(name = "uploaded_zip_asset_id", length = 200)
     private String uploadedZipAssetId;
 
-    @Column(name = "created_note_ids", length = 2000)
+    // ZIP 가져오기는 파일 수가 많으면 콤마로 이어붙인 note id 목록이 쉽게 2000자를 넘으므로
+    // varchar 길이 제한 없는 TEXT로 저장한다.
+    @Column(name = "created_note_ids", columnDefinition = "TEXT")
     private String createdNoteIds;
 
-    @Column(name = "failed_files", length = 2000)
+    @Column(name = "failed_files", columnDefinition = "TEXT")
     private String failedFiles;
 
     @CreatedDate
@@ -68,7 +71,7 @@ public class ImportJob {
     private LocalDateTime updatedAt;
 
     public enum SourceType {
-        NOTION, OBSIDIAN
+        NOTION, OBSIDIAN, FILE
     }
 
     public enum JobStatus {

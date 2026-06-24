@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus, Trash2 } from "lucide-react";
+import { useState, useMemo, useRef, useEffect, useCallback, type DragEvent } from "react";
+import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus, Upload, Trash2 } from "lucide-react";
 import { CollapseChevron } from "./CollapseChevron";
 import { HoverInfoCard } from "./HoverInfoCard";
 import { cx } from "@/lib/utils";
@@ -247,6 +247,9 @@ interface Props {
   onReorderNote: (noteId: string, referenceNoteId: string, position: "before" | "after") => void;
   onMoveFolderToParent: (folderId: string, targetParentId: string | null) => void;
   onReorderFolder: (folderId: string, referenceFolderId: string, position: "before" | "after") => void;
+  /** OS 파일 탐색기에서 노트 탐색기 위로 파일을 드래그&드롭했을 때 호출된다(선택된 폴더로 가져오기).
+      내부 노트/폴더 드래그(draggable 항목들)와는 별개 경로 — dataTransfer.types로 구분한다. */
+  onDropFiles?: (files: FileList) => void;
 }
 
 /* ── 메인 컴포넌트 ──────────────────────────────────── */
@@ -270,8 +273,15 @@ export default function NotesExplorer({
   onReorderNote,
   onMoveFolderToParent,
   onReorderFolder,
+  onDropFiles,
 }: Props) {
   const [search, setSearch] = useState("");
+  // OS 파일을 끌어오는 중인지(내부 노트/폴더 드래그와 구분) — dataTransfer.types에 "Files"가
+  // 있을 때만 true가 되며, dragenter/dragleave 카운팅으로 자식 요소를 오갈 때 깜빡이지 않게 한다.
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const fileDragDepthRef = useRef(0);
+
+  const isFileDrag = (e: DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
   const [sortBy, setSortBy] = useState<SortOption>("modified");
   const [favorites, setFavorites] = useState<Set<string>>(
     () => new Set(["spring", "brainx-arch", "rag-flow"])
@@ -324,7 +334,41 @@ export default function NotesExplorer({
   );
 
   return (
-    <div className="hidden w-60 shrink-0 flex-col border-r border-line/50 md:flex" style={{ background: "rgb(var(--bg2))" }}>
+    <div
+      className="relative hidden w-60 shrink-0 flex-col border-r border-line/50 md:flex"
+      style={{ background: "rgb(var(--bg2))" }}
+      onDragEnter={(e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        fileDragDepthRef.current += 1;
+        setFileDragOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(e) => {
+        if (!isFileDrag(e)) return;
+        fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+        if (fileDragDepthRef.current === 0) setFileDragOver(false);
+      }}
+      onDrop={(e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        fileDragDepthRef.current = 0;
+        setFileDragOver(false);
+        if (e.dataTransfer.files.length > 0) onDropFiles?.(e.dataTransfer.files);
+      }}
+    >
+      {fileDragOver && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-[1px]">
+          <Upload size={22} className="text-primary" />
+          <p className="text-[12px] font-medium text-primary">
+            놓으면 {selectedFolderId ? "선택한 폴더로" : "가져오기"} 추가됩니다
+          </p>
+        </div>
+      )}
 
       {/* ── 헤더 ──────────────────────────────────────── */}
       <div className="border-b border-line/50 px-3 py-3 space-y-2.5">

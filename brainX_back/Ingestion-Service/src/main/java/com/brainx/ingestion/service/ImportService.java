@@ -4,7 +4,10 @@ import com.brainx.ingestion.client.WorkspaceApiClient;
 import com.brainx.ingestion.dto.request.IngestionRequest.*;
 import com.brainx.ingestion.dto.response.IngestionResponse.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import com.brainx.ingestion.entity.Asset;
 import com.brainx.ingestion.entity.ImportJob;
 import com.brainx.ingestion.entity.ImportJob.ImportMode;
 import com.brainx.ingestion.entity.ImportJob.JobStatus;
@@ -14,6 +17,7 @@ import com.brainx.ingestion.entity.IntegrationAccount.Provider;
 import com.brainx.ingestion.exception.BrainXException;
 import com.brainx.ingestion.repository.ImportJobRepository;
 import com.brainx.ingestion.repository.IntegrationAccountRepository;
+import com.brainx.ingestion.service.ContentConverter.ZipEntryContent;
 import com.brainx.ingestion.service.NotionApiService.NotionTokenResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +36,8 @@ public class ImportService {
     private final ImportJobRepository importJobRepository;
     private final NotionApiService notionApiService;
     private final WorkspaceApiClient workspaceApiClient;
+    private final AssetService assetService;
+    private final ContentConverter contentConverter;
 
     @Value("${notion.client-id}")
     private String notionClientId;
@@ -89,6 +95,10 @@ public class ImportService {
         }
 
         // 실제 Notion API로 code → access_token 교환
+        log.info("Notion 토큰 교환 시도: redirectUri={}, codeLen={}, codePrefix={}",
+                account.getRedirectUri(),
+                request.getCode() == null ? -1 : request.getCode().length(),
+                request.getCode() == null ? "null" : request.getCode().substring(0, Math.min(8, request.getCode().length())));
         NotionTokenResult token = notionApiService.exchangeToken(
                 request.getCode(), account.getRedirectUri());
 
@@ -133,7 +143,7 @@ public class ImportService {
         try {
             String accessToken = account.getAccessToken();
             List<String> allNoteIds = importPageRecursive(
-                    request.getSourceId(), request.getTargetFolderId(), accessToken, jwtToken);
+                    userId, request.getSourceId(), request.getTargetFolderId(), accessToken, jwtToken);
 
             job.setStatus(JobStatus.COMPLETED);
             job.setCreatedNoteIds(String.join(",", allNoteIds));
@@ -150,19 +160,19 @@ public class ImportService {
 
     // ── Notion 재귀 임포트 ────────────────────────────────────────────────
 
-    private List<String> importPageRecursive(String pageId, String folderId,
+    private List<String> importPageRecursive(String userId, String pageId, String folderId,
                                              String accessToken, String jwtToken) {
         List<String> allNoteIds = new ArrayList<>();
 
         String title = notionApiService.getPageTitle(pageId, accessToken);
-        String markdown = notionApiService.getPageMarkdown(pageId, accessToken);
+        String markdown = notionApiService.getPageMarkdown(pageId, accessToken, userId);
         String noteId = workspaceApiClient.createNote(title, markdown, folderId, null, jwtToken);
         allNoteIds.add(noteId);
 
         List<NotionApiService.ChildPageRef> childPages = notionApiService.getChildPages(pageId, accessToken);
         for (NotionApiService.ChildPageRef child : childPages) {
             try {
-                List<String> childNoteIds = importPageRecursive(child.id(), folderId, accessToken, jwtToken);
+                List<String> childNoteIds = importPageRecursive(userId, child.id(), folderId, accessToken, jwtToken);
                 if (!childNoteIds.isEmpty()) {
                     workspaceApiClient.createNoteLink(noteId, childNoteIds.get(0), child.title(), jwtToken);
                     allNoteIds.addAll(childNoteIds);
@@ -184,10 +194,10 @@ public class ImportService {
         return notionApiService.searchPages(account.getAccessToken());
     }
 
-    // ── Obsidian Import ───────────────────────────────────────────────────
+    // ── Obsidian / ZIP Import ──────────────────────────────────────────────
 
     @Transactional
-    public ImportJobCreatedResponse createObsidianImportJob(String userId, ObsidianImportJobRequest request) {
+    public ImportJobCreatedResponse createObsidianImportJob(String userId, ObsidianImportJobRequest request, String jwtToken) {
         ImportJob job = ImportJob.builder()
                 .userId(userId)
                 .sourceType(SourceType.OBSIDIAN)
@@ -196,8 +206,175 @@ public class ImportService {
                 .targetFolderId(request.getTargetFolderId())
                 .build();
         importJobRepository.save(job);
-        log.info("Obsidian 가져오기 작업 생성: jobId={}", job.getImportJobId());
+
+        try {
+            Asset asset = assetService.getOwnedAsset(userId, request.getUploadedZipAssetId());
+            byte[] zipBytes = assetService.readBytes(asset);
+            List<ZipEntryContent> entries = contentConverter.convertZip(zipBytes);
+
+            List<String> noteIds = new ArrayList<>();
+            List<String> failed = new ArrayList<>();
+            importZipEntries(userId, entries, request.getTargetFolderId(), jwtToken, noteIds, failed);
+
+            job.setStatus(noteIds.isEmpty() && !entries.isEmpty() ? JobStatus.FAILED : JobStatus.COMPLETED);
+            job.setCreatedNoteIds(String.join(",", noteIds));
+            if (!failed.isEmpty()) job.setFailedFiles(String.join(",", failed));
+            log.info("ZIP 가져오기 완료: jobId={}, 생성 노트 수={}, 실패 수={}",
+                    job.getImportJobId(), noteIds.size(), failed.size());
+        } catch (Exception e) {
+            job.setStatus(JobStatus.FAILED);
+            job.setFailedFiles("ZIP 가져오기 실패: " + e.getMessage());
+            log.error("ZIP 가져오기 실패: jobId={}, error={}", job.getImportJobId(), e.getMessage());
+        }
+        importJobRepository.save(job);
         return ImportJobCreatedResponse.from(job);
+    }
+
+    // ── 단일 파일 가져오기 ───────────────────────────────────────────────────
+
+    @Transactional
+    public ImportJobCreatedResponse createFileImportJob(String userId, FileImportJobRequest request, String jwtToken) {
+        ImportJob job = ImportJob.builder()
+                .userId(userId)
+                .sourceType(SourceType.FILE)
+                .mode(ImportMode.IMPORT)
+                .uploadedZipAssetId(request.getUploadedAssetId())
+                .targetFolderId(request.getTargetFolderId())
+                .build();
+        importJobRepository.save(job);
+
+        try {
+            Asset asset = assetService.getOwnedAsset(userId, request.getUploadedAssetId());
+            byte[] bytes = assetService.readBytes(asset);
+
+            if (contentConverter.isZip(asset.getFileName(), asset.getContentType())) {
+                List<ZipEntryContent> entries = contentConverter.convertZip(bytes);
+                List<String> noteIds = new ArrayList<>();
+                List<String> failed = new ArrayList<>();
+                importZipEntries(userId, entries, request.getTargetFolderId(), jwtToken, noteIds, failed);
+                job.setStatus(noteIds.isEmpty() && !entries.isEmpty() ? JobStatus.FAILED : JobStatus.COMPLETED);
+                job.setCreatedNoteIds(String.join(",", noteIds));
+                if (!failed.isEmpty()) job.setFailedFiles(String.join(",", failed));
+            } else {
+                String title = stripExtension(asset.getFileName());
+                ContentConverter.EmbedKind embedKind =
+                        contentConverter.embedKindOf(asset.getFileName(), asset.getContentType());
+                String content = switch (embedKind) {
+                    case PDF -> {
+                        assetService.ensureContentType(asset, "application/pdf");
+                        yield buildPdfEmbedHtml(asset.getAssetId(), asset.getFileName());
+                    }
+                    case IMAGE -> {
+                        assetService.ensureContentType(asset, contentConverter.contentTypeFor(embedKind, asset.getFileName()));
+                        yield buildImageEmbedHtml(asset.getAssetId(), asset.getFileName());
+                    }
+                    case HTML -> {
+                        assetService.ensureContentType(asset, "text/html");
+                        yield buildHtmlEmbedHtml(asset.getAssetId(), asset.getFileName());
+                    }
+                    case NONE -> contentConverter.convertSingleFile(asset.getFileName(), asset.getContentType(), bytes);
+                };
+                String noteId = workspaceApiClient.createNote(title, content, request.getTargetFolderId(), null, jwtToken);
+                job.setStatus(JobStatus.COMPLETED);
+                job.setCreatedNoteIds(noteId);
+            }
+            log.info("파일 가져오기 완료: jobId={}, fileName={}", job.getImportJobId(), asset.getFileName());
+        } catch (Exception e) {
+            job.setStatus(JobStatus.FAILED);
+            job.setFailedFiles("파일 가져오기 실패: " + e.getMessage());
+            log.error("파일 가져오기 실패: jobId={}, error={}", job.getImportJobId(), e.getMessage());
+        }
+        importJobRepository.save(job);
+        return ImportJobCreatedResponse.from(job);
+    }
+
+    private String stripExtension(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 ? fileName.substring(0, dot) : fileName;
+    }
+
+    /**
+     * 옵시디언처럼 PDF 원본을 노트 안에서 그대로 볼 수 있도록, 노트 본문을 PDF 임베드 블록
+     * (brainx-next의 PdfBlock 노드가 인식하는 data-pdf-block div) 하나로만 채운다. 추출
+     * 텍스트는 더 이상 본문에 덧붙이지 않는다(뷰어만 보여달라는 요청). NoteEditor는 콘텐츠가
+     * "<"로 시작하면 이미 HTML로 간주하고 그대로 로드하므로(markdownToHtml을 다시 타지 않음),
+     * 이 메서드는 markdown이 아니라 완전한 HTML 문자열을 반환해야 한다.
+     */
+    private String buildPdfEmbedHtml(String assetId, String fileName) {
+        return "<div data-pdf-block=\"true\" data-asset-id=\"" + assetId
+                + "\" data-file-name=\"" + escapeHtml(fileName) + "\"></div>";
+    }
+
+    /** PDF와 동일하게, 이미지도 텍스트로 풀어쓰지 않고 brainx-next의 ImageBlock 노드가
+        인식하는 자산 참조 블록 하나로만 본문을 채운다(원본이 그대로 보여야 한다). */
+    private String buildImageEmbedHtml(String assetId, String fileName) {
+        return "<div data-image-block=\"true\" data-asset-id=\"" + assetId
+                + "\" data-file-name=\"" + escapeHtml(fileName) + "\"></div>";
+    }
+
+    /** HTML도 텍스트 추출 대신, brainx-next의 HtmlBlock 노드가 iframe으로 원본 화면을
+        그대로 띄워주도록 자산 참조 블록만 본문에 채운다. */
+    private String buildHtmlEmbedHtml(String assetId, String fileName) {
+        return "<div data-html-block=\"true\" data-asset-id=\"" + assetId
+                + "\" data-file-name=\"" + escapeHtml(fileName) + "\"></div>";
+    }
+
+    /** ZIP 항목 하나를 노트 본문으로 변환한다. PDF/이미지/HTML은 먼저 파생 자산으로
+        저장해 원본 바이너리를 보존한 뒤 임베드 블록을 만들고, 그 외에는 이미 변환된
+        마크다운을 그대로 쓴다. */
+    private String buildZipEntryContent(String userId, ZipEntryContent entry) {
+        if (entry.embedKind() == ContentConverter.EmbedKind.NONE) {
+            return entry.markdown();
+        }
+        String assetId = assetService.persistDerivedAsset(
+                userId, entry.fullFileName(), entry.embedContentType(), entry.embedBytes()).getAssetId();
+        return switch (entry.embedKind()) {
+            case PDF -> buildPdfEmbedHtml(assetId, entry.fullFileName());
+            case IMAGE -> buildImageEmbedHtml(assetId, entry.fullFileName());
+            case HTML -> buildHtmlEmbedHtml(assetId, entry.fullFileName());
+            case NONE -> entry.markdown();
+        };
+    }
+
+    private String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** ZIP 항목들을 노트로 만들면서, ZIP 안의 디렉터리 구조를 Workspace-Service 폴더로
+        그대로 재현한다(이전에는 전부 targetFolderId 하나에 평탄하게 쌓였다). 디렉터리 경로별로
+        폴더 생성을 한 번만 하도록 캐시(folderIdByPath)를 두고, 상위 폴더부터 재귀적으로
+        만든다. */
+    private void importZipEntries(String userId, List<ZipEntryContent> entries, String targetFolderId,
+                                   String jwtToken, List<String> noteIds, List<String> failed) {
+        Map<String, String> folderIdByPath = new HashMap<>();
+        folderIdByPath.put("", targetFolderId);
+        for (ZipEntryContent entry : entries) {
+            try {
+                String dirPath = dirPathOf(entry.fullFileName());
+                String folderId = resolveFolderId(dirPath, folderIdByPath, jwtToken);
+                String content = buildZipEntryContent(userId, entry);
+                noteIds.add(workspaceApiClient.createNote(entry.fileName(), content, folderId, null, jwtToken));
+            } catch (Exception e) {
+                log.warn("ZIP 항목 노트 생성 실패: file={}, error={}", entry.fileName(), e.getMessage());
+                failed.add(entry.fileName());
+            }
+        }
+    }
+
+    private String dirPathOf(String fullFileName) {
+        int idx = fullFileName.lastIndexOf('/');
+        return idx >= 0 ? fullFileName.substring(0, idx) : "";
+    }
+
+    private String resolveFolderId(String dirPath, Map<String, String> folderIdByPath, String jwtToken) {
+        if (folderIdByPath.containsKey(dirPath)) return folderIdByPath.get(dirPath);
+        int idx = dirPath.lastIndexOf('/');
+        String parentPath = idx >= 0 ? dirPath.substring(0, idx) : "";
+        String name = idx >= 0 ? dirPath.substring(idx + 1) : dirPath;
+        String parentFolderId = resolveFolderId(parentPath, folderIdByPath, jwtToken);
+        String folderId = workspaceApiClient.createFolder(name, parentFolderId, jwtToken);
+        folderIdByPath.put(dirPath, folderId);
+        return folderId;
     }
 
     // ── 상태 조회 ─────────────────────────────────────────────────────────

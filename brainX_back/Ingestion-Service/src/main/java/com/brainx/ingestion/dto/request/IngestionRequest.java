@@ -43,6 +43,35 @@ public class IngestionRequest {
 
     @Getter
     @NoArgsConstructor
+    public static class AssetUploadSessionCreateRequest {
+        @NotBlank(message = "fileName은 필수입니다")
+        private String fileName;
+        @NotBlank(message = "contentType은 필수입니다")
+        private String contentType;
+        @jakarta.validation.constraints.Min(value = 1, message = "sizeBytes는 1 이상이어야 합니다")
+        private long sizeBytes;
+        private String targetNoteId;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    public static class AssetUploadCompleteRequest {
+        @NotBlank(message = "checksum은 필수입니다")
+        private String checksum;
+        @NotBlank(message = "conversionMode는 필수입니다")
+        private String conversionMode;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    public static class FileImportJobRequest {
+        @NotBlank(message = "uploadedAssetId는 필수입니다")
+        private String uploadedAssetId;
+        private String targetFolderId;
+    }
+
+    @Getter
+    @NoArgsConstructor
     public static class ExportJobRequest {
         @NotBlank(message = "noteId는 필수입니다")
         private String noteId;

@@ -28,7 +28,8 @@ public class WorkspaceApiClient {
         headers.set("Authorization", "Bearer " + jwtToken);
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        Map<String, Object> body = Map.of("targetNoteId", targetNoteId, "targetTitle", targetTitle);
+        Map<String, Object> body = Map.of(
+                "targetNoteId", targetNoteId, "targetTitle", targetTitle, "createIfMissing", true);
         try {
             restTemplate.postForEntity(
                     workspaceBaseUrl + "/api/v1/notes/" + sourceNoteId + "/links",
@@ -37,6 +38,34 @@ public class WorkspaceApiClient {
             );
         } catch (Exception e) {
             log.warn("노트 링크 생성 실패: source={}, target={}, error={}", sourceNoteId, targetNoteId, e.getMessage());
+        }
+    }
+
+    /** ZIP 가져오기에서 내부 디렉터리 구조를 그대로 폴더로 재현하기 위해 사용한다
+        (Workspace-Service SSOT의 POST /api/v1/folders, FolderCreateRequest{name, parentFolderId}). */
+    @SuppressWarnings("unchecked")
+    public String createFolder(String name, String parentFolderId, String jwtToken) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + jwtToken);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", name);
+        if (parentFolderId != null) body.put("parentFolderId", parentFolderId);
+
+        try {
+            ResponseEntity<Map> res = restTemplate.postForEntity(
+                    workspaceBaseUrl + "/api/v1/folders",
+                    new HttpEntity<>(body, headers),
+                    Map.class
+            );
+            Map<String, Object> data = (Map<String, Object>) res.getBody().get("data");
+            String folderId = (String) data.get("folderId");
+            log.info("폴더 생성 완료: folderId={}, name={}", folderId, name);
+            return folderId;
+        } catch (Exception e) {
+            log.error("workspace-service 폴더 생성 실패: name={}, error={}", name, e.getMessage());
+            throw BrainXException.internalError("폴더 생성에 실패했습니다: " + e.getMessage());
         }
     }
 

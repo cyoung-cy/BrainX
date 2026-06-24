@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { completeNotionOAuth, consumeNotionOAuthState, NOTION_OAUTH_MESSAGE_TYPE } from "@/lib/ingestion-api";
@@ -22,8 +22,15 @@ function NotionCallbackContent() {
   const router = useRouter();
   const { pushToast } = useBrainX();
   const [message, setMessage] = useState("Notion 연동을 완료하는 중입니다.");
+  // reactStrictMode(next.config.mjs)가 개발 모드에서 이 effect를 두 번 실행한다. code는
+  // 1회용이라 두 번째 실행이 같은 code로 교환을 시도하면 Notion이 거부해 실패 메시지가
+  // 뜬다 — 한 번만 실제로 처리되도록 막는다.
+  const ranRef = useRef(false);
 
   useEffect(() => {
+    if (ranRef.current) return;
+    ranRef.current = true;
+
     const code = searchParams.get("code");
     const state = searchParams.get("state");
 
