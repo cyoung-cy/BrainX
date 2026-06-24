@@ -50,11 +50,11 @@ export const useGuideStore = create<UserGuideState>()(
         set((state) => ({ totalEvents: state.totalEvents + 1 })),
 
       updateSkillLevel: (skillLevel) => set({ skillLevel }),
-      
+
       setUserId: (userId) => set({ userId }),
 
       resetTutorials: () => set({ completedTutorials: [], isManualTrigger: true }),
-      
+
       clearManualTrigger: () => set({ isManualTrigger: false }),
     }),
     {
