@@ -32,6 +32,8 @@ import PaneTreeRenderer, { type QuickSwitcherTarget } from "./PaneTreeRenderer";
 import NotesExplorer from "./NotesExplorer";
 import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
+import { isNotionDemoSession, uploadAndImportFile } from "@/lib/ingestion-api";
+import { useBrainX } from "@/components/brainx-provider";
 
 export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
 
@@ -144,6 +146,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const initRef = useRef<ReturnType<typeof createInitialPaneState> | null>(null);
   if (!initRef.current) initRef.current = createInitialPaneState(initialTab);
   const init = initRef.current;
+
+  const { pushToast } = useBrainX();
 
   const [state, setState] = useState<{ root: PaneNode; activeId: string }>(() => ({
     root: init.root,
@@ -318,6 +322,41 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const handleNoteClick = useCallback((noteId: string) => {
     openNoteInPane(state.activeId, noteId);
   }, [state.activeId, openNoteInPane]);
+
+  /* 노트 탐색기 위로 OS 파일을 드래그&드롭하면 /import 화면과 동일한
+     uploadAndImportFile() 경로로 가져오기를 수행한다(현재 선택된 폴더로 들어감).
+     데모(Notion demo) 세션은 실제 자산 업로드 백엔드가 없어 지원하지 않는다. */
+  const handleDropFiles = useCallback((files: FileList) => {
+    if (USE_MOCK_NOTES || isNotionDemoSession()) {
+      pushToast("데모 모드에서는 드래그&드롭 가져오기를 지원하지 않습니다.", "err");
+      return;
+    }
+    void (async () => {
+      const fileList = Array.from(files);
+      let firstNoteId: string | null = null;
+      let successCount = 0;
+      for (const file of fileList) {
+        try {
+          const job = await uploadAndImportFile(file, selectedFolderId ?? undefined);
+          if (!job || job.status === "FAILED") {
+            pushToast(`${file.name} 가져오기에 실패했습니다.`, "err");
+            continue;
+          }
+          const noteIds = job.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
+          if (noteIds.length > 0) {
+            firstNoteId ??= noteIds[0];
+            successCount += noteIds.length;
+          }
+        } catch (error) {
+          pushToast(error instanceof Error ? error.message : `${file.name} 가져오기에 실패했습니다.`, "err");
+        }
+      }
+      if (successCount > 0) {
+        pushToast(`${successCount}개 노트를 가져왔어요`, "ok");
+        window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: firstNoteId ?? undefined } }));
+      }
+    })();
+  }, [selectedFolderId, pushToast]);
 
   /* 같은 패널 안에서 탭 hold & drag로 순서 변경. activeTabId는 건드리지 않으므로 활성 탭 상태는 유지된다. */
   const handleReorderTab = useCallback((paneId: string, tabId: string, targetIndex: number) => {
@@ -743,32 +782,48 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   useEffect(() => {
     if (USE_MOCK_NOTES) return;
     let active = true;
-    setLoadError(null);
-    Promise.all([listNotes(), listFolders()])
-      .then(([noteData, folderData]) => {
-        if (!active) return;
-        const nextNotes = noteData.notes.map(workspaceNoteToMock);
-        const nextFolders = folderData.folders.map(workspaceFolderToMock);
-        setNotes(nextNotes);
-        setFolders(nextFolders);
 
-        if (initialTab.kind === "note" && nextNotes.some((note) => note.id === initialTab.noteId)) {
-          handleReplaceActiveTab(state.activeId, initialTab.noteId);
-          return;
-        }
-        if (initialTab.kind === "note" && nextNotes.length > 0) {
-          handleReplaceActiveTab(state.activeId, nextNotes[0].id);
-        }
-      })
-      .catch((error) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "Workspace-Service에서 노트를 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        if (active) hydratedRef.current = true;
-      });
+    function loadFromServer(openNoteId?: string) {
+      setLoadError(null);
+      return Promise.all([listNotes(), listFolders()])
+        .then(([noteData, folderData]) => {
+          if (!active) return;
+          const nextNotes = noteData.notes.map(workspaceNoteToMock);
+          const nextFolders = folderData.folders.map(workspaceFolderToMock);
+          setNotes(nextNotes);
+          setFolders(nextFolders);
+
+          const targetNoteId = openNoteId ?? (initialTab.kind === "note" ? initialTab.noteId : null);
+          if (targetNoteId && nextNotes.some((note) => note.id === targetNoteId)) {
+            handleReplaceActiveTab(state.activeId, targetNoteId);
+            return;
+          }
+          if (!openNoteId && initialTab.kind === "note" && nextNotes.length > 0) {
+            handleReplaceActiveTab(state.activeId, nextNotes[0].id);
+          }
+        })
+        .catch((error) => {
+          if (active) setLoadError(error instanceof Error ? error.message : "Workspace-Service에서 노트를 불러오지 못했습니다.");
+        })
+        .finally(() => {
+          if (active) hydratedRef.current = true;
+        });
+    }
+
+    loadFromServer();
+
+    // Import 등 NotesWorkspace 외부(별도 마운트된 화면)에서 노트가 새로 생성된 경우, 이 컴포넌트는
+    // 라우트 전환에도 리마운트되지 않아(레이아웃에서 한 번만 마운트) mount 시점 fetch만으로는 새
+    // 노트를 못 본다. 외부에서 이 이벤트를 쏘면 목록을 다시 불러오고, 지정한 노트를 바로 연다.
+    function handleExternalRefresh(event: Event) {
+      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      void loadFromServer(noteId);
+    }
+    window.addEventListener("brainx:notes-refresh", handleExternalRefresh);
 
     return () => {
       active = false;
+      window.removeEventListener("brainx:notes-refresh", handleExternalRefresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -991,6 +1046,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           onReorderNote={handleReorderNote}
           onMoveFolderToParent={handleMoveFolderToParent}
           onReorderFolder={handleReorderFolder}
+          onDropFiles={handleDropFiles}
         />
 
         {/* ── 중앙: 에디터 영역 ───────────────────────── */}

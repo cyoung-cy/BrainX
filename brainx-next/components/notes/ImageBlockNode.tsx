@@ -6,6 +6,7 @@ import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tip
 import type { EditorView } from "@tiptap/pm/view";
 import { ImageOff } from "lucide-react";
 import { cx } from "@/lib/utils";
+import { getAssetFileUrl } from "@/lib/ingestion-api";
 import {
   BlockSizeToolbar,
   blockContentStyle,
@@ -48,7 +49,10 @@ declare module "@tiptap/core" {
 
 function ImageBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const [broken, setBroken] = useState(false);
-  const src          = (node.attrs.src as string) ?? "";
+  const assetId      = (node.attrs.assetId as string | null) ?? null;
+  // 파일 가져오기로 만들어진 노트는 base64/외부 URL이 아니라 자산 참조(assetId)만 갖고
+  // 있으므로, 원본 바이너리 스트리밍 엔드포인트 URL을 그 자리에서 계산해 사용한다.
+  const src          = assetId ? getAssetFileUrl(assetId) : ((node.attrs.src as string) ?? "");
   const alt          = (node.attrs.alt as string) ?? "";
   const align        = (node.attrs.align as BlockAlign) ?? "center";
   const widthMode    = (node.attrs.widthMode as BlockWidthMode) ?? "fit";
@@ -154,6 +158,11 @@ export const ImageBlock = Node.create({
     return {
       src: { default: null },
       alt: { default: null },
+      assetId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute("data-asset-id"),
+        renderHTML: (attrs) => (attrs.assetId ? { "data-asset-id": String(attrs.assetId) } : {}),
+      },
       align: {
         default: "center",
         parseHTML: (el) => el.getAttribute("data-align") ?? "center",
@@ -182,11 +191,14 @@ export const ImageBlock = Node.create({
         tag: "div[data-image-block]",
         getAttrs: (el) => {
           if (!(el instanceof HTMLElement)) return false;
+          const assetId = el.getAttribute("data-asset-id");
           const img = el.querySelector("img");
-          if (!img) return false;
+          // 파일 가져오기로 만들어진 노트는 <img>가 없는 자산 참조 전용 블록(assetId만)이다.
+          if (!assetId && !img) return false;
           return {
-            src: img.getAttribute("src"),
-            alt: img.getAttribute("alt"),
+            assetId,
+            src: img?.getAttribute("src") ?? null,
+            alt: img?.getAttribute("alt") ?? el.getAttribute("data-file-name") ?? null,
             align: el.getAttribute("data-align") ?? "center",
             widthMode: el.getAttribute("data-width-mode") ?? "fit",
             widthPercent: el.getAttribute("data-width-percent")
@@ -201,7 +213,15 @@ export const ImageBlock = Node.create({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const { src, alt } = node.attrs;
+    const { src, alt, assetId } = node.attrs;
+    // 자산 참조 이미지는 src를 굳이 직렬화하지 않는다 — 백엔드 base URL이 바뀌어도
+    // 다음 로드 때 assetId로 다시 계산되도록 한다(PdfBlock과 동일한 패턴).
+    if (assetId) {
+      return [
+        "div",
+        mergeAttributes(HTMLAttributes, { "data-image-block": "true", "data-file-name": alt ?? "" }),
+      ];
+    }
     return [
       "div",
       mergeAttributes(HTMLAttributes, { "data-image-block": "true" }),

@@ -43,6 +43,10 @@ workspace-service:
 cdn:
   base-url: ${CDN_BASE_URL:https://cdn.brainx.com}
 
+asset:
+  storage-dir: ${ASSET_STORAGE_DIR:./asset-storage}
+  max-size-bytes: ${ASSET_MAX_SIZE_BYTES:5368709120}
+
 logging:
   level:
     com.brainx: DEBUG

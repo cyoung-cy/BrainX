@@ -3724,7 +3724,13 @@ paths:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
       x-visibility: public
-      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Implemented. No pre-signed external storage (S3 etc.) exists yet, so
+        uploadUrl returns a same-origin path
+        (/api/v1/assets/upload-sessions/{uploadSessionId}/binary, see PUT
+        below) backed by local disk storage on content-ingestion-publishing.
+        Will be swapped for a real pre-signed URL once object storage is
+        provisioned, without changing this request/response shape.
       x-consumers:
       - id: web.note-editor
         type: frontend
@@ -3732,6 +3738,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3796,14 +3805,19 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
-  /api/v1/assets/upload-sessions/{uploadSessionId}/complete:
-    post:
-      operationId: completeAssetUpload
-      summary: 파일 업로드 완료 처리
+  /api/v1/assets/upload-sessions/{uploadSessionId}/binary:
+    put:
+      operationId: uploadAssetBinary
+      summary: 파일 바이너리 업로드
+      description: >
+        Implemented as a stand-in for a pre-signed storage URL until real
+        object storage is provisioned (see x-implementation-note on
+        createAssetUploadSession above). Accepts the raw file as
+        multipart/form-data under the "file" field and stores it on local
+        disk keyed by uploadSessionId.
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3812,6 +3826,91 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
+      - id: web.support
+        type: frontend
+        description: User support center
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: uploadSessionId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessBase'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/assets/upload-sessions/{uploadSessionId}/complete:
+    post:
+      operationId: completeAssetUpload
+      summary: 파일 업로드 완료 처리
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-implementation-note: >
+        Implemented. Marks the asset UPLOADED. conversionJobId is always
+        returned as null — actual markdown/note extraction happens
+        synchronously inside POST /api/v1/imports/file/jobs or
+        /api/v1/imports/obsidian/jobs, not at completion time. AssetUploaded /
+        ConversionJobRequested events are not yet published (see Notion/
+        Obsidian import jobs for the same synchronous-processing pattern).
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      - id: web.import
+        type: frontend
+        description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3892,7 +3991,13 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Implemented. downloadUrl always points to
+        GET /api/v1/assets/{assetId}/file (see below) since there is no
+        external object storage yet. variants is always an empty array
+        (no image/thumbnail variants are generated). Does not verify asset
+        ownership against the caller — see implementation note on
+        GET /api/v1/assets/{assetId}/file for why.
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3901,6 +4006,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3965,6 +4073,63 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+  /api/v1/assets/{assetId}/file:
+    get:
+      operationId: getAssetFile
+      summary: 파일 원본 바이너리 다운로드/스트리밍
+      description: >
+        Added to support viewing the original file in place rather than only
+        converted/extracted text — the PDF/HTML embed viewers (web.note-editor's
+        PdfBlock/HtmlBlock nodes and the dedicated full-panel
+        PdfViewerPanel/HtmlViewerPanel, all in brainx-next) load this URL
+        directly as an <iframe src>, and the ImageBlock node loads it as an
+        <img src> for imported images. Not in the original SSOT; added
+        alongside the PDF viewer feature, later reused for image/HTML.
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-implementation-note: >
+        Implemented, streaming bytes from local disk (see
+        createAssetUploadSession's note on uploadUrl — same lack of external
+        object storage). Sets Content-Type from the stored asset content type
+        and Content-Disposition: inline so browsers render PDFs instead of
+        downloading them. Deliberately does not verify asset ownership
+        against the caller: this endpoint is loaded via plain browser
+        navigation (<iframe src>, <img src>), which cannot attach an
+        Authorization header, so an owner check would 404 for every viewer
+        embedded in a note that was not created by whichever identity the
+        request resolves to without a token (dev-test-user). TEMP: revisit
+        once real session/cookie-based auth exists so this can be scoped to
+        users who actually have access to the note referencing the asset.
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor — PdfBlock/HtmlBlock nodes and the dedicated PdfViewerPanel/HtmlViewerPanel render this URL in an iframe; ImageBlock node renders it as an img src
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: assetId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success. Raw file bytes with the asset's original Content-Type.
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
   /api/v1/conversions:
     post:
       operationId: requestConversion
@@ -4363,6 +4528,21 @@ paths:
         COMPLETED or FAILED status. Kafka events (ImportJobRequested,
         ImportJobCompleted) are not yet published. Migration to true async
         processing and bulkCreateNotesInternal is planned.
+
+        Image blocks: Notion's "file"-type images (hosted on Notion's own S3)
+        are served via a presigned GET URL that expires after 1 hour
+        (X-Amz-Expires=3600) — embedding that URL directly in the note would
+        render fine right after import and then break. Instead, the image is
+        downloaded immediately and persisted as our own asset (same storage
+        as the asset-upload endpoints), and the note's markdown gets
+        `![](asset://{assetId})` instead of the Notion URL — brainx-next's
+        markdownToHtml recognizes the `asset://` scheme and resolves it to
+        GET /api/v1/assets/{assetId}/file at render time (same assetId
+        pattern as the PdfBlock/ImageBlock/HtmlBlock nodes). "external"-type
+        images (hosted outside Notion) are not re-downloaded since their
+        URLs don't expire. If the download fails for any reason, the
+        original (possibly time-limited) Notion URL is used as a fallback
+        rather than failing the whole import.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4435,6 +4615,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop ZIP/file import onto the note tree
       x-produces-events:
       - ImportJobRequested
       x-internal-sync-calls:
@@ -4442,12 +4625,42 @@ paths:
         operationId: bulkCreateNotesInternal
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
+      - targetService: knowledge-workspace
+        operationId: createFolder
+        reason: import worker recreates the ZIP's internal directory structure as real folders before placing each entry's note inside the matching folder
+        required: false
       x-async-boundary: true
       x-implementation-note: >
-        Current implementation persists the job record and returns 202
-        immediately with status PENDING. Actual Obsidian ZIP extraction and
-        note creation are not yet implemented — the job stays in PENDING state.
-        Kafka event (ImportJobRequested) is not published.
+        Current implementation processes the ZIP synchronously within the
+        request (same pattern as Notion import): downloads the uploaded
+        asset, extracts every entry, converts each to markdown and creates
+        one note per entry via Workspace-Service, then returns
+        COMPLETED/FAILED. Accepts any ZIP archive, not only Obsidian vault
+        exports (entry type is detected by extension/content-type, reusing
+        the same converters as /api/v1/imports/file/jobs). Poll
+        GET /api/v1/imports/{importJobId} for the full result. Kafka event
+        (ImportJobRequested) is not yet published.
+
+        The ZIP's internal directory structure is recreated as real
+        Workspace folders (one POST /api/v1/folders call per unique
+        directory path, parents created before children, memoized so each
+        path is only created once) nested under targetFolderId, and each
+        entry's note is created inside the folder matching its original
+        path. Empty directories (no files inside) are not recreated, since
+        ZIP directory entries are skipped during extraction.
+
+        PDF/image/HTML entries are a special case: instead of extracting text
+        into the note's markdown, the original bytes are persisted as their
+        own asset (via the same storage as the asset-upload endpoints) and
+        the created note's content is set to a single embed marker — one of
+        `<div data-pdf-block="true" data-asset-id="..." data-file-name="...">`,
+        `<div data-image-block="true" data-asset-id="..." data-file-name="...">`,
+        or `<div data-html-block="true" data-asset-id="..." data-file-name="...">`
+        depending on file type — that brainx-next's PdfBlock/ImageBlock/HtmlBlock
+        nodes (PDF and HTML also get a dedicated full-panel viewer,
+        PdfViewerPanel/HtmlViewerPanel) render by pointing an iframe/img at
+        GET /api/v1/assets/{assetId}/file. The note carries no extracted/
+        searchable text for PDF/image/HTML entries in this mode.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4459,6 +4672,114 @@ paths:
       responses:
         '202':
           description: Accepted. Returns job ID and initial PENDING status only. Poll GET /api/v1/imports/{importJobId} for full result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ImportJobAcceptedData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/imports/file/jobs:
+    post:
+      operationId: requestFileImportJob
+      summary: 단일 파일 가져오기 요청 (CSV/PDF/Text/Markdown/HTML/Word)
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-visibility: public
+      x-consumers:
+      - id: web.import
+        type: frontend
+        description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
+      x-produces-events:
+      - ImportJobRequested
+      x-internal-sync-calls:
+      - targetService: knowledge-workspace
+        operationId: bulkCreateNotesInternal
+        reason: import worker must create notes through the Workspace authoritative ledger
+        required: true
+      - targetService: knowledge-workspace
+        operationId: createFolder
+        reason: when the uploaded asset is itself a ZIP, the import worker recreates its internal directory structure as real folders before placing each entry's note inside the matching folder (not applicable to single non-ZIP files)
+        required: false
+      x-async-boundary: true
+      x-implementation-note: >
+        Added to cover single-file import (CSV/PDF/Text/Markdown/HTML/DOCX)
+        for the "콘텐츠 가져오기"/"파일 기반 가져오기" import screens and the Notes
+        Explorer drag & drop dropzone, which previously had no corresponding
+        backend contract and were client-side mocks only. Processes
+        synchronously like Notion/Obsidian import: extracts markdown/text
+        from the uploaded asset (uploadedAssetId, created via the
+        asset-upload endpoints above) and creates one note via
+        Workspace-Service. If the asset is itself a ZIP, it is exploded into
+        one note per entry (including recreating the ZIP's directory
+        structure as folders), same as /api/v1/imports/obsidian/jobs. Kafka
+        event (ImportJobRequested) is not yet published.
+
+        If the uploaded asset is a PDF, image, or HTML file, the note's
+        content is instead set to an embed marker referencing the asset's own
+        GET /api/v1/assets/{assetId}/file — see the equivalent note on
+        requestObsidianImportJob above for the exact format and rationale
+        (viewer-only, no extracted text). PDF/HTML render in a dedicated
+        full-panel viewer outside the normal Tiptap note editor; images
+        render inline inside the normal note editor via the same ImageBlock
+        node used for pasted images.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileImportJobCreateRequest'
+      responses:
+        '202':
+          description: Accepted. Returns job ID and status only. Poll GET /api/v1/imports/{importJobId} for full result including createdNotes.
           content:
             application/json:
               schema:
@@ -4827,16 +5148,32 @@ paths:
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: Markdown/WYSIWYG note editor — intended consumer, not yet wired up (see x-implementation-note)
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
       description: Currently implemented as a synchronous clipboard publishing helper. The service receives noteContent and returns converted clipboard content immediately.
+      x-implementation-note: >
+        Implemented (PublishController/PublishService): for platform=tistory
+        the note's markdown is converted to HTML with a small hand-rolled
+        converter (headings/lists/blockquote/code blocks/bold/italic/inline
+        code; wiki-links rendered as plain text), for platform=notion/copy
+        the raw markdown is returned as-is. Response always has
+        status=COMPLETED synchronously — there is no real Tistory/Notion API
+        call, this only prepares clipboardContent/openUrl for the frontend
+        to copy and open the target site itself. brainx-next does not call
+        this endpoint yet (no caller in the codebase) despite the
+        x-consumers entry above describing the intended integration.
+        SecurityConfig permits this path without authentication
+        (`/v1/publish-jobs/**`), which does not match the `bearerAuth`
+        security requirement below; the controller falls back to
+        userId="anonymous" when unauthenticated. TEMP-style gap, same
+        pattern as the other permitAll routes — revisit once real
+        login/session auth exists.
       requestBody:
         required: true
         content:
@@ -10024,6 +10361,17 @@ components:
       required:
       - uploadedZipAssetId
       additionalProperties: false
+    FileImportJobCreateRequest:
+      type: object
+      properties:
+        uploadedAssetId:
+          type: string
+        targetFolderId:
+          type: string
+          nullable: true
+      required:
+      - uploadedAssetId
+      additionalProperties: false
     ImportJobAcceptedData:
       type: object
       description: >
@@ -11183,6 +11531,7 @@ components:
           enum:
           - NOTION_IMPORT
           - OBSIDIAN_IMPORT
+          - FILE_IMPORT
           - EXTENSION_CAPTURE
           - MCP_TOOL_CALL
         targetFolderId:

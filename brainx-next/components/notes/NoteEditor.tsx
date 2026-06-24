@@ -25,6 +25,8 @@ import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
 import { ImageBlock, insertImageBlockFromFile } from "./ImageBlockNode";
+import { PdfBlock } from "./PdfBlockNode";
+import { HtmlBlock } from "./HtmlBlockNode";
 import { blockWidthPercent, type BlockWidthMode } from "./BlockControls";
 import { FontSize, FontFamily, FONT_SIZE_PRESETS, FONT_FAMILY_PRESETS } from "./fontExtensions";
 import { WikiLink } from "./WikiLinkNode";
@@ -48,8 +50,27 @@ function escHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** `[[제목]]` / `[[제목|별칭]]` / `[[제목#헤딩]]` / `[[제목#헤딩|별칭]]`을 WikiLinkNode가
+    parseHTML로 인식하는 `span[data-wiki-link]` 구조로 변환한다. 에디터에 직접 타이핑할 때는
+    nodeInputRule이 같은 일을 하지만, 마크다운을 불러와서 표시할 때는(가져오기 등) 이 경로를
+    타지 않으므로 초기 로딩 변환에서도 처리해야 클릭 가능한 링크가 된다. */
+function wikiLinkHtml(text: string) {
+  return text.replace(/\[\[([^[\]]+)\]\]/g, (_match, body: string) => {
+    const [titleAndHeading, aliasPart] = body.split("|");
+    const [title, heading] = titleAndHeading.split("#");
+    const t = title.trim();
+    const h = heading?.trim();
+    const a = aliasPart?.trim();
+    if (!t) return _match;
+    const attrs = [`data-wiki-link="true"`, `data-title="${escHtml(t)}"`];
+    if (a) attrs.push(`data-alias="${escHtml(a)}"`);
+    if (h) attrs.push(`data-heading="${escHtml(h)}"`);
+    return `<span ${attrs.join(" ")}>[[${escHtml(a ?? t)}]]</span>`;
+  });
+}
+
 function inlineHtml(text: string) {
-  return text
+  return wikiLinkHtml(text)
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -105,6 +126,20 @@ function markdownToHtml(md: string): string {
     } else if (line.startsWith("> ")) {
       flushList();
       out.push(`<blockquote><p>${inlineHtml(line.slice(2))}</p></blockquote>`);
+    } else if (/^!\[([^\]]*)\]\((\S+)\)$/.exec(line.trim())) {
+      // 마크다운 이미지 문법(![alt](url)) — 이전에는 이 분기가 없어서 그냥 일반 문단의
+      // 리터럴 텍스트로 보였다(Notion 가져오기 등 마크다운 원문에 흔히 등장).
+      // url이 asset://{assetId} 형태면(가져오기에서 우리 자산으로 영구 저장한 이미지)
+      // 절대 URL을 본문에 굳이 박아두지 않고 PdfBlock/HtmlBlock과 같은 방식으로 렌더링
+      // 시점에 getAssetFileUrl(assetId)를 계산하게 한다 — 백엔드 base URL이 바뀌어도 안전.
+      flushList();
+      const [, alt, url] = /^!\[([^\]]*)\]\((\S+)\)$/.exec(line.trim())!;
+      if (url.startsWith("asset://")) {
+        const assetId = url.slice("asset://".length);
+        out.push(`<div data-image-block="true" data-asset-id="${escHtml(assetId)}" data-file-name="${escHtml(alt)}"></div>`);
+      } else {
+        out.push(`<div data-image-block="true"><img src="${escHtml(url)}" alt="${escHtml(alt)}"></div>`);
+      }
     } else {
       const olMatch = /^(\d+)\. (.+)/.exec(line);
       if (olMatch) {
@@ -1425,6 +1460,8 @@ const NOTE_EDITOR_EXTENSIONS = [
     exitOnArrowDown: true,
   }),
   ImageBlock,
+  PdfBlock,
+  HtmlBlock,
   BrainXTable,
   TableRow,
   BrainXTableHeader,

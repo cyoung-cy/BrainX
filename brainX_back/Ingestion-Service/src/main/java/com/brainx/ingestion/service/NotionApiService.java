@@ -21,6 +21,7 @@ import java.util.Map;
 public class NotionApiService {
 
     private final RestTemplate restTemplate;
+    private final AssetService assetService;
 
     @Value("${notion.client-id}")
     private String clientId;
@@ -131,7 +132,7 @@ public class NotionApiService {
 
     // 페이지 블록 → Markdown 변환
     @SuppressWarnings("unchecked")
-    public String getPageMarkdown(String pageId, String accessToken) {
+    public String getPageMarkdown(String pageId, String accessToken, String userId) {
         try {
             ResponseEntity<Map> res = restTemplate.exchange(
                     NOTION_API + "/blocks/" + pageId + "/children?page_size=100",
@@ -140,7 +141,7 @@ public class NotionApiService {
                     Map.class
             );
             List<Map<String, Object>> results = (List<Map<String, Object>>) res.getBody().get("results");
-            return convertBlocksToMarkdown(results, accessToken);
+            return convertBlocksToMarkdown(results, accessToken, userId);
         } catch (Exception e) {
             log.warn("Notion 블록 조회 실패: {}", e.getMessage());
             return "";
@@ -148,19 +149,19 @@ public class NotionApiService {
     }
 
     @SuppressWarnings("unchecked")
-    private String convertBlocksToMarkdown(List<Map<String, Object>> blocks, String accessToken) {
+    private String convertBlocksToMarkdown(List<Map<String, Object>> blocks, String accessToken, String userId) {
         if (blocks == null) return "";
         StringBuilder sb = new StringBuilder();
         for (Map<String, Object> block : blocks) {
             String type = (String) block.get("type");
-            String line = convertBlock(block, type, accessToken);
+            String line = convertBlock(block, type, accessToken, userId);
             if (line != null) sb.append(line).append("\n");
         }
         return sb.toString();
     }
 
     @SuppressWarnings("unchecked")
-    private String convertBlock(Map<String, Object> block, String type, String accessToken) {
+    private String convertBlock(Map<String, Object> block, String type, String accessToken, String userId) {
         try {
             return switch (type) {
                 case "paragraph" -> richText((Map<String, Object>) block.get("paragraph"));
@@ -186,7 +187,8 @@ public class NotionApiService {
                     Map<String, Object> img = (Map<String, Object>) block.get("image");
                     String imgType = (String) img.get("type");
                     Map<String, Object> imgObj = (Map<String, Object>) img.get(imgType);
-                    yield "![](" + imgObj.get("url") + ")";
+                    String url = (String) imgObj.get("url");
+                    yield "![](" + imageMarkdownUrl(imgType, url, userId) + ")";
                 }
                 case "child_page" -> {
                     Map<String, Object> childPage = (Map<String, Object>) block.get("child_page");
@@ -197,7 +199,7 @@ public class NotionApiService {
                     // 자식 블록 재귀 조회
                     if (Boolean.TRUE.equals(block.get("has_children"))) {
                         String blockId = (String) block.get("id");
-                        yield getPageMarkdown(blockId, accessToken);
+                        yield getPageMarkdown(blockId, accessToken, userId);
                     }
                     yield null;
                 }
@@ -208,6 +210,44 @@ public class NotionApiService {
         }
     }
 
+    /**
+     * Notion이 "file" 타입으로 호스팅하는 이미지의 url은 S3 presigned GET URL이라
+     * 1시간(X-Amz-Expires=3600) 후 만료된다 — 가져온 직후에는 보이다가 나중에 깨진다.
+     * 그래서 다운로드해 우리 자산(Asset)으로 영구 저장하고, 절대 URL을 마크다운에 박아두는
+     * 대신 PdfBlock/ImageBlock의 assetId 패턴과 같은 `asset://{assetId}` 의사 URL을 써서
+     * 프론트가 렌더링 시점에 GET /api/v1/assets/{assetId}/file로 해석하게 한다
+     * (NoteEditor.tsx markdownToHtml 참고). "external" 타입(사용자가 외부에 올린 이미지)은
+     * 만료되지 않으므로 원본 url을 그대로 쓴다. 다운로드가 실패해도 가져오기 전체가 실패하지
+     * 않도록 원본(만료될 수 있는) url로 폴백한다.
+     */
+    private String imageMarkdownUrl(String imgType, String url, String userId) {
+        if (!"file".equals(imgType) || url == null) return url;
+        try {
+            ResponseEntity<byte[]> res = restTemplate.getForEntity(url, byte[].class);
+            byte[] bytes = res.getBody();
+            if (bytes == null || bytes.length == 0) return url;
+            MediaType contentType = res.getHeaders().getContentType();
+            String fileName = fileNameFromUrl(url);
+            String assetId = assetService.persistDerivedAsset(
+                    userId, fileName, contentType != null ? contentType.toString() : "image/jpeg", bytes
+            ).getAssetId();
+            return "asset://" + assetId;
+        } catch (Exception e) {
+            log.warn("Notion 이미지 영구 저장 실패, 만료될 수 있는 원본 URL로 대체: {}", e.getMessage());
+            return url;
+        }
+    }
+
+    private String fileNameFromUrl(String url) {
+        try {
+            String path = java.net.URI.create(url).getPath();
+            String name = path.contains("/") ? path.substring(path.lastIndexOf('/') + 1) : path;
+            return name.isBlank() ? "notion-image" : name;
+        } catch (Exception e) {
+            return "notion-image";
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private String richText(Map<String, Object> content) {
         List<Map<String, Object>> texts = (List<Map<String, Object>>) content.get("rich_text");
@@ -215,6 +255,22 @@ public class NotionApiService {
 
         StringBuilder sb = new StringBuilder();
         for (Map<String, Object> rt : texts) {
+            String rtType = (String) rt.get("type");
+
+            // Notion 페이지 멘션(@페이지명)은 rich_text에 "text"가 아니라 "mention"으로 온다.
+            // BrainX의 위키링크 문법([[제목]])으로 변환해 백링크가 그대로 이어지게 한다.
+            if ("mention".equals(rtType)) {
+                Map<String, Object> mention = (Map<String, Object>) rt.get("mention");
+                String mentionType = mention != null ? (String) mention.get("type") : null;
+                String plainText = (String) rt.get("plain_text");
+                if (("page".equals(mentionType) || "database".equals(mentionType)) && plainText != null) {
+                    sb.append("[[").append(plainText).append("]]");
+                } else if (plainText != null) {
+                    sb.append(plainText);
+                }
+                continue;
+            }
+
             Map<String, Object> textObj = (Map<String, Object>) rt.get("text");
             if (textObj == null) continue;
             String text = (String) textObj.get("content");
