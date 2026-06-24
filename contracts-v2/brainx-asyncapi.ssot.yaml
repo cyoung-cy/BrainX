@@ -4997,6 +4997,8 @@ x-ssot:
   - 'Token usage is event-first: TokenUsageRecordedRequested is consumed by Commerce; TokenUsageRecorded is emitted after
     ledger write.'
   - Note read models, search indexes, graph projections, dashboards and wordclouds are eventually consistent.
+  - Workspace noteId is the canonical cross-system note identifier for PostgreSQL records, graph projections such as Neo4j, Knowledge Intelligence vector/RAG indexes, RAG citations and frontend graph state.
+  - Graph databases are projections/read models. Accepted note links must be created through Workspace commands and then projected to graph storage.
 x-service-catalog:
 - id: User-Service
   description: User identity, authentication, onboarding, account security, consent, my page and note usage statistics
