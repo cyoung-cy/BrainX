@@ -4,6 +4,7 @@ import com.brainx.workspace.dto.WorkspaceDtos.*;
 import com.brainx.workspace.entity.*;
 import com.brainx.workspace.event.WorkspaceEventPublisher;
 import com.brainx.workspace.exception.WorkspaceException;
+import com.brainx.workspace.graph.Neo4jGraphQueryService;
 import com.brainx.workspace.repository.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +39,7 @@ public class WorkspaceService {
     private final ShareLinkRepository shareLinkRepository;
     private final WorkspaceEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final Neo4jGraphQueryService neo4jGraphQueryService;
 
     @Value("${brainx.public-base-url}")
     private String publicBaseUrl;
@@ -370,14 +372,23 @@ public class WorkspaceService {
                 "id", note.getNoteId(),
                 "noteId", note.getNoteId(),
                 "title", note.getTitle(),
-                "tags", note.getTags(),
+                "tags", new ArrayList<>(note.getTags()),
                 "folderId", note.getFolderId()
         )).toList();
         List<Map<String, Object>> edges = noteLinkRepository.findByUserId(userId).stream()
                 .filter(link -> noteIds.contains(link.getSourceNoteId()) && noteIds.contains(link.getTargetNoteId()))
-                .map(link -> Map.<String, Object>of("id", link.getLinkId(), "source", link.getSourceNoteId(), "target", link.getTargetNoteId()))
+                .map(link -> Map.<String, Object>of(
+                        "id", link.getLinkId(),
+                        "linkId", link.getLinkId(),
+                        "source", link.getSourceNoteId(),
+                        "target", link.getTargetNoteId(),
+                        "type", "MANUAL"
+                ))
                 .toList();
-        return new GraphData(nodes, edges, Map.of("noteCount", nodes.size(), "edgeCount", edges.size()), null);
+        GraphData ledgerGraph = new GraphData(nodes, edges, Map.of("noteCount", nodes.size(), "edgeCount", edges.size(), "source", "workspace-ledger"), null);
+        return neo4jGraphQueryService.findGraph(userId, folderId, tag, sinceInstant, untilInstant)
+                .filter(graph -> !graph.nodes().isEmpty() || ledgerGraph.nodes().isEmpty())
+                .orElse(ledgerGraph);
     }
 
     public GraphLayoutData saveGraphLayout(String userId, String layoutId, GraphLayoutPutRequest request) {

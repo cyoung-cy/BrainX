@@ -4,6 +4,11 @@ import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } fr
 
 const INGESTION_API_BASE_URL = process.env.NEXT_PUBLIC_INGESTION_API_BASE_URL ?? "http://localhost:8083";
 
+/** 노트 안에 임베드된 PDF 뷰어(PdfBlockNode)가 iframe src로 사용하는 원본 파일 URL. */
+export function getAssetFileUrl(assetId: string) {
+  return `${INGESTION_API_BASE_URL}/api/v1/assets/${assetId}/file`;
+}
+
 const NOTION_INTEGRATION_KEY = "brainx_notion_integration_v1";
 const NOTION_OAUTH_STATE_KEY = "brainx_notion_oauth_state_v1";
 
@@ -83,6 +88,34 @@ async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(messageFromResponse(payload, "요청 처리에 실패했습니다."));
   }
   return payload.data as T;
+}
+
+// 바이너리(multipart) 업로드 전용: Content-Type을 직접 지정하지 않아 브라우저가 boundary를 채우도록 한다.
+async function authedUpload(path: string, file: File): Promise<void> {
+  const session = readAuthSession();
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${INGESTION_API_BASE_URL}${path}`, {
+    method: "PUT",
+    body: formData,
+    headers: session?.accessToken ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}
+  });
+
+  const payload = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
+  if (response.status === 401 || response.status === 403) {
+    clearAuthSession();
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload ? messageFromResponse(payload, "파일 업로드에 실패했습니다.") : "파일 업로드에 실패했습니다.");
+  }
+}
+
+async function sha256Hex(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await window.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function parseBody<T>(init?: RequestInit): Partial<T> {
@@ -206,4 +239,82 @@ export async function importNotionPage(integrationAccountId: string, sourceId: s
 
 export async function getImportJobStatus(importJobId: string) {
   return authedRequest<ImportJobData>(`/api/v1/imports/${importJobId}`);
+}
+
+// ── 콘텐츠 가져오기 (ZIP/CSV/PDF/Text/Markdown/HTML/Word) ──────────────────
+
+type AssetUploadSessionData = {
+  uploadSessionId: string;
+  uploadUrl: string;
+  maxSizeBytes: number;
+};
+
+type AssetUploadCompleteData = {
+  assetId: string;
+  conversionJobId: string | null;
+  status: "UPLOADED" | "CONVERTING";
+};
+
+function isZipFile(file: File) {
+  return file.name.toLowerCase().endsWith(".zip") || file.type === "application/zip";
+}
+
+async function createAssetUploadSession(file: File, targetFolderId?: string) {
+  return authedRequest<AssetUploadSessionData>("/api/v1/assets/upload-sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      targetNoteId: targetFolderId ?? null
+    })
+  });
+}
+
+async function completeAssetUpload(uploadSessionId: string, checksum: string) {
+  return authedRequest<AssetUploadCompleteData>(`/api/v1/assets/upload-sessions/${uploadSessionId}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ checksum, conversionMode: "MARKDOWN" })
+  });
+}
+
+async function importZipJob(uploadedZipAssetId: string, targetFolderId?: string) {
+  return authedRequest<ImportJobAcceptedData>("/api/v1/imports/obsidian/jobs", {
+    method: "POST",
+    body: JSON.stringify({ uploadedZipAssetId, targetFolderId })
+  });
+}
+
+async function importFileJob(uploadedAssetId: string, targetFolderId?: string) {
+  return authedRequest<ImportJobAcceptedData>("/api/v1/imports/file/jobs", {
+    method: "POST",
+    body: JSON.stringify({ uploadedAssetId, targetFolderId })
+  });
+}
+
+/**
+ * 파일(ZIP 포함)을 업로드하고 가져오기 작업을 생성한 뒤 완료될 때까지 폴링한다.
+ * 데모 세션에서는 실제 백엔드 자산 업로드 인프라가 없으므로 호출하지 않아야 한다 (isNotionDemoSession으로 분기).
+ */
+export async function uploadAndImportFile(file: File, targetFolderId?: string) {
+  const session = await createAssetUploadSession(file, targetFolderId);
+  await authedUpload(`/api/v1/assets/upload-sessions/${session.uploadSessionId}/binary`, file);
+  const checksum = await sha256Hex(file);
+  const completed = await completeAssetUpload(session.uploadSessionId, checksum);
+
+  const accepted = isZipFile(file)
+    ? await importZipJob(completed.assetId, targetFolderId)
+    : await importFileJob(completed.assetId, targetFolderId);
+
+  let status = accepted.status;
+  let job: ImportJobData | null = null;
+  for (let attempt = 0; attempt < 30 && status !== "COMPLETED" && status !== "FAILED"; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    job = await getImportJobStatus(accepted.importJobId);
+    status = job.status;
+  }
+  if (!job) {
+    job = await getImportJobStatus(accepted.importJobId);
+  }
+  return job;
 }

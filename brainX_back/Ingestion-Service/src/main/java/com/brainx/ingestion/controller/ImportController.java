@@ -73,10 +73,24 @@ public class ImportController {
     @PostMapping("/obsidian/jobs")
     public ResponseEntity<ApiResponse<ImportJobCreatedResponse>> createObsidianJob(
             Authentication auth,
-            @Valid @RequestBody ObsidianImportJobRequest request) {
-        ImportJobCreatedResponse data = importService.createObsidianImportJob(auth.getName(), request);
+            @Valid @RequestBody ObsidianImportJobRequest request,
+            HttpServletRequest httpRequest) {
+        ImportJobCreatedResponse data = importService.createObsidianImportJob(
+                resolveUserId(auth), request, extractToken(httpRequest));
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success(data, "Obsidian Vault 가져오기를 시작합니다."));
+                .body(ApiResponse.success(data, "ZIP 가져오기를 시작합니다."));
+    }
+
+    // POST /api/v1/imports/file/jobs
+    @PostMapping("/file/jobs")
+    public ResponseEntity<ApiResponse<ImportJobCreatedResponse>> createFileJob(
+            Authentication auth,
+            @Valid @RequestBody FileImportJobRequest request,
+            HttpServletRequest httpRequest) {
+        ImportJobCreatedResponse data = importService.createFileImportJob(
+                resolveUserId(auth), request, extractToken(httpRequest));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success(data, "파일 가져오기를 시작합니다."));
     }
 
     // GET /api/v1/imports/{importJobId}

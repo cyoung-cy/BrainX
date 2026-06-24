@@ -239,6 +239,8 @@ API와 이벤트 계약의 기준은 `contracts-v2`입니다.
 6. 백엔드는 서비스별 DB 소유권을 지키고 다른 서비스 DB를 직접 참조하지 않습니다.
 7. AI 기능은 결과만 보여주지 말고 근거 노트, 연결 이유, 요약을 함께 노출합니다.
 8. 노트/그래프/검색/채팅은 같은 지식 원장을 바라봐야 합니다.
+9. `noteId`는 Workspace-Service PostgreSQL 원장에서 발급된 값을 PostgreSQL, Neo4j 같은 그래프 projection, Vector DB/RAG 인덱스, RAG citation, 프론트 그래프 상태에서 공통으로 사용합니다.
+10. Neo4j 같은 그래프 DB는 원장이 아니라 projection/read model입니다. 실제 노트와 링크 생성/수정/삭제는 Workspace-Service command API와 이벤트를 통해 반영합니다.
 
 ### Frontend Coding Rules
 
@@ -308,6 +310,15 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Ingestion-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_ingestion` |
 | Commerce-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_commerce` |
 
+그래프 projection/read model용 Neo4j도 Docker Compose로 함께 실행됩니다. Neo4j는 Workspace-Service의 PostgreSQL 원장을 대체하지 않으며, 노트/링크 이벤트를 바탕으로 갱신되는 그래프 조회 저장소입니다.
+
+| Store | 용도 | Local URL |
+| --- | --- | --- |
+| Neo4j Browser | 그래프 projection 확인 및 Cypher 실행 | `http://localhost:7474` |
+| Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
+
+기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
+
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
 ### Backend: Gateway-Service (포트 8088)
@@ -321,7 +332,7 @@ DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_
 | `/api/v1/imports/**`, `/api/v1/exports/**`, `/v1/publish-jobs/**` | Ingestion-Service |
 | `/api/v1/plans/**`, `/api/v1/subscriptions/**`, `/api/v1/users/me/subscription` | Commerce-Service |
 
-Gateway는 보호 API에 대해 `Authorization: Bearer <access-token>`을 검증하고, 통과한 요청에 내부 식별 헤더를 추가합니다.
+Gateway는 보호 API에 대해 `Authorization: Bearer <access-token>`을 검증하고, 통과한 요청에 내부 식별 헤더를 추가합니다. Workspace 체험 API는 비회원도 사용할 수 있게 Gateway가 guest session cookie(`brainx_guest_id`)를 발급하고 내부 `X-Guest-Id` 헤더를 추가합니다.
 
 | 구분 | Path |
 | --- | --- |
@@ -335,8 +346,16 @@ Gateway는 보호 API에 대해 `Authorization: Bearer <access-token>`을 검증
 | `X-User-Id` | JWT `sub` |
 | `X-User-Email` | JWT `email` |
 | `X-User-Role` | JWT `role` |
+| `X-Guest-Id` | Gateway-issued guest id for non-member Workspace trial requests |
 
-클라이언트가 임의로 보낸 `X-User-*` 헤더는 Gateway에서 제거한 뒤 JWT 클레임 기준으로 다시 설정합니다. 로그인/회원가입/OAuth 콜백은 JWT가 아직 없으므로 `/api/v1/auth/**` 공개 경로로 유지합니다.
+클라이언트가 임의로 보낸 `X-User-*`, `X-Guest-Id` 헤더는 Gateway에서 제거한 뒤 JWT 클레임 또는 Gateway guest cookie 기준으로 다시 설정합니다. 로그인/회원가입/OAuth 콜백은 JWT가 아직 없으므로 `/api/v1/auth/**` 공개 경로로 유지합니다.
+
+Workspace-Service는 내부 식별 헤더를 `CurrentActor`로 해석합니다.
+
+- 회원 요청: `X-User-Id`가 있으면 `actorType=USER`, `actorId=<userId>`
+- 비회원 요청: `X-Guest-Id`가 있으면 `actorType=GUEST`, `actorId=<guestId>`
+
+비회원 노트/폴더/링크/그래프 데이터는 체험용 임시 데이터로 취급합니다. Redis in-memory 저장소가 도입되면 guest actor의 Workspace 데이터는 Redis에 저장하고 TTL 만료 또는 세션 종료로 사라지게 합니다. 회원 데이터는 계속 Workspace-Service의 PostgreSQL 원장에 저장합니다.
 
 ```powershell
 cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
@@ -391,8 +410,14 @@ cd C:\Edu\Final\brainX_back\Ingestion-Service
 | POST | `/v1/imports/notion/oauth/callback` | Notion OAuth 콜백 처리 |
 | GET  | `/v1/imports/notion/pages` | 연동된 Notion 페이지 목록 |
 | POST | `/v1/imports/notion/jobs` | Notion 페이지 가져오기 |
-| POST | `/v1/imports/obsidian/jobs` | Obsidian vault 가져오기 |
+| POST | `/v1/imports/obsidian/jobs` | ZIP 가져오기 (Obsidian vault 한정이 아닌 범용 ZIP) |
+| POST | `/v1/imports/file/jobs` | 단일 파일 가져오기 (CSV/PDF/Text/Markdown/HTML/Word) |
 | GET  | `/v1/imports/{importJobId}` | 가져오기 작업 상태 조회 |
+| POST | `/v1/assets/upload-sessions` | 파일 업로드 세션 생성 |
+| PUT  | `/v1/assets/upload-sessions/{uploadSessionId}/binary` | 파일 바이너리 업로드 |
+| POST | `/v1/assets/upload-sessions/{uploadSessionId}/complete` | 파일 업로드 완료 처리 |
+| GET  | `/v1/assets/{assetId}` | 파일 상세 조회 |
+| GET  | `/v1/assets/{assetId}/file` | 파일 원본 바이너리 스트리밍 (PDF 임베드 뷰어 iframe이 사용) |
 
 ### Backend: Commerce-Service (포트 8084)
 
@@ -466,8 +491,42 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
   - Import job이 SSOT 계약상 async이나 현재 동기 처리 중. Kafka 이벤트(ImportJobRequested, ImportJobCompleted, IntegrationConnected) 미발행.
   - 노트 생성이 `bulkCreateNotesInternal` 대신 신규 `Workspace-Service`의 `POST /api/v1/notes`를 직접 호출 중 (구 `knowledge-workspace-service`가 아님). 정식 internal API 전환 필요.
   - `brainx-next` import 화면은 `lib/ingestion-api.ts`로 실제 API와 연동되어 있습니다 (더 이상 mock 아님). Notion OAuth는 팝업 + `postMessage` 방식.
+  - **(2026-06-23 수정)** Notion 가져오기 완료 후 노트가 `/editor-lab`(테스트 전용 데모)에만 추가되고 실제 `/notes` 화면에는 보이지 않던 배선 문제를 고쳤습니다. `components/utility/import-screen.tsx`가 가져온 노트를 `/notes/{noteId}`로 바로 라우팅하도록 변경했고, `app/(app)/notes/layout.tsx`의 초기 탭 판별 로직이 mock 시드 데이터(`getNoteById`)에만 의존하던 것을 `NEXT_PUBLIC_NOTES_USE_MOCK=false`(실 백엔드 모드)에서는 URL의 noteId를 그대로 신뢰하도록 고쳐, `NotesWorkspace`의 `listNotes()` 결과로 막 가져온 노트도 정상적으로 열립니다.
   - **TEMP**: 실제 로그인 연동 전까지 `/api/v1/imports/notion/**`, `/api/v1/imports/{importJobId}`(GET)를 인증 없이 허용하고(`SecurityConfig` permitAll), 인증이 없으면 고정 `dev-test-user`로 동작하도록 임시 우회되어 있습니다. 코드에 `TEMP` 주석으로 표시. 실제 로그인 연동 완료 후 제거 필요.
-- **Workspace-Service**: `POST /api/v1/notes`, `GET /api/v1/notes/{noteId}`도 위와 동일한 사유로 임시 인증 우회(`CurrentUser`가 인증 없으면 `dev-test-user` 반환) 적용 중. 같은 이유로 추후 제거 필요.
+  - **(2026-06-23 추가 수정, 계약 변경 없음)**: Notion 텍스트 멘션(`@페이지`)이 마크다운 변환 시 통째로 누락되던 버그를 고쳐 `[[제목]]` 위키링크로 변환되게 함(`NotionApiService.richText`). 하위 페이지 백링크 등록(`POST /api/v1/notes/{id}/links`)이 SSOT에 이미 required로 정의된 `createIfMissing` 필드를 빠뜨려 매번 400으로 실패하던 버그 수정(`WorkspaceApiClient.createNoteLink`) — SSOT는 원래부터 맞았고 구현만 따라가지 못했던 경우. Notion OAuth 콜백이 React Strict Mode로 중복 호출되어 같은 code로 토큰 교환을 두 번 시도하던 레이스 컨디션 수정(`app/notion-callback/page.tsx`). 가져온 노트가 `/notes` 화면에 새로고침 없이는 반영되지 않던 문제를 `brainx:notes-refresh` 커스텀 이벤트로 해결(`NotesWorkspace.tsx`, `import-screen.tsx`).
+  - **(2026-06-23 신규 구현, SSOT 계약 변경 포함)**: `/import` 화면의 "콘텐츠 가져오기"(ZIP 드래그&드롭)와 "파일 기반 가져오기"(CSV/PDF/Text/Markdown/HTML/Word 버튼)가 그동안 프런트엔드 `setTimeout` 가짜 진행률만 보여주고 실제로는 아무것도 가져오지 않던 문제를 실제 동작하도록 구현했습니다.
+    - 백엔드(Ingestion-Service): `Asset` 엔티티/로컬 디스크 스토리지(`AssetStorageService`, `ASSET_STORAGE_DIR` 환경변수)와 `AssetController`(`POST /api/v1/assets/upload-sessions`, `PUT .../binary`, `POST .../complete`)를 신규 구현. `ContentConverter`가 TXT/MD/HTML(Jsoup)/CSV(commons-csv → 마크다운 표)/PDF(PDFBox)/DOCX(POI)를 마크다운/텍스트로 변환하고, ZIP은 내부 항목을 모두 풀어 각각 노트로 만듭니다. `ImportJob.SourceType`에 `FILE` 추가, 신규 `POST /api/v1/imports/file/jobs` 추가(단일 파일 → 노트 1개, 또는 ZIP이면 항목별 노트). 기존 `POST /api/v1/imports/obsidian/jobs`는 "Job을 PENDING으로 저장만 하고 끝"이던 스텁을 실제 ZIP 추출 로직으로 교체(Obsidian vault 한정이 아니라 범용 ZIP을 지원하도록 일반화). 모두 Notion 가져오기와 동일하게 동기 처리(Kafka 이벤트 미발행)입니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): `createAssetUploadSession`/`completeAssetUpload`의 `x-implementation-status: not-implemented`를 제거하고 실제 동작을 설명하는 `x-implementation-note`로 교체. 사전 서명 URL을 위한 외부 스토리지(S3 등)가 아직 없어 `uploadUrl`이 자체 바이너리 업로드 경로를 가리키므로, 신규 `PUT /api/v1/assets/upload-sessions/{uploadSessionId}/binary` 엔드포인트를 SSOT에 추가했습니다. 신규 `POST /api/v1/imports/file/jobs` + `FileImportJobCreateRequest` 스키마 추가. `InternalNoteBulkCreateRequest.source` enum에 `FILE_IMPORT` 추가. `brainx-asyncapi.ssot.yaml`의 `ImportJobRequestedPayload.source` enum에 `FILE` 추가.
+    - 프런트엔드(`brainx-next`): `lib/ingestion-api.ts`에 `uploadAndImportFile()`(업로드 세션 생성 → 바이너리 업로드 → 완료 처리 → ZIP이면 obsidian job, 아니면 file job 호출 → 완료까지 폴링)를 추가하고, `components/utility/import-screen.tsx`의 드롭존/파일 타입 버튼이 실제로 이 함수를 호출해 결과 노트로 라우팅하도록 수정. 데모 세션(`isNotionDemoSession()`)은 실제 자산 업로드 백엔드가 없으므로 기존 가짜 진행률 시뮬레이션을 그대로 유지합니다.
+    - `getAsset`(`GET /api/v1/assets/{assetId}`)은 이후 PDF 뷰어 작업(바로 아래 항목)에서 구현되었습니다. `/api/v1/conversions*`는 여전히 범위 밖이라 `x-implementation-status: not-implemented`로 남아 있습니다.
+    - **TEMP**: 위와 동일한 사유로 `/api/v1/imports/obsidian/**`, `/api/v1/imports/file/**`, `/api/v1/assets/**`를 인증 없이 허용(`SecurityConfig` permitAll) 추가.
+  - **(2026-06-23 추가 구현, SSOT 계약 변경 포함) PDF를 옵시디언처럼 원본 그대로(전용 뷰어로) 보기**:
+    - 백엔드: `GET /api/v1/assets/{assetId}`(상세 조회)와 신규 `GET /api/v1/assets/{assetId}/file`(원본 바이너리 스트리밍, SSOT에 새로 추가)을 구현. PDF를 가져오면 텍스트 추출 없이 노트의 `markdown` 필드에 `<div data-pdf-block="true" data-asset-id="..." data-file-name="...">` 임베드 마커 하나만 넣습니다(ZIP 안의 PDF도 동일— 별도 asset으로 저장 후 같은 마커 생성). `ContentConverter.sanitize()`로 PDFBox 추출 텍스트에 섞여 나오는 NUL(0x00) 바이트를 제거하는 버그도 함께 고쳤습니다(PostgreSQL UTF8 컬럼이 NUL을 거부해 노트 생성이 500으로 실패하던 문제).
+    - 버그 수정: Spring Security 기본 `X-Frame-Options: DENY` 때문에 브라우저가 `<iframe src="...assets/.../file">`를 그릴 수 없던 문제를 `frame-ancestors 'self' http://localhost:3000 http://localhost:5173` CSP로 교체해 해결(`SecurityConfig`). `<iframe src>`/`<img src>` 같은 일반 브라우저 네비게이션은 Authorization 헤더를 보낼 수 없어 소유자(`userId`) 검증에 걸려 "파일을 찾을 수 없습니다"가 나던 문제도, 이 두 조회 엔드포인트만 소유자 검증 없이 assetId만으로 조회하도록 수정(`AssetService.getAssetForViewing`) — TEMP, 실제 로그인/쿠키 인증 도입 후 다시 넣어야 함.
+    - 프런트엔드: `components/notes/PdfBlockNode.tsx`(Tiptap 커스텀 노드, 본문에 텍스트가 섞인 경우의 폴백용)와, PDF 단독 노트를 위한 `components/notes/PdfViewerPanel.tsx`(Tiptap 에디터를 전혀 띄우지 않는 전용 풀패널 뷰어)를 신규 작성. `EditorPanel.tsx`가 노트 본문이 PDF 임베드 마커 하나뿐인지(`parsePdfOnlyNote`) 판별해 그 경우 `NoteEditor` 대신 `PdfViewerPanel`을 렌더링하도록 분기. 뷰어는 패널 높이를 가득 채우고(`flex-1`), 헤더의 "큰 화면으로 보기" 버튼으로 Fullscreen API 전체화면 전환도 지원합니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): `getAsset`의 `x-implementation-status: not-implemented` 제거 후 구현 내용을 설명하는 `x-implementation-note`로 교체. 신규 `GET /api/v1/assets/{assetId}/file` 엔드포인트 추가(소유자 검증을 하지 않는 이유를 implementation-note에 명시). `requestObsidianImportJob`/`requestFileImportJob`의 implementation-note에 "PDF는 텍스트 추출 대신 임베드 마커로 노트를 만든다"는 내용 추가. AsyncAPI는 추가 변경 없음(이미 `FILE` enum 반영됨).
+  - **(2026-06-24 추가 구현, SSOT 계약 변경 포함) 이미지/HTML도 PDF처럼 원본 그대로 보기**:
+    - 문제: 이미지 파일을 가져오면 `ContentConverter.convertSingleFile`의 default 분기가 이미지 바이너리를 `new String(bytes, UTF_8)`로 변환해 노트 내용이 깨졌고, HTML은 Jsoup으로 텍스트만 추출해 원본 화면을 볼 수 없었습니다.
+    - 백엔드(Ingestion-Service): `ContentConverter`에 `EmbedKind`(PDF/IMAGE/HTML/NONE) 개념을 도입해 `isImage`/`isHtml`/`embedKindOf`/`contentTypeFor`를 추가하고, ZIP 처리(`convertZip`)와 단일 파일 처리(`ImportService`) 양쪽에서 이미지/HTML도 PDF와 동일하게 텍스트 변환 없이 별도 asset으로 저장한 뒤 임베드 마커만 노트 본문에 넣도록 변경했습니다. 마커 형식은 `<div data-image-block="true" data-asset-id="..." data-file-name="...">` / `<div data-html-block="true" ...>`(PDF의 `data-pdf-block`과 동일 패턴). `AssetService.ensureContentType()`을 추가해 브라우저가 보낸 contentType이 부정확할 때 확장자 기준으로 보정합니다.
+    - 프런트엔드(`brainx-next`): 기존 `ImageBlockNode.tsx`(pasted 이미지용 Tiptap 노드)가 `assetId` 속성도 받아 `GET /api/v1/assets/{assetId}/file`을 src로 렌더링하도록 확장(노트 에디터 안에 인라인으로 보임, PdfBlock과 달리 풀패널 전환은 하지 않음). PDF와 동일한 패턴으로 `components/notes/HtmlBlockNode.tsx`(Tiptap 노드)와 `components/notes/HtmlViewerPanel.tsx`(전용 풀패널 iframe 뷰어)를 신규 작성하고, `EditorPanel.tsx`에 `parseHtmlOnlyNote` 판별 분기를 추가했습니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): `requestObsidianImportJob`/`requestFileImportJob`의 implementation-note를 "PDF는..." → "PDF/이미지/HTML은..."으로 일반화하고 마커 3종을 모두 명시. `getAssetFile`의 description/implementation-note/x-consumers에 ImageBlock(`<img src>`)·HtmlBlock·HtmlViewerPanel 소비 사례를 추가. AsyncAPI는 추가 변경 없음(이벤트 페이로드와 무관한 동기 처리 내부 동작이라 스키마 영향 없음).
+  - **(2026-06-24 추가 구현, SSOT 계약 변경 포함) 노트 탐색기 드래그&드롭 가져오기**:
+    - `/import` 화면에만 있던 OS 파일 드롭존을 좌측 노트 탐색기(`NotesExplorer.tsx`)에도 추가했습니다. `dataTransfer.types`에 `"Files"`가 있을 때만 가로채 내부 노트/폴더 드래그(`draggable` 항목)와 구분하고, 현재 선택된 폴더로 가져옵니다. 새 `onDropFiles` prop을 통해 `NotesWorkspace.tsx`가 `lib/ingestion-api.ts`의 `uploadAndImportFile()`을 그대로 재사용해 처리하므로 백엔드 엔드포인트는 변경 없습니다. 데모(Notion demo) 세션에서는 지원하지 않는다는 토스트를 띄웁니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): 새 엔드포인트는 없으나, 새로 호출하는 프런트 화면을 반영하기 위해 `createAssetUploadSession`/`uploadAssetBinary`/`completeAssetUpload`/`getAsset`/`requestObsidianImportJob`/`requestFileImportJob`의 `x-consumers`에 `web.notes-explorer` 항목을 추가했습니다.
+  - **(2026-06-24 추가 구현, SSOT 계약 변경 포함) ZIP 가져오기 시 내부 폴더 구조 재현**:
+    - 문제: ZIP을 가져오면 내부 디렉터리 구조와 무관하게 모든 항목이 평탄하게 `targetFolderId` 하나에만 노트로 쌓였습니다(하위 폴더 구조가 사라짐).
+    - 백엔드(Ingestion-Service): `WorkspaceApiClient`에 `createFolder(name, parentFolderId, jwtToken)`를 추가(Workspace-Service `POST /api/v1/folders` 호출). `ImportService`에 공용 `importZipEntries()`를 추가해 `createObsidianImportJob`/`createFileImportJob`(ZIP 분기)이 같은 로직을 쓰도록 정리했습니다. ZIP 항목의 전체 경로(`fullFileName`)에서 디렉터리 경로를 뽑아, 경로별로 폴더를 한 번만 생성(메모이즈)하면서 상위 폴더부터 재귀적으로 만들고, 각 노트는 자신의 원래 경로와 일치하는 폴더 밑에 생성됩니다. 빈 디렉터리(파일이 없는 폴더)는 ZIP 추출 단계에서 디렉터리 엔트리 자체를 건너뛰기 때문에 재현되지 않습니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): `requestObsidianImportJob`/`requestFileImportJob`의 `x-internal-sync-calls`에 `createFolder`(targetService: knowledge-workspace) 호출을 추가하고, implementation-note에 디렉터리 구조 재현 동작을 명시했습니다.
+  - **(2026-06-24 SSOT 표기 오류 수정, 코드 변경 없음) `requestPublishJob`이 실제로는 구현되어 있었음**:
+    - `POST /v1/publish-jobs`는 `PublishController`/`PublishService`로 이미 구현되어 있었는데(tistory는 직접 작성한 변환기로 마크다운→HTML 변환, notion/copy는 마크다운 원문 그대로 반환, 매번 동기적으로 `status: COMPLETED` 응답 — 실제 Tistory/Notion API 호출은 없고 클립보드 복사용 콘텐츠 + `openUrl`만 만들어줌), SSOT에는 `x-implementation-status: not-implemented`가 그대로 남아 있었습니다(바로 옆 `description` 필드는 이미 "Currently implemented..."라고 써 있어서 자기 자신과도 모순이었습니다).
+    - SSOT(`brainx-openapi.ssot.yaml`): `x-implementation-status: not-implemented` 플래그를 제거하고, 실제 동작과 두 가지 미해결 격차를 설명하는 `x-implementation-note`를 추가했습니다 — (1) `brainx-next`에 이 API를 호출하는 코드가 전혀 없어 `web.note-editor`가 아직 실제 소비자가 아니라는 점, (2) `SecurityConfig`가 `/v1/publish-jobs/**`를 인증 없이 허용(`permitAll`)해서 SSOT가 요구하는 `bearerAuth`와 맞지 않는다는 점(컨트롤러는 미인증 시 `userId="anonymous"`로 처리).
+  - **(2026-06-24 버그 수정, SSOT 계약 변경 포함) Notion 가져오기 이미지가 마크다운 텍스트로만 보이고 1시간 후 깨지던 문제**:
+    - 문제 1(프런트): `NoteEditor.tsx`의 `markdownToHtml`이 애초에 `![alt](url)` 마크다운 이미지 문법을 전혀 처리하지 않아서, 그냥 일반 문단의 리터럴 텍스트(`![](https://...)` 그대로)로 보였습니다. Notion 가져오기뿐 아니라 마크다운 원문에 이미지 문법이 들어간 모든 노트에 영향이 있던 일반 버그입니다.
+    - 문제 2(백엔드): Notion이 `"file"` 타입으로 호스팅하는 이미지의 `url`은 S3 presigned GET URL이라 1시간(`X-Amz-Expires=3600`) 후 만료됩니다 — 가져온 직후엔 보이다가 시간이 지나면 깨집니다.
+    - 수정(프런트): `markdownToHtml`에 `![alt](url)` 줄을 인식하는 분기를 추가해 `<div data-image-block="true">...</div>`(기존 `ImageBlock` 노드)로 변환합니다. url이 `asset://{assetId}` 의사 스킴이면 절대 URL을 본문에 박아두지 않고 PdfBlock/HtmlBlock과 동일하게 `data-asset-id`만 채워서 렌더링 시점에 `getAssetFileUrl(assetId)`로 해석되게 합니다(`ImageBlockNode.tsx`가 이미 지원하던 패턴 재사용).
+    - 수정(백엔드, `NotionApiService`): 이미지 블록이 `"file"` 타입이면 즉시 다운로드해 우리 자산(Asset)으로 영구 저장하고, 노트 마크다운에는 Notion url 대신 `![](asset://{assetId})`를 넣습니다. `"external"` 타입(Notion 바깥에 호스팅된 이미지)은 만료되지 않으므로 원본 url을 그대로 둡니다. 다운로드가 실패하면 가져오기 전체를 실패시키지 않고 원본(만료될 수 있는) url로 폴백합니다. `getPageMarkdown`/`convertBlocksToMarkdown`/`convertBlock`에 `userId` 파라미터를 추가해 `AssetService.persistDerivedAsset` 호출에 필요한 소유자를 전달합니다.
+    - SSOT(`brainx-openapi.ssot.yaml`): `requestNotionImportJob`의 implementation-note에 이미지 처리 동작(presigned URL 만료 문제, `asset://` 의사 스킴, external/file 구분, 다운로드 실패 시 폴백)을 추가했습니다.
+- **Workspace-Service**: Gateway가 전달한 `X-User-Id`/`X-Guest-Id`를 `CurrentActor`로 해석하는 흐름을 기준으로 전환 중입니다. Redis 도입 전까지 직접 Workspace-Service를 호출하는 개발 편의 경로에는 `dev-test-user` fallback이 남아 있으나, 정식 흐름은 Gateway를 통해 회원은 USER actor, 비회원은 GUEST actor로 처리합니다.
 - **Commerce-Service (신규, 2026-06-19 추가)**:
   - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
   - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.

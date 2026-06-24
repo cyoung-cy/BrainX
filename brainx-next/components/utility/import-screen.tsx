@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { cx, createId } from "@/lib/utils";
 
@@ -18,11 +19,10 @@ import {
   NOTION_OAUTH_MESSAGE_TYPE,
   readNotionIntegration,
   startNotionOAuth,
+  uploadAndImportFile,
   type NotionIntegration,
   type NotionPage
 } from "@/lib/ingestion-api";
-import { getNote } from "@/lib/workspace-api";
-import { addImportedNote, NOTION_IMPORTED_FOLDER_LABEL, type NoteData } from "@/components/editor-lab/brainx-note-demo/mockData";
 
 type ImportedNote = {
   id: string;
@@ -38,11 +38,11 @@ type ImportJob = {
 };
 
 const FILE_TYPES = [
-  { id: "csv", label: "CSV", desc: "스프레드시트에서 구조화된 데이터 가져오기", icon: "csv" as const },
-  { id: "pdf", label: "PDF", desc: "PDF 문서에서 콘텐츠 추출하기", icon: "pdf" as const },
-  { id: "text", label: "Text & Markdown", desc: "일반 텍스트 및 형식 있는 메모 가져오기", icon: "doc" as const },
-  { id: "html", label: "HTML", desc: "웹 페이지 및 구조화된 콘텐츠 가져오기", icon: "html" as const },
-  { id: "word", label: "Word", desc: "Word 문서를 BrainX로 가져오기", icon: "doc" as const }
+  { id: "csv", label: "CSV", desc: "스프레드시트에서 구조화된 데이터 가져오기", icon: "csv" as const, accept: ".csv" },
+  { id: "pdf", label: "PDF", desc: "PDF 문서에서 콘텐츠 추출하기", icon: "pdf" as const, accept: ".pdf" },
+  { id: "text", label: "Text & Markdown", desc: "일반 텍스트 및 형식 있는 메모 가져오기", icon: "doc" as const, accept: ".txt,.md" },
+  { id: "html", label: "HTML", desc: "웹 페이지 및 구조화된 콘텐츠 가져오기", icon: "html" as const, accept: ".html,.htm" },
+  { id: "word", label: "Word", desc: "Word 문서를 BrainX로 가져오기", icon: "doc" as const, accept: ".docx" }
 ] as const;
 
 const IMPORT_HISTORY: ImportJob[] = [
@@ -53,6 +53,7 @@ const IMPORT_HISTORY: ImportJob[] = [
 
 export function ImportScreen() {
   const { pushToast } = useBrainX();
+  const router = useRouter();
   const [tab, setTab] = useState<"browse" | "done">("browse");
   const [dragOver, setDragOver] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -108,7 +109,8 @@ export function ImportScreen() {
     setImporting(false);
   }, [progress]);
 
-  const startImport = (name: string) => {
+  // 데모 세션은 실제 자산 업로드 백엔드가 없으므로 가짜 진행률만 보여준다.
+  const startDemoImport = (name: string) => {
     if (importing) return;
     setProgress(4);
     setImporting(true);
@@ -118,15 +120,59 @@ export function ImportScreen() {
     }, 1700);
   };
 
-  const handleFiles = (files: FileList | null) => {
-    if (!files || !files.length) return;
-    startImport(files[0].name);
+  const startRealImport = async (file: File) => {
+    if (importing) return;
+    setProgress(4);
+    setImporting(true);
+    try {
+      const job = await uploadAndImportFile(file);
+      setProgress(100);
+
+      if (!job || job.status === "FAILED") {
+        pushToast(`${file.name} 가져오기에 실패했습니다.`, "err");
+        return;
+      }
+
+      const noteIds = job.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
+      setHistory((current) => [
+        { id: createId("job"), source: file.name, files: `${Math.max(noteIds.length, 1)}개 항목`, status: "완료", when: "방금" },
+        ...current.slice(0, 4)
+      ]);
+      pushToast(`${file.name} 가져오기를 완료했어요`, "ok");
+
+      if (noteIds.length > 0) {
+        setImportedNotionNotes((current) => [
+          ...noteIds.map((noteId) => ({ id: noteId, title: file.name })),
+          ...current
+        ]);
+        window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: noteIds[0] } }));
+        router.push(`/notes/${noteIds[0]}`);
+      }
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "가져오기에 실패했습니다.", "err");
+    } finally {
+      setImporting(false);
+      setProgress(0);
+    }
   };
 
-  const openFilePicker = () => {
+  const startImport = (file: File) => {
+    if (isNotionDemoSession()) {
+      startDemoImport(file.name);
+      return;
+    }
+    void startRealImport(file);
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || !files.length) return;
+    startImport(files[0]);
+  };
+
+  const openFilePicker = (accept = ".zip,.csv,.pdf,.txt,.md,.html,.docx,.epub") => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".zip,.csv,.pdf,.txt,.md,.html,.docx,.epub";
+    input.accept = accept;
     input.onchange = (event) => handleFiles((event.target as HTMLInputElement).files);
     input.click();
   };
@@ -189,38 +235,24 @@ export function ImportScreen() {
         { id: createId("job"), source: `Notion · ${page.title}`, files: "1개 페이지", status: "완료", when: "방금" },
         ...current.slice(0, 4)
       ]);
-      setImportedNotionNotes((current) => [{ id: createId("note"), title: page.title }, ...current]);
       pushToast(`${page.title} 가져오기를 완료했어요`, "ok");
 
       try {
         const jobStatus = await getImportJobStatus(result.importJobId);
         const noteIds = jobStatus.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
-        let addedCount = 0;
-        for (const noteId of noteIds) {
-          const note = await getNote(noteId);
-          const demoNote: NoteData = {
-            id: note.noteId,
-            title: note.title,
-            folder: NOTION_IMPORTED_FOLDER_LABEL,
-            tags: note.tags.length ? note.tags : ["notion"],
-            aliases: [],
-            status: "active",
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            content: note.markdown,
-            backlinks: [],
-            outgoingLinks: [],
-            aiSummary: "",
-            aiSuggestions: []
-          };
-          addImportedNote(demoNote);
-          addedCount += 1;
-        }
-        if (addedCount > 0) {
-          pushToast(`노트 ${addedCount}개를 노트 데모에서도 볼 수 있어요`, "ok");
+        if (noteIds.length > 0) {
+          setImportedNotionNotes((current) => [
+            ...noteIds.map((noteId) => ({ id: noteId, title: page.title })),
+            ...current
+          ]);
+          pushToast(`노트 ${noteIds.length}개를 /notes에서 확인할 수 있어요`, "ok");
+          window.dispatchEvent(
+            new CustomEvent("brainx:notes-refresh", { detail: { noteId: noteIds[0] } })
+          );
+          router.push(`/notes/${noteIds[0]}`);
         }
       } catch (error) {
-        pushToast(error instanceof Error ? error.message : "노트 데모에 추가하지 못했습니다.", "err");
+        pushToast(error instanceof Error ? error.message : "가져온 노트를 확인하지 못했습니다.", "err");
       }
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Notion 가져오기에 실패했습니다.", "err");
@@ -337,10 +369,15 @@ export function ImportScreen() {
                     <div className="mb-1.5 text-[12px] font-semibold text-txt3">가져온 노트</div>
                     <div className="space-y-1.5">
                       {importedNotionNotes.map((note) => (
-                        <div key={note.id} className="flex items-center gap-2 rounded-lg bg-surface/40 px-3 py-1.5">
+                        <button
+                          key={note.id}
+                          type="button"
+                          onClick={() => router.push(`/notes/${note.id}`)}
+                          className="flex w-full items-center gap-2 rounded-lg bg-surface/40 px-3 py-1.5 text-left transition-colors hover:bg-surface/70"
+                        >
                           <Icon name="check" size={14} className="shrink-0 text-cyan" />
                           <span className="min-w-0 flex-1 truncate text-[13px] text-txt2">{note.title}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -356,7 +393,7 @@ export function ImportScreen() {
               onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(event) => { event.preventDefault(); setDragOver(false); handleFiles(event.dataTransfer.files); }}
-              onClick={openFilePicker}
+              onClick={() => openFilePicker()}
               className={cx(
                 "cursor-pointer rounded-xl border-2 border-dashed px-6 py-12 text-center transition-all",
                 dragOver ? "border-primary/60 bg-primary/5" : "border-line/60 bg-surface2/30 hover:border-primary/35"
@@ -379,7 +416,7 @@ export function ImportScreen() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => startImport(item.label)}
+                  onClick={() => openFilePicker(item.accept)}
                   disabled={importing}
                   className="rounded-xl border border-line/60 bg-surface2/30 p-3.5 text-left transition-colors hover:border-primary/35 hover:bg-surface2/60 disabled:cursor-not-allowed disabled:opacity-50"
                 >

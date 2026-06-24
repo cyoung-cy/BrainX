@@ -7,6 +7,10 @@ import { DropZone } from "@/lib/notes/paneUtils";
 import TabBar from "./TabBar";
 import NoteEditor, { type EditMode, type AiActionType, type NoteEditorHandle } from "./NoteEditor";
 import EmptyNoteStartPage from "./EmptyNoteStartPage";
+import PdfViewerPanel from "./PdfViewerPanel";
+import { parsePdfOnlyNote } from "./PdfBlockNode";
+import HtmlViewerPanel from "./HtmlViewerPanel";
+import { parseHtmlOnlyNote } from "./HtmlBlockNode";
 import QuickSwitcher from "./QuickSwitcher";
 import { TypographyPopover } from "./TypographyPopover";
 import { TYPOGRAPHY_SCALE_MAX, TYPOGRAPHY_SCALE_MIN, computeTypographyPx } from "@/lib/notes/typography";
@@ -219,11 +223,16 @@ export default function EditorPanel({
      "+"로 막 생성된 본문이 비어있는 노트 탭(content==="")도 "빈 탭"으로 취급한다. 실제 내용이
      있는 노트가 열려 있으면 항상 기존처럼 좌/우/상/하 분할(zone) 동작을 유지한다. */
   const isEmptyTarget = !note || note.content.trim() === "";
-
   /* 문서 제목은 본문 H1보다 한 단계 더 커야 한다(위계 구분, Obsidian/Notion 스타일) — 고정 px가
      아니라 note.typography(전역 배율/h1 개별 오버라이드)로 계산된 실제 H1 px 기준으로 1.2배를
      잡아서, 사용자가 본문 글씨를 키워도(Ctrl+휠/서식 패널) 제목이 H1에 따라잡히지 않는다. */
   const titleFontSize = Math.round(computeTypographyPx(note?.typography).h1 * 1.2);
+  /* 파일 가져오기로 만들어진 PDF 노트(본문이 PDF 임베드 블록 하나뿐)는 Tiptap 노트 에디터가
+     아니라 화면 전체를 채우는 전용 PDF 뷰어로 보여준다. */
+  const pdfOnly = note ? parsePdfOnlyNote(note.content) : null;
+  /* HTML 파일 가져오기로 만들어진 노트(본문이 HTML 임베드 블록 하나뿐)도 PDF와 동일하게
+     화면 전체를 채우는 전용 뷰어로 원본 화면을 그대로 보여준다. */
+  const htmlOnly = note ? parseHtmlOnlyNote(note.content) : null;
 
   return (
     <div
@@ -273,6 +282,10 @@ export default function EditorPanel({
             onGoToFile={onOpenQuickSwitcher}
           />
         )
+      ) : pdfOnly ? (
+        <PdfViewerPanel assetId={pdfOnly.assetId} fileName={pdfOnly.fileName} />
+      ) : htmlOnly ? (
+        <HtmlViewerPanel assetId={htmlOnly.assetId} fileName={htmlOnly.fileName} />
       ) : (
         <div
           ref={scrollContainerRef}

@@ -1,0 +1,147 @@
+"use client";
+
+import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { CLUSTERS, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
+
+const WORKSPACE_API_BASE_URL = process.env.NEXT_PUBLIC_WORKSPACE_API_BASE_URL ?? "http://localhost:8082";
+export const USE_MOCK_GRAPH = process.env.NEXT_PUBLIC_GRAPH_USE_MOCK !== "false";
+
+export type GraphNodeData = {
+  id: string;
+  noteId: string;
+  title: string;
+  summary?: string | null;
+  folderId?: string | null;
+  clusterId?: string | null;
+  tags?: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  lastViewedAt?: string | null;
+};
+
+export type GraphEdgeData = {
+  id: string;
+  linkId?: string | null;
+  source: string;
+  target: string;
+  type?: "MANUAL" | "AI_SUGGESTED" | string;
+  weight?: number | null;
+  reason?: string | null;
+};
+
+export type GraphData = {
+  nodes: GraphNodeData[];
+  edges: GraphEdgeData[];
+  summaries?: Record<string, unknown>;
+  lastViewedAt?: string | null;
+};
+
+function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
+  return response.message ?? response.error?.message ?? fallback;
+}
+
+async function workspaceRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const session = readAuthSession();
+  const response = await fetch(`${WORKSPACE_API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.accessToken ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}),
+      ...(init?.headers ?? {})
+    }
+  });
+
+  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
+  if (response.status === 401 || response.status === 403) {
+    clearAuthSession();
+    throw new Error("Login expired. Please sign in again.");
+  }
+  if (!payload) {
+    throw new Error("Could not read the server response.");
+  }
+  if (!response.ok || !payload.success) {
+    throw new Error(messageFromResponse(payload, "Could not load graph data."));
+  }
+  return payload.data as T;
+}
+
+export async function getGraph() {
+  return workspaceRequest<GraphData>("/api/v1/graph");
+}
+
+export function graphToBrainXNotes(graph: GraphData): BrainXNote[] {
+  const linksByNoteId = new Map<string, Set<string>>();
+  for (const node of graph.nodes) {
+    linksByNoteId.set(node.noteId, new Set());
+  }
+  for (const edge of graph.edges) {
+    linksByNoteId.get(edge.source)?.add(edge.target);
+    linksByNoteId.get(edge.target)?.add(edge.source);
+  }
+
+  return graph.nodes.map((node) => {
+    const cluster = normalizeClusterId(node.clusterId ?? node.folderId ?? node.noteId);
+    const createdAt = normalizeDate(node.createdAt);
+    const updatedAt = normalizeDate(node.updatedAt);
+    return {
+      id: node.noteId,
+      title: node.title || "Untitled",
+      markdown: "",
+      folderId: cluster,
+      cluster,
+      summary: normalizeSummary(node.summary, node.title),
+      tags: node.tags ?? [],
+      links: Array.from(linksByNoteId.get(node.noteId) ?? []),
+      updated: relativeUpdatedLabel(node.updatedAt ?? node.lastViewedAt),
+      words: 0,
+      isFavorite: false,
+      createdAt,
+      updatedAt,
+      version: 1
+    };
+  });
+}
+
+export function graphEdgesForFlow(graph: GraphData) {
+  return graph.edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    bridge: edge.type === "AI_SUGGESTED"
+  }));
+}
+
+function normalizeClusterId(value: string): ClusterId {
+  if (CLUSTERS.some((cluster) => cluster.id === value)) {
+    return value as ClusterId;
+  }
+  const ids = CLUSTERS.map((cluster) => cluster.id);
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  }
+  return ids[Math.abs(hash) % ids.length];
+}
+
+function normalizeSummary(summary: string | null | undefined, title: string) {
+  const text = summary?.trim();
+  if (text) return text;
+  return `${title} note summary has not been generated yet.`;
+}
+
+function normalizeDate(value: string | null | undefined) {
+  if (!value) return new Date().toISOString();
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? new Date().toISOString() : new Date(timestamp).toISOString();
+}
+
+function relativeUpdatedLabel(value: string | null | undefined) {
+  if (!value) return "just now";
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "just now";
+  const days = Math.floor((Date.now() - timestamp) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return `${Math.floor(days / 7)} weeks ago`;
+}
