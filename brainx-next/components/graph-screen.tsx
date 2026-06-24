@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "rea
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
+import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH } from "@/lib/graph-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
@@ -752,7 +753,9 @@ function TooltipOverlay({ hovered, onMouseEnter, onMouseLeave }: { hovered: Brai
 
 function GraphScreenInner() {
   const router = useRouter();
-  const { notes, pushToast } = useBrainX();
+  const { notes: mockNotes, pushToast } = useBrainX();
+  const [liveNotes, setLiveNotes] = useState<BrainXNote[] | null>(null);
+  const [liveEdges, setLiveEdges] = useState<Array<{ source: string; target: string; bridge?: boolean }> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [theme, setTheme] = useState<'2d' | 'universe'>('2d');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force');
@@ -761,8 +764,38 @@ function GraphScreenInner() {
   const [hiddenClusters, setHiddenClusters] = useState<Partial<Record<ClusterId, boolean>>>({});
   const [bridgeMode, setBridgeMode] = useState(false);
   const controls = useRef<GraphControls | null>(null);
-  const edges = useMemo(() => deriveGraphEdges(notes), [notes]);
+  const notes = liveNotes ?? mockNotes;
+  const edges = useMemo(() => liveEdges ?? deriveGraphEdges(notes), [liveEdges, notes]);
   const selected = selectedId ? notes.find((note) => note.id === selectedId) ?? null : null;
+
+  useEffect(() => {
+    if (USE_MOCK_GRAPH) {
+      setLiveNotes(null);
+      setLiveEdges(null);
+      return;
+    }
+
+    let active = true;
+    setLiveNotes([]);
+    setLiveEdges([]);
+    getGraph()
+      .then((graph) => {
+        if (!active) return;
+        setLiveNotes(graphToBrainXNotes(graph));
+        setLiveEdges(graphEdgesForFlow(graph));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLiveNotes([]);
+        setLiveEdges([]);
+        const message = error instanceof Error ? error.message : "Could not load graph data.";
+        pushToast(message, "err");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [pushToast]);
 
   return (
     <div data-route className={cx("relative h-full overflow-hidden transition-colors duration-150", theme === 'universe' ? "bg-slate-950 universe-theme" : "bg-bg")}>

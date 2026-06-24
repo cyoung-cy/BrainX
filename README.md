@@ -239,6 +239,8 @@ API와 이벤트 계약의 기준은 `contracts-v2`입니다.
 6. 백엔드는 서비스별 DB 소유권을 지키고 다른 서비스 DB를 직접 참조하지 않습니다.
 7. AI 기능은 결과만 보여주지 말고 근거 노트, 연결 이유, 요약을 함께 노출합니다.
 8. 노트/그래프/검색/채팅은 같은 지식 원장을 바라봐야 합니다.
+9. `noteId`는 Workspace-Service PostgreSQL 원장에서 발급된 값을 PostgreSQL, Neo4j 같은 그래프 projection, Vector DB/RAG 인덱스, RAG citation, 프론트 그래프 상태에서 공통으로 사용합니다.
+10. Neo4j 같은 그래프 DB는 원장이 아니라 projection/read model입니다. 실제 노트와 링크 생성/수정/삭제는 Workspace-Service command API와 이벤트를 통해 반영합니다.
 
 ### Frontend Coding Rules
 
@@ -307,6 +309,15 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Workspace-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_workspace` |
 | Ingestion-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_ingestion` |
 | Commerce-Service | PostgreSQL | `jdbc:postgresql://localhost:5432/brainx_commerce` |
+
+그래프 projection/read model용 Neo4j도 Docker Compose로 함께 실행됩니다. Neo4j는 Workspace-Service의 PostgreSQL 원장을 대체하지 않으며, 노트/링크 이벤트를 바탕으로 갱신되는 그래프 조회 저장소입니다.
+
+| Store | 용도 | Local URL |
+| --- | --- | --- |
+| Neo4j Browser | 그래프 projection 확인 및 Cypher 실행 | `http://localhost:7474` |
+| Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
+
+기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 

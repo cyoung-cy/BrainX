@@ -2,6 +2,9 @@ server:
   port: 0
 
 spring:
+  autoconfigure:
+    exclude:
+    - org.springframework.boot.autoconfigure.neo4j.Neo4jAutoConfiguration
   application:
     name: Workspace-Service-Test
   datasource:
@@ -19,3 +22,6 @@ brainx:
     secret: test_secret_that_is_long_enough_for_hmac_sha256
   service-token: test-service-token
   public-base-url: http://localhost:3000
+  graph:
+    neo4j:
+      enabled: false

@@ -2,6 +2,9 @@ server:
   port: ${SERVER_PORT:8082}
 
 spring:
+  autoconfigure:
+    exclude:
+    - org.springframework.boot.autoconfigure.neo4j.Neo4jAutoConfiguration
   config:
     import:
     - optional:file:../.env[.properties]
@@ -27,6 +30,13 @@ brainx:
   service-token: ${SERVICE_TOKEN:local-service-token}
   public-base-url: ${PUBLIC_BASE_URL:http://localhost:3000}
   seed-demo-data: ${SEED_DEMO_DATA:true}
+  graph:
+    neo4j:
+      enabled: ${NEO4J_ENABLED:true}
+      uri: ${NEO4J_URI:bolt://localhost:7687}
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:brainx_neo4j_local_password}
+      backfill-on-startup: ${NEO4J_BACKFILL_ON_STARTUP:true}
 logging:
   level:
     com.brainx: DEBUG
