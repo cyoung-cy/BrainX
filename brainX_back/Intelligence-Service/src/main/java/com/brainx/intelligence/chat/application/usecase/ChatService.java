@@ -28,11 +28,14 @@ import com.brainx.intelligence.chat.domain.ChatCitation;
 import com.brainx.intelligence.chat.domain.ChatDomainException;
 import com.brainx.intelligence.chat.domain.ChatMessage;
 import com.brainx.intelligence.chat.domain.ChatRole;
+import com.brainx.intelligence.chat.domain.ChatRoute;
+import com.brainx.intelligence.chat.domain.ChatRouteDecision;
 import com.brainx.intelligence.chat.domain.ChatThread;
 import com.brainx.intelligence.chat.domain.ChatTokenUsage;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort.NoteChunkSearchQuery;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiChatMessage;
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiChatRequest;
@@ -55,10 +58,12 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
     static final String RAG_CHAT_FEATURE_ID = "rag-chat";
     private static final String SOURCE_SERVICE = "AI-Service";
     private static final String NO_CONTEXT_ANSWER = "관련 노트 근거를 찾지 못했습니다.";
+    private static final String OUT_OF_SCOPE_ANSWER = "BrainX 본 채팅은 내 노트 검색, 노트 기반 질문, 글 작성, 노트 적용 초안만 처리합니다.";
     private static final int HISTORY_LIMIT = 8;
     private static final int CONTEXT_SNIPPET_LENGTH = 1_200;
 
     private final ChatProperties properties;
+    private final ChatRouteDecider chatRouteDecider;
     private final ChatPersistencePort chatPersistencePort;
     private final NoteChunkRetrievalPort noteChunkRetrievalPort;
     private final EntitlementPort entitlementPort;
@@ -69,6 +74,7 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
 
     public ChatService(
         ChatProperties properties,
+        ChatRouteDecider chatRouteDecider,
         ChatPersistencePort chatPersistencePort,
         NoteChunkRetrievalPort noteChunkRetrievalPort,
         EntitlementPort entitlementPort,
@@ -78,6 +84,7 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         ChatEventPort chatEventPort
     ) {
         this.properties = properties;
+        this.chatRouteDecider = chatRouteDecider;
         this.chatPersistencePort = chatPersistencePort;
         this.noteChunkRetrievalPort = noteChunkRetrievalPort;
         this.entitlementPort = entitlementPort;
@@ -137,11 +144,25 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             .toList();
         String clientContextPrompt = clientContextPrompt(command.clientContext());
         boolean hasClientContext = StringUtils.hasText(clientContextPrompt);
-        List<RagContext> contexts = hasClientContext ? List.of() : retrieveContexts(thread, message);
-        String systemPrompt = systemPrompt();
+        ChatRouteDecision routeDecision = chatRouteDecider.decide(new ChatRouteDecider.ChatRouteRequest(
+            userId,
+            message,
+            thread.documentGroupId(),
+            noteScope,
+            command.clientContext()
+        ));
+        ChatRoute route = routeDecision.route();
+        if (route == ChatRoute.OUT_OF_SCOPE) {
+            return withRouteEvent(routeDecision, fixedAnswerStream(thread, userMessage, modelId, OUT_OF_SCOPE_ANSWER));
+        }
+
+        List<RagContext> contexts = hasClientContext || !requiresNoteContext(route)
+            ? List.of()
+            : retrieveContexts(thread, message, route);
+        String systemPrompt = systemPrompt(isRightSidebarContext(command.clientContext()), route);
         String userPrompt = hasClientContext
-            ? userPromptFromClientContext(message, clientContextPrompt)
-            : userPrompt(message, contexts);
+            ? userPromptFromClientContext(message, clientContextPrompt, route)
+            : userPrompt(message, contexts, route);
         int tokenEstimate = estimateTokens(systemPrompt + "\n" + historyPrompt(history) + "\n" + userPrompt);
         var entitlement = entitlementPort.checkEntitlement(new EntitlementRequest(
             userId,
@@ -152,10 +173,10 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             throw new ChatDomainException("AI capability is not available: " + entitlement.reasonCode());
         }
 
-        if (!hasClientContext && contexts.isEmpty()) {
-            return noContextStream(thread, userMessage, modelId, NO_CONTEXT_ANSWER);
+        if (requiresNoteContext(route) && !hasClientContext && contexts.isEmpty()) {
+            return withRouteEvent(routeDecision, fixedAnswerStream(thread, userMessage, modelId, NO_CONTEXT_ANSWER));
         }
-        return aiStream(thread, userMessage, modelId, systemPrompt, history, userPrompt, contexts);
+        return withRouteEvent(routeDecision, aiStream(thread, userMessage, modelId, systemPrompt, history, userPrompt, contexts));
     }
 
     @Override
@@ -170,7 +191,7 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         return new ChatThreadDetailResult(toThreadView(thread), messages);
     }
 
-    private Flux<ChatStreamEvent> noContextStream(
+    private Flux<ChatStreamEvent> fixedAnswerStream(
         ChatThread thread,
         ChatMessage userMessage,
         String modelId,
@@ -188,6 +209,14 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         );
         publishMessageSideEffects(thread, assistantMessage, tokenUsage);
         return Flux.just(ChatStreamEvent.delta(answer), ChatStreamEvent.done(assistantMessageId));
+    }
+
+    private static Flux<ChatStreamEvent> withRouteEvent(ChatRouteDecision routeDecision, Flux<ChatStreamEvent> events) {
+        return Flux.concat(Flux.just(ChatStreamEvent.route(
+            routeDecision.route().name(),
+            routeDecision.reason(),
+            routeDecision.routerModel()
+        )), events);
     }
 
     private Flux<ChatStreamEvent> aiStream(
@@ -285,10 +314,12 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         ));
     }
 
-    private List<RagContext> retrieveContexts(ChatThread thread, String message) {
+    private List<RagContext> retrieveContexts(ChatThread thread, String message, ChatRoute route) {
+        SearchScope scope = route == ChatRoute.WORKSPACE_SEARCH ? SearchScope.USER : SearchScope.DOCUMENT_GROUP;
         return noteChunkRetrievalPort.searchChunks(new NoteChunkSearchQuery(
                 thread.userId(),
-                thread.documentGroupId(),
+                scope,
+                scope == SearchScope.USER ? null : thread.documentGroupId(),
                 message,
                 retrievalTopK()
             )).stream()
@@ -323,18 +354,44 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         return text.substring(0, CONTEXT_SNIPPET_LENGTH).trim();
     }
 
-    private static String systemPrompt() {
-        return """
-            You are BrainX RAG chat assistant.
-            Answer in Korean using only the provided note context and recent chat history.
-            If the context does not contain enough evidence, say that you do not know.
-            Keep the answer concise and mention the cited note titles naturally when useful.
+    private static String systemPrompt(boolean noteScopedSidebar, ChatRoute route) {
+        String prompt = switch (route) {
+            case NOTE_QA, WORKSPACE_SEARCH -> """
+                You are BrainX RAG chat assistant.
+                Answer in Korean using only the provided note context and recent chat history.
+                If the context does not contain enough evidence, say that you do not know.
+                Keep the answer concise and mention the cited note titles naturally when useful.
+                """;
+            case COMPOSE -> """
+                You are BrainX writing assistant.
+                Write the requested draft in Korean unless the user asks for another language.
+                If note context is provided, use it as reference. If no context is provided, write a general draft without pretending it came from notes.
+                Return only the requested content unless a short note is necessary.
+                """;
+            case NOTE_ACTION -> """
+                You are BrainX note action draft assistant.
+                Produce Markdown content that the user can save, insert, append, or apply to a note.
+                Do not claim that anything was saved, inserted, appended, or applied.
+                Return the applicable draft content only.
+                """;
+            case OUT_OF_SCOPE -> "";
+        };
+        if (!noteScopedSidebar) {
+            return prompt;
+        }
+        return prompt + """
+            This request comes from the note sidebar, so it is note-scoped.
+            First decide whether the user's question is about the current note, selected text, or an operation on that note context.
+            If the question is unrelated to the provided note context, do not answer the external question.
+            Instead, briefly say in Korean that this sidebar answers questions about the current note.
             """;
     }
 
-    private String userPrompt(String message, List<RagContext> contexts) {
+    private String userPrompt(String message, List<RagContext> contexts, ChatRoute route) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Question:\n").append(message).append("\n\nNote context:\n");
+        builder.append(route == ChatRoute.COMPOSE || route == ChatRoute.NOTE_ACTION ? "Request:\n" : "Question:\n")
+            .append(message)
+            .append("\n\nNote context:\n");
         int remainingChars = properties.getMaxContextChars();
         for (int index = 0; index < contexts.size() && remainingChars > 0; index++) {
             RagContext context = contexts.get(index);
@@ -356,8 +413,13 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         return builder.toString();
     }
 
-    private static String userPromptFromClientContext(String message, String clientContextPrompt) {
-        return "Question:\n" + message + "\n\nFrontend selected context:\n" + clientContextPrompt;
+    private static String userPromptFromClientContext(String message, String clientContextPrompt, ChatRoute route) {
+        String label = route == ChatRoute.COMPOSE || route == ChatRoute.NOTE_ACTION ? "Request" : "Question";
+        return label + ":\n" + message + "\n\nFrontend selected context:\n" + clientContextPrompt;
+    }
+
+    private static boolean requiresNoteContext(ChatRoute route) {
+        return route == ChatRoute.NOTE_QA || route == ChatRoute.WORKSPACE_SEARCH;
     }
 
     private static String clientContextPrompt(Map<String, Object> clientContext) {
@@ -401,6 +463,13 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             index += 1;
         }
         return index == 1 ? "" : builder.toString().trim();
+    }
+
+    private static boolean isRightSidebarContext(Map<String, Object> clientContext) {
+        if (clientContext == null || clientContext.isEmpty()) {
+            return false;
+        }
+        return "RIGHT_SIDEBAR".equals(stringValue(clientContext.get("source")));
     }
 
     private static List<AiChatMessage> promptMessages(

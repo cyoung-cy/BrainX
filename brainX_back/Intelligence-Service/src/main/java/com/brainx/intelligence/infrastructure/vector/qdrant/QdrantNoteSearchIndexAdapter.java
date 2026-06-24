@@ -130,7 +130,8 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
             return List.of();
         }
 
-        return vectorIndexClient.search(query.userId(), query.documentGroupId(), queryVector, query.topK()).stream()
+        String documentGroupId = query.scope() == SearchScope.USER ? null : query.documentGroupId();
+        return vectorIndexClient.search(query.userId(), documentGroupId, queryVector, query.topK()).stream()
             .map(QdrantNoteSearchIndexAdapter::toChunkSearchResult)
             .sorted(Comparator.comparingDouble(NoteChunkSearchResult::score).reversed())
             .limit(query.topK())

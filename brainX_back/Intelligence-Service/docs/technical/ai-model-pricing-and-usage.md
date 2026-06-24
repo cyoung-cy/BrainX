@@ -49,6 +49,7 @@ estimatedCost = estimatedInputCost + estimatedCachedInputCost + estimatedOutputC
 
 - `SampleRagService.ask(...)`: `AiChatPort.generate(...)` 응답의 token usage를 기록하고, catalog에 모델 단가가 있으면 estimated cost를 채운다. 개발용 RAG CLI 응답은 실행 중 기록된 query embedding/chat usage를 `usageRecords[]`에도 함께 노출한다.
 - `AssistService.createInlineAssist(...)`: 사용자 기본 모델(`AiModelSettings.defaultModelId`)을 우선 사용하고 없으면 `brainx.assist.default-model`을 사용한다. `AiChatPort.generate(...)` 응답의 token usage를 `inline-assist-chat` featureId로 기록하고, catalog에 모델 단가가 있으면 estimated cost를 채운다.
+- `LlmChatRouteDecider.decide(...)`: 본 채팅 1차 route classifier 호출 usage를 답변 생성 usage와 분리해 `chat-router-classifier` featureId로 기록한다. 기본 router model은 `brainx.chat.router.model` 또는 `BRAINX_CHAT_ROUTER_MODEL`로 지정하며 local/dev 기본값은 `gpt-5.4-nano`다.
 - `OpenAiExternalSearchAdapter.search(...)`: OpenAI Responses API `web_search` 응답의 token usage를 `external-search-web` featureId로 기록하고, catalog에 모델 단가가 있으면 estimated cost를 채운다. web search tool call 자체의 별도 과금은 v1 catalog에 없으므로 token usage 중심으로만 기록한다.
 - `QdrantNoteSearchIndexAdapter.search(...)` / `searchChunks(...)`: query embedding의 Voyage `usage.total_tokens`를 `note-search-query-embedding` usage로 기록하고, catalog에 단가가 있으면 estimated cost를 채운다.
 - `QdrantNoteSearchIndexAdapter.replaceNoteChunks(...)` / `save(...)`: document embedding의 Voyage `usage.total_tokens`를 `note-search-index-embedding` usage로 기록하고, catalog에 단가가 있으면 estimated cost를 채운다.
@@ -56,13 +57,14 @@ estimatedCost = estimatedInputCost + estimatedCachedInputCost + estimatedOutputC
 
 ## Local/dev Seed Data
 
-`local`과 `dev-ui` profile에서는 개발 편의를 위해 `ai_models` catalog에 sample RAG에서 쓰는 OpenAI chat model과 Voyage embedding model 단가를 seed한다. provider 단가표가 1,000,000 token 기준이면 이 프로젝트의 정규화 기준인 1,000 token당 단가로 나누어 저장한다.
+`local`과 `dev-ui` profile에서는 개발 편의를 위해 `ai_models` catalog에 sample RAG와 chat router에서 쓰는 OpenAI chat model, Voyage embedding model 단가를 seed한다. provider 단가표가 1,000,000 token 기준이면 이 프로젝트의 정규화 기준인 1,000 token당 단가로 나누어 저장한다.
 
 OpenAI chat seed:
 
 | modelId | provider | inputCostPer1kTokens | cachedInputCostPer1kTokens | outputCostPer1kTokens | currencyCode |
 | --- | --- | ---: | ---: | ---: | --- |
 | `gpt-5.4-mini` | `openai` | `0.000750` | `0.000075` | `0.004500` | `USD` |
+| `gpt-5.4-nano` | `openai` | `0.000750` | `0.000075` | `0.004500` | `USD` |
 
 Voyage embedding seed:
 

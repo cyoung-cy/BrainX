@@ -46,6 +46,9 @@ brainx:
   assist:
     default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
   chat:
+    router:
+      enabled: ${BRAINX_CHAT_ROUTER_ENABLED:true}
+      model: ${BRAINX_CHAT_ROUTER_MODEL:gpt-5.4-nano}
     rag:
       top-k: ${BRAINX_CHAT_RAG_TOP_K:8}
       min-score: ${BRAINX_CHAT_RAG_MIN_SCORE:0.35}
@@ -106,3 +109,13 @@ brainx:
       max-chunks-per-note: ${BRAINX_DEV_SAMPLE_RAG_MAX_CHUNKS_PER_NOTE:2}
       max-context-chars: ${BRAINX_DEV_SAMPLE_RAG_MAX_CONTEXT_CHARS:8000}
       chat-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+    chat-router:
+      enabled: ${BRAINX_DEV_CHAT_ROUTER_ENABLED:false}
+      command: ${BRAINX_DEV_CHAT_ROUTER_COMMAND:ask}
+      directory: ${BRAINX_DEV_CHAT_ROUTER_DIRECTORY:sample_notes}
+      user-id: ${BRAINX_DEV_CHAT_ROUTER_USER_ID:sample-user}
+      document-group-id: ${BRAINX_DEV_CHAT_ROUTER_DOCUMENT_GROUP_ID:default}
+      folder-id: ${BRAINX_DEV_CHAT_ROUTER_FOLDER_ID:sample_notes}
+      tags: ${BRAINX_DEV_CHAT_ROUTER_TAGS:sample_notes}
+      query: ${BRAINX_DEV_CHAT_ROUTER_QUERY:}
+      model-id: ${BRAINX_DEV_CHAT_ROUTER_MODEL_ID:${OPENAI_CHAT_MODEL:gpt-5.4-mini}}

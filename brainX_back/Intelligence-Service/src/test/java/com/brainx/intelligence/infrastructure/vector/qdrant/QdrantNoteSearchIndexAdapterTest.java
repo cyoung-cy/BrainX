@@ -230,6 +230,47 @@ class QdrantNoteSearchIndexAdapterTest {
     }
 
     @Test
+    void userScopeSearchChunksDoesNotFilterByDocumentGroup() {
+        vectorIndexClient.searchHits = List.of(
+            hit(0.7d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-1",
+                "noteId", "note-1",
+                "chunkId", "note-1::0",
+                "chunkIndex", 0,
+                "title", "Group 1",
+                "doc_content", "first group",
+                "markdownHash", "hash-1",
+                "version", 1
+            )),
+            hit(0.9d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-2",
+                "noteId", "note-2",
+                "chunkId", "note-2::0",
+                "chunkIndex", 0,
+                "title", "Group 2",
+                "doc_content", "second group",
+                "markdownHash", "hash-2",
+                "version", 1
+            ))
+        );
+
+        var results = adapter.searchChunks(new NoteChunkSearchQuery(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "semantic search",
+            3
+        ));
+
+        assertThat(vectorIndexClient.lastSearchUserId).isEqualTo("user-1");
+        assertThat(vectorIndexClient.lastSearchDocumentGroupId).isNull();
+        assertThat(results).hasSize(2);
+        assertThat(results).extracting("documentGroupId").containsExactly("group-2", "group-1");
+    }
+
+    @Test
     void deleteUsesUserAndNoteFilter() {
         boolean deleted = adapter.deleteByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1");
 
