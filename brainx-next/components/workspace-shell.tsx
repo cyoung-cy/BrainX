@@ -216,6 +216,7 @@ function SidebarItem({
       className={cx(
         "group relative flex aspect-square w-full items-center justify-center gap-3 rounded-[0.4rem] transition-all duration-200",
         path === "/home" && "tutorial-target-home",
+        path === "/notes" && "tutorial-target-notes",
         path === "/graph" && "tutorial-target-mindmap",
         path === "/chat" && "tutorial-target-ai",
         active
@@ -286,22 +287,6 @@ function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: () => 
       </nav>
 
       <div className="mt-auto px-1 pb-3 flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => useGuideStore.getState().resetTutorials()}
-          className="group relative grid aspect-square w-full place-items-center rounded-[0.4rem] text-txt3 hover:bg-surface2/50 hover:text-txt transition-colors"
-        >
-          <Icon name="sparkle" size={18} />
-          <span 
-            className="pointer-events-none absolute left-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-          >
-            튜토리얼 다시보기
-            <div
-              className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 bg-txt"
-              style={{ zIndex: -1 }}
-            />
-          </span>
-        </button>
         <button
           type="button"
           onClick={() => router.push("/billing")}
@@ -452,11 +437,13 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <SearchBar />
         </div>
         <div className="flex items-center justify-between gap-2 md:ml-auto md:justify-end">
-          <ThemeToggle />
+          <div className="tutorial-target-darkmode">
+            <ThemeToggle />
+          </div>
           <button
             type="button"
             onClick={() => pushToast("새 알림은 없습니다", "info")}
-            className="relative grid h-9 w-9 place-items-center rounded-xl border border-line/60 text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt"
+            className="tutorial-target-notifications relative grid h-9 w-9 place-items-center rounded-xl border border-line/60 text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt"
           >
             <Icon name="bell" size={17} />
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" />
@@ -465,7 +452,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button
             type="button"
             onClick={onOpenSettings}
-            className="flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60"
+            className="tutorial-target-profile flex h-10 items-center gap-2.5 rounded-xl px-2.5 transition-colors hover:bg-surface2/60"
           >
             <Avatar name={displayName} size={32} imageUrl={displayImageUrl} />
             <div className="hidden text-left leading-tight sm:block">
