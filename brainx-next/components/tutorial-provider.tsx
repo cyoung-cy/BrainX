@@ -1,24 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Joyride, STATUS, type Step } from 'react-joyride';
 import { useGuideStore } from '@/lib/use-guide-store';
-import { usePathname } from 'next/navigation';
+
+// 온보딩 가이드를 띄우지 않는 라우트. notion-callback은 Notion OAuth 팝업(작은 창)에서
+// 잠깐 떴다가 닫히는 페이지라 튜토리얼 오버레이가 뜨면 안 된다.
+const TUTORIAL_DISABLED_ROUTES = ['/notion-callback'];
 
 export function TutorialProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isMounted, setIsMounted] = useState(false);
   const [run, setRun] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
-  
-  const pathname = usePathname();
+
   const { completedTutorials, completeTutorial, skillLevel, discoveredFeatures, isManualTrigger, clearManualTrigger } = useGuideStore();
+  const tutorialDisabled = TUTORIAL_DISABLED_ROUTES.includes(pathname);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isMounted || tutorialDisabled) return;
 
     const isMainPage = pathname === '/home' || pathname === '/';
 
@@ -73,7 +78,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       setRun(true);
     }
 
-  }, [isMounted, completedTutorials, skillLevel, discoveredFeatures, pathname, isManualTrigger]);
+  }, [isMounted, tutorialDisabled, completedTutorials, skillLevel, discoveredFeatures, pathname, isManualTrigger]);
 
   const handleJoyrideCallback = (data: any) => {
     const { status, type } = data;
@@ -94,7 +99,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  if (!isMounted) return <>{children}</>;
+  if (!isMounted || tutorialDisabled) return <>{children}</>;
 
   return (
     <>
