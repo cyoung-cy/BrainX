@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useLayoutEffect, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
+import { createRoot, type Root } from "react-dom/client";
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
@@ -15,9 +16,9 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { Link2, Highlighter, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink } from "lucide-react";
+import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment, Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { typographyCssVars } from "@/lib/notes/typography";
@@ -33,6 +34,7 @@ import { WikiLink } from "./WikiLinkNode";
 import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
 import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
 import { useWikiLinkContext } from "./WikiLinkContext";
+import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
 // 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
 // Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
 // 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
@@ -44,6 +46,8 @@ import { lowlight } from "./lowlightSetup";
 
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
+
+const INLINE_REWRITE_CONTEXT_CHARS = 1000;
 
 /* ── Markdown → HTML (초기 로딩) ─────────────────────────────────────── */
 function escHtml(s: string) {
@@ -70,7 +74,12 @@ function wikiLinkHtml(text: string) {
 }
 
 function inlineHtml(text: string) {
-  return wikiLinkHtml(text)
+  return wikiLinkHtml(escHtml(text))
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, href: string) => {
+      const safeHref = href.replace(/"/g, "&quot;");
+      return `<a href="${safeHref}">${label}</a>`;
+    })
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -174,6 +183,151 @@ function resolveEditorHtml(rawContent: string): string {
   if (trimmed === "") return "";
   if (trimmed.startsWith("<")) return rawContent;
   return markdownToHtml(rawContent);
+}
+
+function markdownToEditorInsertionHtml(rawContent: string): string {
+  const trimmed = rawContent.trim();
+  if (trimmed === "") return "";
+  if (trimmed.startsWith("<")) return trimmed;
+  if (isInlineMarkdown(trimmed)) return inlineHtml(trimmed);
+  return markdownToHtml(trimmed);
+}
+
+function isInlineMarkdown(value: string) {
+  if (value.includes("\n")) return false;
+  return !/^(#{1,6}\s|>\s|([-*]|\d+\.)\s|```)/.test(value);
+}
+
+function escapeMarkdownText(text: string) {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/~/g, "\\~");
+}
+
+function escapeMarkdownCode(text: string) {
+  return text.replace(/`/g, "\\`");
+}
+
+function escapeMarkdownLinkUrl(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function serializeRangeAsMarkdown(editor: Editor, range: { from: number; to: number }) {
+  return serializeFragmentAsMarkdown(editor.state.doc.slice(range.from, range.to).content).trim();
+}
+
+function serializeFragmentAsMarkdown(fragment: Fragment, depth = 0) {
+  const blocks: string[] = [];
+  fragment.forEach((node) => {
+    const serialized = serializeNodeAsMarkdown(node, depth).trimEnd();
+    if (serialized.trim()) blocks.push(serialized);
+  });
+  return blocks.join("\n\n");
+}
+
+function serializeNodeAsMarkdown(node: ProseMirrorNode, depth = 0): string {
+  switch (node.type.name) {
+    case "paragraph":
+      return serializeInlineContent(node);
+    case "heading": {
+      const level = Math.min(6, Math.max(1, Number(node.attrs.level ?? 1)));
+      return `${"#".repeat(level)} ${serializeInlineContent(node)}`;
+    }
+    case "blockquote":
+      return serializeFragmentAsMarkdown(node.content, depth)
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+    case "bulletList":
+      return serializeListAsMarkdown(node, false, depth);
+    case "orderedList":
+      return serializeListAsMarkdown(node, true, depth);
+    case "listItem":
+      return serializeListItemAsMarkdown(node, "- ", depth);
+    case "codeBlock": {
+      const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+      return `\`\`\`${language}\n${node.textContent}\n\`\`\``;
+    }
+    case "horizontalRule":
+      return "---";
+    case "image": {
+      const alt = typeof node.attrs.alt === "string" ? escapeMarkdownText(node.attrs.alt) : "";
+      const src = typeof node.attrs.src === "string" ? escapeMarkdownLinkUrl(node.attrs.src) : "";
+      return src ? `![${alt}](${src})` : alt;
+    }
+    default:
+      if (node.isText) return serializeMarkedText(node.text ?? "", node.marks);
+      if (node.isTextblock) return serializeInlineContent(node);
+      if (node.isLeaf) return node.textContent ? escapeMarkdownText(node.textContent) : "";
+      return serializeFragmentAsMarkdown(node.content, depth);
+  }
+}
+
+function serializeInlineContent(node: ProseMirrorNode) {
+  let output = "";
+  node.forEach((child) => {
+    if (child.isText) {
+      output += serializeMarkedText(child.text ?? "", child.marks);
+    } else if (child.type.name === "hardBreak") {
+      output += "\n";
+    } else if (child.type.name === "image") {
+      output += serializeNodeAsMarkdown(child);
+    } else {
+      output += child.textContent ? escapeMarkdownText(child.textContent) : "";
+    }
+  });
+  return output;
+}
+
+function serializeMarkedText(text: string, marks: readonly Mark[]) {
+  if (!text) return "";
+  const codeMark = marks.find((mark) => mark.type.name === "code");
+  let output = codeMark ? `\`${escapeMarkdownCode(text)}\`` : escapeMarkdownText(text);
+
+  for (const mark of marks) {
+    if (mark.type.name === "code") continue;
+    if (mark.type.name === "bold") output = `**${output}**`;
+    else if (mark.type.name === "italic") output = `*${output}*`;
+    else if (mark.type.name === "strike") output = `~~${output}~~`;
+    else if (mark.type.name === "link" && typeof mark.attrs.href === "string") {
+      output = `[${output}](${escapeMarkdownLinkUrl(mark.attrs.href)})`;
+    }
+  }
+  return output;
+}
+
+function serializeListAsMarkdown(node: ProseMirrorNode, ordered: boolean, depth: number) {
+  const items: string[] = [];
+  let number = Number(node.attrs.start ?? 1);
+  node.forEach((child) => {
+    if (child.type.name !== "listItem") return;
+    const marker = ordered ? `${number}. ` : "- ";
+    items.push(serializeListItemAsMarkdown(child, marker, depth));
+    number += 1;
+  });
+  return items.join("\n");
+}
+
+function serializeListItemAsMarkdown(node: ProseMirrorNode, marker: string, depth: number) {
+  const indent = "  ".repeat(depth);
+  const childBlocks: string[] = [];
+  node.forEach((child) => {
+    if (child.type.name === "paragraph") childBlocks.push(serializeInlineContent(child));
+    else childBlocks.push(serializeNodeAsMarkdown(child, depth + 1));
+  });
+
+  const [first = "", ...rest] = childBlocks.filter((block) => block.trim());
+  const continuation = `${indent}${" ".repeat(marker.length)}`;
+  const lines = [`${indent}${marker}${first}`];
+  for (const block of rest) {
+    lines.push(...block.split("\n").map((line) => `${continuation}${line}`));
+  }
+  return lines.join("\n");
 }
 
 /* ── Obsidian Live Preview ────────────────────────────────────────────── */
@@ -671,11 +825,13 @@ function BubbleBtn({
   onClick,
   title,
   children,
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -683,9 +839,14 @@ function BubbleBtn({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={cx(
         "grid h-[26px] min-w-[26px] place-items-center rounded px-1 transition-colors",
-        active ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+        disabled
+          ? "cursor-not-allowed text-txt3/50"
+          : active
+            ? "bg-primary/15 text-primary"
+            : "text-txt2 hover:bg-surface2/70 hover:text-txt"
       )}
     >
       {children}
@@ -1011,12 +1172,305 @@ function LinkPopover({
   );
 }
 
+type RewriteRange = {
+  from: number;
+  to: number;
+};
+
+type BubbleAnchor = {
+  left: number;
+  top: number;
+  bottom: number;
+  kind: "selection" | "cursor";
+};
+
+type RewriteSuggestionState =
+  | {
+      status: "loading";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+    }
+  | {
+      status: "ready";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      suggestionId: string;
+      modelId: string;
+    }
+  | {
+      status: "error";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      message: string;
+      suggestionId?: string;
+    };
+
+type ContinueSuggestionState =
+  | {
+      status: "loading";
+      requestId: number;
+      insertPos: number;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+    }
+  | {
+      status: "ready";
+      requestId: number;
+      insertPos: number;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      suggestionId: string;
+      modelId: string;
+    }
+  | {
+      status: "error";
+      requestId: number;
+      insertPos: number;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      message: string;
+      suggestionId?: string;
+    };
+
+function selectedText(editor: Editor, range: RewriteRange) {
+  return editor.state.doc.textBetween(range.from, range.to, " ");
+}
+
+function inlineContext(editor: Editor, range: RewriteRange) {
+  const docSize = editor.state.doc.content.size;
+  return {
+    contextBefore: serializeRangeAsMarkdown(editor, {
+      from: Math.max(0, range.from - INLINE_REWRITE_CONTEXT_CHARS),
+      to: range.from,
+    }),
+    contextAfter: serializeRangeAsMarkdown(editor, {
+      from: range.to,
+      to: Math.min(docSize, range.to + INLINE_REWRITE_CONTEXT_CHARS),
+    }),
+  };
+}
+
+function insertMarkdownContent(editor: Editor, range: RewriteRange, text: string) {
+  editor
+    .chain()
+    .focus()
+    .insertContentAt({ from: range.from, to: range.to }, markdownToEditorInsertionHtml(text))
+    .run();
+}
+
+function messageFromUnknown(error: unknown) {
+  return error instanceof Error ? error.message : "AI 요청에 실패했습니다.";
+}
+
+type InlineContinueDraftMeta =
+  | { type: "set"; draft: ContinueSuggestionState }
+  | { type: "clear" };
+
+type InlineContinueAction = "accept" | "cancel";
+
+type InlineContinueActionEvent = CustomEvent<{
+  action: InlineContinueAction;
+}>;
+
+type InlineContinueHostElement = HTMLSpanElement & {
+  __inlineContinueRoot?: Root;
+};
+
+const InlineContinueDraftKey = new PluginKey<ContinueSuggestionState | null>("inlineContinueDraft");
+const INLINE_CONTINUE_ACTION_EVENT = "brainx:inline-continue-action";
+
+function getInlineContinueDraft(editor: Editor) {
+  return InlineContinueDraftKey.getState(editor.state) ?? null;
+}
+
+function setInlineContinueDraft(editor: Editor, draft: ContinueSuggestionState) {
+  editor.view.dispatch(editor.state.tr.setMeta(InlineContinueDraftKey, { type: "set", draft } satisfies InlineContinueDraftMeta));
+}
+
+function clearInlineContinueDraft(editor: Editor) {
+  editor.view.dispatch(editor.state.tr.setMeta(InlineContinueDraftKey, { type: "clear" } satisfies InlineContinueDraftMeta));
+}
+
+function continueSuggestionId(draft: ContinueSuggestionState | null | undefined) {
+  return draft?.status === "ready" || draft?.status === "error" ? draft.suggestionId : undefined;
+}
+
+function inlineContinueDraftKey(draft: ContinueSuggestionState) {
+  return [
+    "inline-continue",
+    draft.requestId,
+    draft.insertPos,
+    draft.status,
+    hashString(draft.text),
+    hashString(draft.status === "error" ? draft.message : ""),
+  ].join("-");
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function createInlineContinueWidget(draft: ContinueSuggestionState) {
+  const host = document.createElement("span") as InlineContinueHostElement;
+  host.contentEditable = "false";
+  host.dataset.inlineContinueDraft = "true";
+  const root = createRoot(host);
+  host.__inlineContinueRoot = root;
+  root.render(<InlineContinueDraftWidget draft={draft} />);
+  return host;
+}
+
+function destroyInlineContinueWidget(node: Node) {
+  (node as InlineContinueHostElement).__inlineContinueRoot?.unmount();
+}
+
+function InlineContinueDraftWidget({ draft }: { draft: ContinueSuggestionState }) {
+  const isLoading = draft.status === "loading";
+  const isError = draft.status === "error";
+  const bodyText = isError
+    ? draft.message
+    : draft.text.trim()
+      ? draft.text
+      : "이어 쓰는 중...";
+
+  const dispatchAction = (event: React.MouseEvent<HTMLButtonElement>, action: InlineContinueAction) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.dispatchEvent(
+      new CustomEvent(INLINE_CONTINUE_ACTION_EVENT, {
+        bubbles: true,
+        detail: { action },
+      })
+    );
+  };
+
+  return (
+    <span
+      className={cx(
+        "mx-1 inline-flex max-w-full items-center gap-1.5 rounded-md border px-1.5 py-0.5 align-baseline text-[12.5px] leading-relaxed shadow-sm",
+        isError
+          ? "border-red-400/40 bg-red-500/10 text-red-300"
+          : "border-primary/30 bg-primary/10 text-txt"
+      )}
+      data-inline-continue-widget="true"
+    >
+      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/15 px-1 text-[10px] font-semibold text-primary">
+        <Sparkles size={10} />
+        AI
+      </span>
+      <span
+        className={cx(
+          "min-w-0 whitespace-pre-wrap border-b border-dashed",
+          isError ? "border-red-400/50" : "border-primary/50"
+        )}
+      >
+        {bodyText}
+      </span>
+      {isLoading ? <Loader2 size={12} className="shrink-0 animate-spin text-primary" /> : null}
+      {draft.status === "ready" ? (
+        <button
+          type="button"
+          title="이어쓰기 수락"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => dispatchAction(event, "accept")}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded bg-primary text-white transition-colors hover:brightness-110"
+        >
+          <Check size={12} />
+        </button>
+      ) : null}
+      <button
+        type="button"
+        title={isLoading ? "이어쓰기 중단" : "이어쓰기 취소"}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => dispatchAction(event, "cancel")}
+        className="grid h-5 w-5 shrink-0 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-txt"
+      >
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
+const InlineContinueDraftExtension = Extension.create({
+  name: "inlineContinueDraft",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: InlineContinueDraftKey,
+        state: {
+          init(): ContinueSuggestionState | null {
+            return null;
+          },
+          apply(tr, previous): ContinueSuggestionState | null {
+            const meta = tr.getMeta(InlineContinueDraftKey) as InlineContinueDraftMeta | undefined;
+            if (meta?.type === "clear") return null;
+            if (meta?.type === "set") return meta.draft;
+            if (!previous) return null;
+            if (!tr.docChanged) return previous;
+
+            const mapped = tr.mapping.mapResult(previous.insertPos, 1);
+            if (mapped.deleted) return null;
+            return {
+              ...previous,
+              insertPos: Math.min(mapped.pos, tr.doc.content.size),
+            };
+          },
+        },
+        props: {
+          decorations(state) {
+            const draft = InlineContinueDraftKey.getState(state);
+            if (!draft) return DecorationSet.empty;
+            const pos = Math.min(draft.insertPos, state.doc.content.size);
+            return DecorationSet.create(state.doc, [
+              Decoration.widget(pos, () => createInlineContinueWidget(draft), {
+                side: 1,
+                key: inlineContinueDraftKey(draft),
+                destroy: destroyInlineContinueWidget,
+                stopEvent: (event) =>
+                  event.type === "mousedown" ||
+                  event.type === "mouseup" ||
+                  event.type === "click" ||
+                  event.type === INLINE_CONTINUE_ACTION_EVENT,
+              }),
+            ]);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 function BubbleToolbar({
   editor,
+  noteId,
   onAiAction,
   popoverOpenRef,
 }: {
   editor: Editor;
+  noteId: string;
   onAiAction: (type: AiActionType, text: string) => void;
   popoverOpenRef: React.MutableRefObject<boolean>;
 }) {
@@ -1025,12 +1479,166 @@ function BubbleToolbar({
     return editor.state.doc.textBetween(from, to, " ");
   }, [editor]);
 
+  const [rewriteSuggestion, setRewriteSuggestion] = useState<RewriteSuggestionState | null>(null);
+  const rewriteRequestIdRef = useRef(0);
+  const rewriteAbortRef = useRef<AbortController | null>(null);
+  const rewritePanelOpen = rewriteSuggestion !== null;
+
+  useEffect(() => {
+    if (!rewritePanelOpen) return;
+    popoverOpenRef.current = true;
+    return () => { popoverOpenRef.current = false; };
+  }, [rewritePanelOpen, popoverOpenRef]);
+
+  useEffect(() => {
+    return () => rewriteAbortRef.current?.abort();
+  }, []);
+
+  const requestRewrite = useCallback(async (saved?: RewriteSuggestionState) => {
+    const range = saved?.range ?? { from: editor.state.selection.from, to: editor.state.selection.to };
+    if (range.from === range.to) return;
+
+    const originalPlainText = saved?.originalPlainText ?? selectedText(editor, range);
+    if (!originalPlainText.trim()) return;
+
+    const selectedMarkdown = saved?.selectedMarkdown ?? (serializeRangeAsMarkdown(editor, range) || originalPlainText);
+
+    const context = saved
+      ? { contextBefore: saved.contextBefore, contextAfter: saved.contextAfter }
+      : inlineContext(editor, range);
+    const requestId = rewriteRequestIdRef.current + 1;
+    rewriteRequestIdRef.current = requestId;
+    rewriteAbortRef.current?.abort();
+    const controller = new AbortController();
+    rewriteAbortRef.current = controller;
+
+    setRewriteSuggestion({
+      status: "loading",
+      requestId,
+      range,
+      originalPlainText,
+      selectedMarkdown,
+      contextBefore: context.contextBefore,
+      contextAfter: context.contextAfter,
+      text: "",
+    });
+
+    let streamedText = "";
+    try {
+      const done = await createInlineAssistStream(
+        {
+          noteId,
+          selectedText: selectedMarkdown,
+          contextBefore: context.contextBefore,
+          contextAfter: context.contextAfter,
+          action: "REWRITE",
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (text) => {
+            streamedText += text;
+            setRewriteSuggestion((current) =>
+              current?.requestId === requestId
+                ? { ...current, status: "loading", text: streamedText }
+                : current
+            );
+          },
+        }
+      );
+      if (!done) throw new Error("AI 다시쓰기 완료 이벤트를 받지 못했습니다.");
+
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "ready",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              suggestionId: done.suggestionId,
+              modelId: done.modelId,
+            }
+          : current
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "error",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              message: messageFromUnknown(error),
+            }
+          : current
+      );
+    }
+  }, [editor, noteId]);
+
+  const acceptRewrite = useCallback(async () => {
+    if (!rewriteSuggestion || rewriteSuggestion.status !== "ready") return;
+    const currentText = selectedText(editor, rewriteSuggestion.range);
+    if (currentText !== rewriteSuggestion.originalPlainText) {
+      setRewriteSuggestion({
+        ...rewriteSuggestion,
+        status: "error",
+        message: "선택 영역이 변경되어 제안을 적용할 수 없습니다.",
+        suggestionId: rewriteSuggestion.suggestionId,
+      });
+      return;
+    }
+
+    insertMarkdownContent(editor, rewriteSuggestion.range, rewriteSuggestion.text);
+    setRewriteSuggestion(null);
+    decideAiSuggestion(rewriteSuggestion.suggestionId, { decision: "ACCEPTED" }).catch((error) => {
+      console.warn("Failed to record accepted AI suggestion.", error);
+    });
+  }, [editor, rewriteSuggestion]);
+
+  const rejectRewrite = useCallback(() => {
+    const suggestionId = rewriteSuggestion?.status === "ready" || rewriteSuggestion?.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    setRewriteSuggestion(null);
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REJECTED" }).catch((error) => {
+        console.warn("Failed to record rejected AI suggestion.", error);
+      });
+    }
+  }, [rewriteSuggestion]);
+
+  const regenerateRewrite = useCallback(() => {
+    if (!rewriteSuggestion) return;
+    const suggestionId = rewriteSuggestion.status === "ready" || rewriteSuggestion.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REGENERATED" }).catch((error) => {
+        console.warn("Failed to record regenerated AI suggestion.", error);
+      });
+    }
+    void requestRewrite(rewriteSuggestion);
+  }, [requestRewrite, rewriteSuggestion]);
+
   const [recentTextColors, setRecentTextColors] = useState<string[]>([]);
   const [recentHighlights, setRecentHighlights] = useState<string[]>([]);
   const pushRecent = (list: string[], value: string) => [value, ...list.filter((v) => v !== value)].slice(0, 4);
 
   const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
   const currentHighlight = (editor.getAttributes("highlight").color as string) ?? null;
+  const rewritePreviewHtml =
+    rewriteSuggestion && rewriteSuggestion.status !== "error" && rewriteSuggestion.text.trim()
+      ? markdownToHtml(rewriteSuggestion.text)
+      : null;
 
   return (
     <div
@@ -1133,14 +1741,103 @@ function BubbleToolbar({
       >
         <Sparkles size={13} />
       </BubbleBtn>
-      <BubbleBtn
-        active={false}
-        onClick={() => onAiAction("rewrite", getSelectedText())}
-        title="AI로 다시쓰기"
-      >
-        <Wand2 size={13} />
-      </BubbleBtn>
+      <div className="relative">
+        <BubbleBtn
+          active={rewritePanelOpen}
+          disabled={rewriteSuggestion?.status === "loading"}
+          onClick={() => void requestRewrite()}
+          title="AI로 다시쓰기"
+        >
+          {rewriteSuggestion?.status === "loading" ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+        </BubbleBtn>
+        {rewriteSuggestion ? (
+          <div
+            className="absolute right-0 top-full z-50 mt-1.5 w-[320px] overflow-hidden rounded-lg border border-line/60 p-2.5"
+            style={{ background: "rgb(var(--surface))", boxShadow: "0 10px 28px -6px rgba(2,6,23,0.48)" }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[11.5px] font-semibold text-txt2">
+              <Wand2 size={13} className="text-primary" />
+              <span className="flex-1">AI 다시쓰기 제안</span>
+              {rewriteSuggestion.status === "ready" ? (
+                <span className="rounded bg-surface2/70 px-1.5 py-0.5 text-[10.5px] text-txt3">{rewriteSuggestion.modelId}</span>
+              ) : null}
+            </div>
+            <div className="max-h-44 overflow-y-auto rounded-md border border-line/40 bg-surface2/30 px-2.5 py-2 text-[12.5px] leading-relaxed text-txt2">
+              {rewriteSuggestion.status === "error" ? (
+                <span className="text-red-400">{rewriteSuggestion.message}</span>
+              ) : rewritePreviewHtml ? (
+                <div className="tiptap-note-content" dangerouslySetInnerHTML={{ __html: rewritePreviewHtml }} />
+              ) : (
+                <span className="text-txt3">다시 쓰는 중...</span>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              {rewriteSuggestion.status === "ready" ? (
+                <>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={regenerateRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="다시 생성"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={rejectRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="거절"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void acceptRewrite()}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:brightness-110"
+                  >
+                    <Check size={13} />
+                    수락
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={rejectRewrite}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-semibold text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                >
+                  <X size={13} />
+                  닫기
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+function CursorContinueButton({
+  onRequest,
+}: {
+  onRequest: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onRequest}
+      title="AI로 이어쓰기"
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line/60 bg-surface px-2.5 text-[11.5px] font-semibold text-txt2 transition-colors hover:bg-surface2/70 hover:text-txt"
+      style={{ boxShadow: "0 8px 20px -4px rgba(2,6,23,0.30)" }}
+    >
+      <Sparkles size={13} />
+      이어쓰기
+    </button>
   );
 }
 
@@ -1290,6 +1987,7 @@ const NOTE_EDITOR_EXTENSIONS = [
     // 기능, INTERNAL_LINK_PREFIX) — 추가해줘야 내부 노트 링크가 실제로 적용된다.
     link: { openOnClick: false, autolink: false, protocols: ["http", "https", "mailto", "tel", "brainx-note"] },
   }),
+  InlineContinueDraftExtension,
   MarkdownLivePreview,
   MarkdownCodeFenceEnter,
   HeadingMarkerEdit,
@@ -1527,9 +2225,17 @@ function rangeToAnchorRect(range: Range): { left: number; top: number; bottom: n
   return null;
 }
 
-function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: (type: AiActionType, text: string) => void }) {
+function CustomBubbleMenu({
+  editor,
+  noteId,
+  onAiAction,
+}: {
+  editor: Editor;
+  noteId: string;
+  onAiAction: (type: AiActionType, text: string) => void;
+}) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [anchor, setAnchor] = useState<{ left: number; top: number; bottom: number } | null>(null);
+  const [anchor, setAnchor] = useState<BubbleAnchor | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   /* LinkPopover의 "노트 연결" 검색창처럼 버블 툴바 안에 실제 입력 포커스가 필요한 하위
      팝오버가 떠 있는 동안은, 그 입력에 포커스가 가면서 에디터 밖으로 선택이 옮겨가도(=
@@ -1589,12 +2295,22 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         setAnchor(null);
         return;
       }
-      if (sel.isCollapsed || editor.isActive("codeBlock")) {
-        if ((settling && sel.isCollapsed) || popoverOpenRef.current) return; // 잔여 collapse — 마지막 위치 유지
+      if (editor.isActive("codeBlock")) {
         setAnchor(null);
         return;
       }
-      setAnchor(rangeToAnchorRect(sel.getRangeAt(0)));
+      if (sel.isCollapsed) {
+        if (popoverOpenRef.current) return;
+        const cursor = safeCoordsAtPos(editor.view, editor.state.selection.from, 1);
+        setAnchor((current) =>
+          settling && current?.kind === "selection"
+            ? current
+            : { ...cursor, bottom: cursor.bottom, kind: "cursor" }
+        );
+        return;
+      }
+      const nextAnchor = rangeToAnchorRect(sel.getRangeAt(0));
+      setAnchor(nextAnchor ? { ...nextAnchor, kind: "selection" } : null);
       return;
     }
 
@@ -1602,7 +2318,19 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
     // 내부 selection으로 판단한다.
     const { from, to } = editor.state.selection;
     if (from === to || editor.isActive("codeBlock")) {
-      if (settling && from === to) return; // 잔여 collapse — 마지막 위치 유지
+      if (editor.isActive("codeBlock")) {
+        setAnchor(null);
+        return;
+      }
+      const cursor = safeCoordsAtPos(editor.view, from, 1);
+      setAnchor((current) =>
+        settling && current?.kind === "selection"
+          ? current
+          : { ...cursor, bottom: cursor.bottom, kind: "cursor" }
+      );
+      return;
+    }
+    if (editor.isActive("codeBlock")) {
       setAnchor(null);
       return;
     }
@@ -1614,6 +2342,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
       left: (start.left + end.left) / 2,
       top: Math.min(start.top, end.top),
       bottom: Math.max(start.bottom, end.bottom),
+      kind: "selection",
     });
   }, [editor]);
 
@@ -1622,9 +2351,13 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
     // 발생하는데, 그 동안은 무시해야 한다 — 위 updateAnchor의 settling/popoverOpenRef 분기와
     // 동일한 이유.
     const handleBlur = () => { if (!popoverOpenRef.current) setAnchor(null); };
+    editor.on("focus", updateAnchor);
     editor.on("selectionUpdate", updateAnchor);
     editor.on("transaction", updateAnchor);
     editor.on("blur", handleBlur);
+    editor.view.dom.addEventListener("click", updateAnchor);
+    editor.view.dom.addEventListener("keyup", updateAnchor);
+    editor.view.dom.addEventListener("mouseup", updateAnchor);
     // 패널 밖으로 드래그가 나가는 동안에는 ProseMirror가 "selectionUpdate"/"transaction"을
     // 전혀 못 쏠 수 있으므로(내부 selection이 갱신되지 않음), 브라우저 자체의 selectionchange를
     // 직접 들어서 네이티브 selection 기준으로도 항상 재계산을 시도한다.
@@ -1633,9 +2366,13 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
       // editor.off(event)를 콜백 없이 호출하면 그 이벤트의 리스너가 전부 삭제된다(tiptap-core
       // EventEmitter 구현) — useEditor의 onBlur(setFocused(false))도 같은 "blur" 이벤트를
       // 쓰므로, 반드시 이 핸들러 참조만 지정해서 떼어내야 다른 리스너를 건드리지 않는다.
+      editor.off("focus", updateAnchor);
       editor.off("selectionUpdate", updateAnchor);
       editor.off("transaction", updateAnchor);
       document.removeEventListener("selectionchange", updateAnchor);
+      editor.view.dom.removeEventListener("click", updateAnchor);
+      editor.view.dom.removeEventListener("keyup", updateAnchor);
+      editor.view.dom.removeEventListener("mouseup", updateAnchor);
       editor.off("blur", handleBlur);
     };
   }, [editor, updateAnchor]);
@@ -1671,7 +2408,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
   // TableToolbar가 이제 서식(Bold/Italic/Strike/색상)·정렬·삭제까지 전부 통합해서 보여준다
   // (TableToolbar.tsx 참고). 두 툴바가 동시에 떠서 겹치던 문제를 "표 안에서는 툴바 하나만"
   // 원칙으로 해결한 것 — 표 밖에서는 기존과 동일하게 동작한다.
-  if (!anchor || editor.isActive("table")) return null;
+  if (!anchor || editor.isActive("table") || anchor.kind === "cursor") return null;
 
   return createPortal(
     <div
@@ -1684,7 +2421,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         zIndex: 2000,
       }}
     >
-      <BubbleToolbar editor={editor} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
+      <BubbleToolbar editor={editor} noteId={noteId} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
     </div>,
     document.body
   );
@@ -1713,9 +2450,16 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
 ) {
   const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorShellRef = useRef<HTMLDivElement>(null);
+  const continueAbortRef = useRef<AbortController | null>(null);
+  const continueRequestIdRef = useRef(0);
+  const suppressInlineContinueAutoRejectRef = useRef(false);
+  const lastInlineContinueDraftRef = useRef<ContinueSuggestionState | null>(null);
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
   const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
+  const [cursorAiAnchor, setCursorAiAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [hasInlineContinueDraft, setHasInlineContinueDraft] = useState(false);
   const wikiCtx = useWikiLinkContext();
 
   /* 내부 노트 링크(LinkPopover에서 만든 brainx-note://<id> href) 클릭 처리 — 읽기 모드는
@@ -1850,6 +2594,244 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     },
   }), [editor, note.id, onContentChange]);
 
+  const requestInlineContinue = useCallback(async () => {
+    if (!editor) return;
+
+    const existing = getInlineContinueDraft(editor);
+    if (existing) {
+      continueAbortRef.current?.abort();
+      continueAbortRef.current = null;
+      suppressInlineContinueAutoRejectRef.current = true;
+      clearInlineContinueDraft(editor);
+      const existingSuggestionId = continueSuggestionId(existing);
+      if (existingSuggestionId) {
+        decideAiSuggestion(existingSuggestionId, { decision: "REJECTED" }).catch((error) => {
+          console.warn("Failed to record rejected AI suggestion.", error);
+        });
+      }
+    }
+
+    const insertPos = editor.state.selection.from;
+    const context = inlineContext(editor, { from: insertPos, to: insertPos });
+    const requestId = continueRequestIdRef.current + 1;
+    continueRequestIdRef.current = requestId;
+    continueAbortRef.current?.abort();
+
+    if (!context.contextBefore.trim()) {
+      setInlineContinueDraft(editor, {
+        status: "error",
+        requestId,
+        insertPos,
+        contextBefore: context.contextBefore,
+        contextAfter: context.contextAfter,
+        text: "",
+        message: "이어쓸 앞 문맥이 없습니다.",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    continueAbortRef.current = controller;
+    setInlineContinueDraft(editor, {
+      status: "loading",
+      requestId,
+      insertPos,
+      contextBefore: context.contextBefore,
+      contextAfter: context.contextAfter,
+      text: "",
+    });
+
+    let streamedText = "";
+    try {
+      const done = await createInlineAssistStream(
+        {
+          noteId: note.id,
+          selectedText: "",
+          contextBefore: context.contextBefore,
+          contextAfter: context.contextAfter,
+          action: "CONTINUE",
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (text) => {
+            streamedText += text;
+            const current = getInlineContinueDraft(editor);
+            if (current?.requestId !== requestId) return;
+            setInlineContinueDraft(editor, { ...current, status: "loading", text: streamedText });
+          },
+        }
+      );
+      if (continueAbortRef.current === controller) continueAbortRef.current = null;
+      if (!done) throw new Error("AI 이어쓰기 완료 이벤트를 받지 못했습니다.");
+
+      const current = getInlineContinueDraft(editor);
+      if (current?.requestId !== requestId) return;
+      if (!streamedText.trim()) {
+        setInlineContinueDraft(editor, {
+          ...current,
+          status: "error",
+          text: "",
+          message: "이어쓰기 결과가 비어 있습니다.",
+          suggestionId: done.suggestionId,
+        });
+        return;
+      }
+      setInlineContinueDraft(editor, {
+        ...current,
+        status: "ready",
+        text: streamedText,
+        suggestionId: done.suggestionId,
+        modelId: done.modelId,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (continueAbortRef.current === controller) continueAbortRef.current = null;
+      const current = getInlineContinueDraft(editor);
+      if (current?.requestId !== requestId) return;
+      setInlineContinueDraft(editor, {
+        ...current,
+        status: "error",
+        text: streamedText,
+        message: messageFromUnknown(error),
+      });
+    }
+  }, [editor, note.id]);
+
+  const acceptInlineContinue = useCallback(() => {
+    if (!editor) return;
+    const draft = getInlineContinueDraft(editor);
+    if (!draft || draft.status !== "ready") return;
+
+    suppressInlineContinueAutoRejectRef.current = true;
+    clearInlineContinueDraft(editor);
+    const insertPos = Math.min(draft.insertPos, editor.state.doc.content.size);
+    insertMarkdownContent(editor, { from: insertPos, to: insertPos }, draft.text);
+    decideAiSuggestion(draft.suggestionId, { decision: "ACCEPTED" }).catch((error) => {
+      console.warn("Failed to record accepted AI suggestion.", error);
+    });
+  }, [editor]);
+
+  const cancelInlineContinue = useCallback(() => {
+    if (!editor) return;
+    const draft = getInlineContinueDraft(editor);
+    continueAbortRef.current?.abort();
+    continueAbortRef.current = null;
+    suppressInlineContinueAutoRejectRef.current = true;
+    clearInlineContinueDraft(editor);
+    const suggestionId = continueSuggestionId(draft);
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REJECTED" }).catch((error) => {
+        console.warn("Failed to record rejected AI suggestion.", error);
+      });
+    }
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const syncInlineContinueDraft = () => {
+      const current = getInlineContinueDraft(editor);
+      const previous = lastInlineContinueDraftRef.current;
+      const suppressed = suppressInlineContinueAutoRejectRef.current;
+      if (!current && previous && !suppressed) {
+        continueAbortRef.current?.abort();
+        continueAbortRef.current = null;
+        const suggestionId = continueSuggestionId(previous);
+        if (suggestionId) {
+          decideAiSuggestion(suggestionId, { decision: "REJECTED" }).catch((error) => {
+            console.warn("Failed to record rejected AI suggestion.", error);
+          });
+        }
+      }
+      suppressInlineContinueAutoRejectRef.current = false;
+      lastInlineContinueDraftRef.current = current;
+      setHasInlineContinueDraft(Boolean(current));
+    };
+
+    syncInlineContinueDraft();
+    editor.on("transaction", syncInlineContinueDraft);
+    return () => {
+      editor.off("transaction", syncInlineContinueDraft);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleInlineContinueAction = (event: Event) => {
+      const detail = (event as InlineContinueActionEvent).detail;
+      if (detail?.action === "accept") acceptInlineContinue();
+      if (detail?.action === "cancel") cancelInlineContinue();
+    };
+
+    editor.view.dom.addEventListener(INLINE_CONTINUE_ACTION_EVENT, handleInlineContinueAction);
+    return () => {
+      editor.view.dom.removeEventListener(INLINE_CONTINUE_ACTION_EVENT, handleInlineContinueAction);
+    };
+  }, [acceptInlineContinue, cancelInlineContinue, editor]);
+
+  useEffect(() => {
+    return () => {
+      continueAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateCursorAiAnchor = () => {
+      const editorHasFocus = editor.view.dom.contains(document.activeElement);
+      if (!editor.isEditable || !editorHasFocus) {
+        setCursorAiAnchor(null);
+        return;
+      }
+      if (!editor.state.selection.empty || editor.isActive("codeBlock") || editor.isActive("table")) {
+        setCursorAiAnchor(null);
+        return;
+      }
+
+      const shellRect = editorShellRef.current?.getBoundingClientRect();
+      if (!shellRect) {
+        setCursorAiAnchor(null);
+        return;
+      }
+      const coords = safeCoordsAtPos(editor.view, editor.state.selection.from, 1);
+      const left = Math.max(8, Math.min(coords.left - shellRect.left - 12, shellRect.width - 120));
+      const top = Math.max(8, coords.top - shellRect.top - 42);
+      setCursorAiAnchor({ left, top });
+    };
+    const scheduleCursorAiAnchorUpdate = () => {
+      window.requestAnimationFrame(updateCursorAiAnchor);
+    };
+
+    const handleBlur = () => {
+      setCursorAiAnchor(null);
+    };
+
+    editor.on("focus", scheduleCursorAiAnchorUpdate);
+    editor.on("selectionUpdate", updateCursorAiAnchor);
+    editor.on("transaction", updateCursorAiAnchor);
+    editor.on("blur", handleBlur);
+    editor.view.dom.addEventListener("click", scheduleCursorAiAnchorUpdate);
+    editor.view.dom.addEventListener("keyup", scheduleCursorAiAnchorUpdate);
+    editor.view.dom.addEventListener("mouseup", scheduleCursorAiAnchorUpdate);
+    window.addEventListener("scroll", updateCursorAiAnchor, true);
+    window.addEventListener("resize", updateCursorAiAnchor);
+
+    return () => {
+      editor.off("focus", scheduleCursorAiAnchorUpdate);
+      editor.off("selectionUpdate", updateCursorAiAnchor);
+      editor.off("transaction", updateCursorAiAnchor);
+      editor.off("blur", handleBlur);
+      editor.view.dom.removeEventListener("click", scheduleCursorAiAnchorUpdate);
+      editor.view.dom.removeEventListener("keyup", scheduleCursorAiAnchorUpdate);
+      editor.view.dom.removeEventListener("mouseup", scheduleCursorAiAnchorUpdate);
+      window.removeEventListener("scroll", updateCursorAiAnchor, true);
+      window.removeEventListener("resize", updateCursorAiAnchor);
+    };
+  }, [editor]);
+
   /* note 변경(탭 전환 등) → 내용만 갱신한다. 모드는 여기서 설정하지 않는다 — mode prop은
      부모가 탭(노트 인스턴스) 단위로 들고 있고, 새로 생성된 탭은 기본값 자체가 "edit"이므로
      별도로 강제할 필요가 없다(아래 [editor, mode] effect가 그 prop을 그대로 적용한다). 여기서
@@ -1899,6 +2881,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
 
   return (
     <div
+      ref={editorShellRef}
       className="split-pane-editor tiptap-note-content relative"
       style={typographyCssVars(note.typography)}
       onClick={(e) => {
@@ -1950,7 +2933,15 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           event.target.value = "";
         }}
       />
-      {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
+      {editor && <CustomBubbleMenu editor={editor} noteId={note.id} onAiAction={onAiAction} />}
+      {editor && mode === "edit" && cursorAiAnchor && !hasInlineContinueDraft ? (
+        <div
+          className="absolute z-40"
+          style={{ left: cursorAiAnchor.left, top: cursorAiAnchor.top }}
+        >
+          <CursorContinueButton onRequest={requestInlineContinue} />
+        </div>
+      ) : null}
       {editor && <TableToolbar editor={editor} />}
       {editor && <WikiLinkAutocomplete editor={editor} />}
       {editor && contextMenu && (

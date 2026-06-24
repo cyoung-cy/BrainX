@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronRight } from "lucide-react";
 import { CollapseChevron } from "./CollapseChevron";
 import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { MOCK_CONTEXT_DATA } from "@/lib/notes/mockNotes";
+import { createInlineAssistStream } from "@/lib/intelligence-api";
 
 /* ── 헤딩 파싱 ─────────────────────────────────────── */
 function parseHeadings(content: string) {
@@ -173,9 +173,18 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
   ]);
   const [chatOpen, setChatOpen] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const aiRequestAbortRef = useRef<AbortController | null>(null);
+  const aiMockTimerRef = useRef<number | null>(null);
 
   const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
   const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
+
+  useEffect(() => {
+    return () => {
+      aiRequestAbortRef.current?.abort();
+      if (aiMockTimerRef.current !== null) window.clearInterval(aiMockTimerRef.current);
+    };
+  }, []);
 
   const sendAi = () => {
     if (!activeNote || !aiInput.trim()) return;
@@ -203,22 +212,93 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     }, 16);
   };
 
-  /* 버블 툴바의 AI 버튼(요약/다시쓰기) → 인라인 AI 채팅에 mock 응답 추가 */
+  /* 버블 툴바의 AI 버튼(요약/다시쓰기) → 인라인 AI 채팅에 응답 추가 */
   useEffect(() => {
-    if (!pendingAiRequest) return;
+    if (!pendingAiRequest || !activeNote) return;
     const { type, text } = pendingAiRequest;
-    const preview = text.trim() ? (text.length > 60 ? `${text.slice(0, 60)}…` : text) : "(선택된 텍스트 없음)";
+    const selectedText = text.trim();
+    const preview = selectedText ? (selectedText.length > 60 ? `${selectedText.slice(0, 60)}…` : selectedText) : "(선택된 텍스트 없음)";
     const label = type === "summarize" ? "선택한 텍스트 요약 요청" : "선택한 텍스트 다시쓰기 요청";
+
+    aiRequestAbortRef.current?.abort();
+    aiRequestAbortRef.current = null;
+    if (aiMockTimerRef.current !== null) {
+      window.clearInterval(aiMockTimerRef.current);
+      aiMockTimerRef.current = null;
+    }
 
     setChatOpen(true);
     setAiMessages((m) => [...m, { role: "user", text: `${label}: "${preview}"` }]);
 
-    const answer =
-      type === "summarize"
-        ? `요약 결과: "${preview}"의 핵심은 ${ctx.aiSuggestions[0] ?? "이 노트의 주요 개념"}과 연결돼요. (Mock 응답)`
-        : `다시쓰기 제안: "${preview}"를 더 간결하고 명확한 문장으로 다듬어 보세요. (Mock 응답)`;
-
     setAiMessages((m) => [...m, { role: "ai", text: "", streaming: true }]);
+
+    if (!selectedText) {
+      setAiMessages((m) => {
+        const next = [...m];
+        next[next.length - 1] = {
+          role: "ai",
+          text: type === "summarize" ? "요약할 텍스트를 먼저 선택해 주세요." : "다시 쓸 텍스트를 먼저 선택해 주세요.",
+          streaming: false,
+        };
+        return next;
+      });
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      onAiRequestHandled?.();
+      return;
+    }
+
+    if (type === "summarize") {
+      const controller = new AbortController();
+      aiRequestAbortRef.current = controller;
+      let streamedText = "";
+
+      createInlineAssistStream(
+        {
+          noteId: activeNote.id,
+          selectedText,
+          contextBefore: "",
+          contextAfter: "",
+          action: "SUMMARIZE",
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (delta) => {
+            streamedText += delta;
+            setAiMessages((m) => {
+              const next = [...m];
+              next[next.length - 1] = { role: "ai", text: streamedText, streaming: true };
+              return next;
+            });
+          },
+        }
+      )
+        .then((done) => {
+          if (!done) throw new Error("AI 요약 완료 이벤트를 받지 못했습니다.");
+          if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+          setAiMessages((m) => {
+            const next = [...m];
+            next[next.length - 1] = { role: "ai", text: streamedText || "요약 결과가 비어 있습니다.", streaming: false };
+            return next;
+          });
+          chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+          const message = error instanceof Error ? error.message : "AI 요약 요청에 실패했습니다.";
+          setAiMessages((m) => {
+            const next = [...m];
+            next[next.length - 1] = { role: "ai", text: message, streaming: false };
+            return next;
+          });
+        });
+
+      onAiRequestHandled?.();
+      return;
+    }
+
+    const answer = `다시쓰기 제안: "${preview}"를 더 간결하고 명확한 문장으로 다듬어 보세요. (Mock 응답)`;
     let idx = 0;
     const timer = window.setInterval(() => {
       idx += 4;
@@ -229,10 +309,13 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
       });
       if (idx >= answer.length) {
         window.clearInterval(timer);
+        if (aiMockTimerRef.current === timer) aiMockTimerRef.current = null;
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }, 16);
+    aiMockTimerRef.current = timer;
     onAiRequestHandled?.();
+    return;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAiRequest?.nonce]);
 
@@ -253,14 +336,6 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
           <p className="truncate text-[12px] font-semibold text-txt">{activeNote?.title ?? "노트 없음"}</p>
           <p className="text-[10px] text-txt3">컨텍스트 패널</p>
         </div>
-        <button
-          type="button"
-          onClick={onCollapse}
-          title="패널 닫기"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
-        >
-          <ChevronRight size={14} />
-        </button>
       </div>
 
       {!activeNote ? (
@@ -274,7 +349,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
       ) : (
       <>
       {/* ── 스크롤 영역 ────────────────────────────── */}
-      <div className="scroll-thin flex-1 space-y-2.5 overflow-y-auto p-3">
+      <div className="no-scrollbar flex-1 space-y-2.5 overflow-y-auto p-3">
 
         {/* 1. 목차 */}
         <SideCard
@@ -387,7 +462,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         {chatOpen && (
           <div className="flex flex-col" style={{ height: "200px" }}>
             {/* 메시지 목록 */}
-            <div className="scroll-thin flex-1 space-y-2 overflow-y-auto p-3">
+            <div className="no-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
               {aiMessages.map((msg, i) => (
                 <div
                   key={`${msg.role}-${i}`}
@@ -403,7 +478,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
                       : "rgb(var(--surface2) / 0.6)",
                   }}
                 >
-                  <span className={msg.streaming ? "stream-caret" : ""}>{msg.text}</span>
+                  <span className={cx("whitespace-pre-wrap", msg.streaming ? "stream-caret" : "")}>{msg.text}</span>
                 </div>
               ))}
               <div ref={chatEndRef} />

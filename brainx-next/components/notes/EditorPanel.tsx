@@ -52,6 +52,8 @@ interface Props {
   onTogglePinTab: (tabId: string) => void;
   onSplitTabRight: (tabId: string) => void;
   onSplitTabDown: (tabId: string) => void;
+  contextOpen?: boolean;
+  onContextToggle?: () => void;
 }
 
 export default function EditorPanel({
@@ -91,6 +93,8 @@ export default function EditorPanel({
   onTogglePinTab,
   onSplitTabRight,
   onSplitTabDown,
+  contextOpen,
+  onContextToggle,
 }: Props) {
   const [hoverZone, setHoverZone] = useState<DropZone | "replace" | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -205,10 +209,6 @@ export default function EditorPanel({
     <div
       onClick={onActivate}
       className="relative flex h-full flex-col overflow-hidden"
-      style={{
-        borderTop: `2px solid ${isActive ? "rgb(var(--primary))" : "transparent"}`,
-        transition: "border-color 0.15s",
-      }}
     >
       {/* ── 탭 바 (탭 목록 + 현재 활성 탭의 읽기/편집 모드 토글) */}
       <TabBar
@@ -237,6 +237,8 @@ export default function EditorPanel({
         onTogglePinTab={onTogglePinTab}
         onSplitTabRight={onSplitTabRight}
         onSplitTabDown={onSplitTabDown}
+        onContextToggle={onContextToggle}
+        contextOpen={contextOpen}
       />
 
       {/* ── 콘텐츠 */}

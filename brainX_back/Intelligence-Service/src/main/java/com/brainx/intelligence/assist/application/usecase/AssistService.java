@@ -178,9 +178,12 @@ public class AssistService implements CreateInlineAssistUseCase, DecideAiSuggest
     private static String systemPrompt() {
         return """
             You are BrainX inline writing assistant.
-            Use only the selected text and nearby context supplied by the user.
+            Follow the action-specific output scope in the user message.
+            For REWRITE and TRANSLATE, Before and After are immutable reference context only; return only a replacement for Selected.
+            Never include, paraphrase, move, summarize, or rewrite Before/After in a REWRITE or TRANSLATE output.
             Return only the final text to insert or replace.
-            Do not include explanations, labels, markdown fences, or alternatives.
+            Preserve meaningful Markdown syntax from Selected, including headings, lists, links, emphasis, inline code, and code blocks.
+            Do not include explanations, labels, alternatives, or wrapping markdown fences unless the selected content itself is a code block.
             """;
     }
 
@@ -195,14 +198,20 @@ public class AssistService implements CreateInlineAssistUseCase, DecideAiSuggest
             Action: %s
             Language: %s
 
-            Before:
+            Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):
             %s
 
-            Selected:
+            Selected (only this section may be replaced for REWRITE/TRANSLATE):
             %s
 
-            After:
+            Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):
             %s
+
+            Output scope:
+            - If Action is REWRITE, return only the replacement for Selected.
+            - If Action is TRANSLATE, return only the translation of Selected.
+            - If Action is CONTINUE, return only the newly continued text.
+            - If Action is SUMMARIZE, return only the summary.
             """.formatted(
             action.name(),
             language,
