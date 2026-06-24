@@ -6,6 +6,10 @@ import { useGuideStore } from '@/lib/use-guide-store';
 import { useBrainX } from '@/components/brainx-provider';
 import { usePathname } from 'next/navigation';
 
+// 온보딩 가이드를 띄우지 않는 라우트. notion-callback은 Notion OAuth 팝업(작은 창)에서
+// 잠깐 떴다가 닫히는 페이지라 튜토리얼 오버레이가 뜨면 안 된다.
+const TUTORIAL_DISABLED_ROUTES = ['/notion-callback'];
+
 // 전체 투어 스텝 정의 (9개 항목: 환영 + 8개 기능)
 const WELCOME_STEPS: Step[] = [
   {
@@ -219,6 +223,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const pausedStepRef = useRef(0);
 
   const pathname = usePathname();
+  const tutorialDisabled = TUTORIAL_DISABLED_ROUTES.some((route) => pathname.startsWith(route));
   const { effectiveTheme } = useBrainX();
   const { hasSeenWelcomeTour, isManualTrigger, markWelcomeTourSeen, clearManualTrigger } = useGuideStore();
   const isLight = effectiveTheme === 'dark';
@@ -237,7 +242,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
   // 자동 실행: 홈 진입 시 최초 1회만
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isMounted || tutorialDisabled) return;
 
     if (isManualTrigger) {
       // 수동 다시보기 트리거
@@ -315,7 +320,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     setRun(true);
   };
 
-  if (!isMounted) return <>{children}</>;
+  if (!isMounted || tutorialDisabled) return <>{children}</>;
 
   return (
     <>
