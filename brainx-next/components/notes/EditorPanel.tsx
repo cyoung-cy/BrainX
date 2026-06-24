@@ -7,6 +7,10 @@ import { DropZone } from "@/lib/notes/paneUtils";
 import TabBar from "./TabBar";
 import NoteEditor, { type EditMode, type AiActionType, type NoteEditorHandle } from "./NoteEditor";
 import EmptyNoteStartPage from "./EmptyNoteStartPage";
+import PdfViewerPanel from "./PdfViewerPanel";
+import { parsePdfOnlyNote } from "./PdfBlockNode";
+import HtmlViewerPanel from "./HtmlViewerPanel";
+import { parseHtmlOnlyNote } from "./HtmlBlockNode";
 import QuickSwitcher from "./QuickSwitcher";
 import { TypographyPopover } from "./TypographyPopover";
 import { TYPOGRAPHY_SCALE_MAX, TYPOGRAPHY_SCALE_MIN } from "@/lib/notes/typography";
@@ -48,6 +52,8 @@ interface Props {
   onTogglePinTab: (tabId: string) => void;
   onSplitTabRight: (tabId: string) => void;
   onSplitTabDown: (tabId: string) => void;
+  contextOpen?: boolean;
+  onContextToggle?: () => void;
 }
 
 export default function EditorPanel({
@@ -87,6 +93,8 @@ export default function EditorPanel({
   onTogglePinTab,
   onSplitTabRight,
   onSplitTabDown,
+  contextOpen,
+  onContextToggle,
 }: Props) {
   const [hoverZone, setHoverZone] = useState<DropZone | "replace" | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -190,15 +198,17 @@ export default function EditorPanel({
      본문이 비어있는 노트 탭(kind는 "note"지만 content==="")도 "빈 탭"으로 취급한다. 실제 내용이
      있는 노트가 열려 있으면 항상 기존처럼 좌/우/상/하 분할(zone) 동작을 유지한다. */
   const isEmptyTarget = activeTab.kind === "start" || !note || note.content.trim() === "";
+  /* 파일 가져오기로 만들어진 PDF 노트(본문이 PDF 임베드 블록 하나뿐)는 Tiptap 노트 에디터가
+     아니라 화면 전체를 채우는 전용 PDF 뷰어로 보여준다. */
+  const pdfOnly = note ? parsePdfOnlyNote(note.content) : null;
+  /* HTML 파일 가져오기로 만들어진 노트(본문이 HTML 임베드 블록 하나뿐)도 PDF와 동일하게
+     화면 전체를 채우는 전용 뷰어로 원본 화면을 그대로 보여준다. */
+  const htmlOnly = note ? parseHtmlOnlyNote(note.content) : null;
 
   return (
     <div
       onClick={onActivate}
       className="relative flex h-full flex-col overflow-hidden"
-      style={{
-        borderTop: `2px solid ${isActive ? "rgb(var(--primary))" : "transparent"}`,
-        transition: "border-color 0.15s",
-      }}
     >
       {/* ── 탭 바 (탭 목록 + 현재 활성 탭의 읽기/편집 모드 토글) */}
       <TabBar
@@ -227,6 +237,8 @@ export default function EditorPanel({
         onTogglePinTab={onTogglePinTab}
         onSplitTabRight={onSplitTabRight}
         onSplitTabDown={onSplitTabDown}
+        onContextToggle={onContextToggle}
+        contextOpen={contextOpen}
       />
 
       {/* ── 콘텐츠 */}
@@ -239,6 +251,10 @@ export default function EditorPanel({
             onGoToFile={onOpenQuickSwitcher}
           />
         )
+      ) : pdfOnly ? (
+        <PdfViewerPanel assetId={pdfOnly.assetId} fileName={pdfOnly.fileName} />
+      ) : htmlOnly ? (
+        <HtmlViewerPanel assetId={htmlOnly.assetId} fileName={htmlOnly.fileName} />
       ) : (
         <div
           ref={scrollContainerRef}

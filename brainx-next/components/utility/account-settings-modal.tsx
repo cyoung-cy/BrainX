@@ -325,7 +325,7 @@ function MiniBars({
 export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { pushToast, sidebarCollapsed, language, setLanguage, theme, setTheme, t } = useBrainX();
+  const { pushToast, language, setLanguage, theme, setTheme, t } = useBrainX();
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<TabId>("profile");
   const [profile, setProfile] = useState<MyProfile | null>(() => profileFromSession());
@@ -617,7 +617,7 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
 
   return createPortal(
     <div
-      className={cx("fixed bottom-0 right-0 top-0 z-[80] flex items-center justify-center bg-[rgba(44,42,38,.55)] p-3 md:p-5", sidebarCollapsed ? "md:left-[68px]" : "md:left-[236px]")}
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/65 p-3 md:p-5"
       onMouseDown={onClose}
     >
       <div

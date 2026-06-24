@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Group, Panel, useGroupRef } from "react-resizable-panels";
 import { WikiLinkContext, resolveWikiLinkTitle, type WikiLinkContextValue } from "./WikiLinkContext";
-import { RotateCcw, ChevronLeft, Save } from "lucide-react";
+import { RotateCcw, Save } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, PaneNode, PaneTabsState, Tab, NotesWorkspaceSession, DragPayload } from "@/lib/notes/noteTypes";
 import type { EditMode, AiActionType } from "./NoteEditor";
@@ -32,6 +32,8 @@ import PaneTreeRenderer, { type QuickSwitcherTarget } from "./PaneTreeRenderer";
 import NotesExplorer from "./NotesExplorer";
 import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
+import { isNotionDemoSession, uploadAndImportFile } from "@/lib/ingestion-api";
+import { useBrainX } from "@/components/brainx-provider";
 
 export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
 
@@ -145,13 +147,22 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   if (!initRef.current) initRef.current = createInitialPaneState(initialTab);
   const init = initRef.current;
 
+  const { pushToast } = useBrainX();
+
   const [state, setState] = useState<{ root: PaneNode; activeId: string }>(() => ({
     root: init.root,
     activeId: init.activeId,
   }));
   const [paneTabs, setPaneTabs] = useState<Record<string, PaneTabsState>>(() => init.paneTabs);
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
+  const [explorerOpen, setExplorerOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(true);
+
+  useEffect(() => {
+    const handleToggle = () => setExplorerOpen((prev) => !prev);
+    window.addEventListener("brainx-toggle-notes-explorer", handleToggle);
+    return () => window.removeEventListener("brainx-toggle-notes-explorer", handleToggle);
+  }, []);
   // 컨텍스트 패널 폭 — Split View(PaneTreeRenderer.tsx)와 동일한 react-resizable-panels
   // Group/Panel/Separator를 재사용해 드래그로 조절 가능하게 한다. 마지막 폭은 localStorage에
   // 저장해 새로고침 후에도 유지(요구사항).
@@ -176,30 +187,21 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   // 계산해 `groupRef.setLayout()`을 호출하는 방식으로 바꿔 라이브러리의 그 내부 계산 경로를
   // 아예 타지 않게 했다 — 신뢰된 이벤트 여부와 무관하게 항상 실제 마우스 이동량만큼 반영된다.
   const [contextPanelSize, setContextPanelSize] = useState<number>(() => {
-    if (typeof window === "undefined") return 22;
+    if (typeof window === "undefined") return 300;
     const saved = Number(window.localStorage.getItem(CONTEXT_PANEL_SIZE_KEY));
-    return Number.isFinite(saved) && saved >= 16 && saved <= 42 ? saved : 22;
+    return Number.isFinite(saved) && saved >= 270 && saved <= 800 ? saved : 300;
   });
   const contextGroupElRef = useRef<HTMLDivElement>(null);
-  const contextGroupRef = useGroupRef();
 
   const handleContextSeparatorMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    const groupEl = contextGroupElRef.current;
-    if (!groupEl) return;
     const startX = e.clientX;
-    const groupWidth = groupEl.getBoundingClientRect().width;
-    const startLayout = contextGroupRef.current?.getLayout();
-    const startContext = startLayout?.["notes-context-panel"] ?? contextPanelSize;
+    const startContext = contextPanelSize;
     let latest = startContext;
 
     const onMove = (ev: MouseEvent) => {
-      const deltaPercent = ((ev.clientX - startX) / groupWidth) * 100;
-      latest = Math.min(42, Math.max(16, startContext - deltaPercent));
-      contextGroupRef.current?.setLayout({
-        "notes-main-panel": 100 - latest,
-        "notes-context-panel": latest,
-      });
+      const deltaX = ev.clientX - startX;
+      latest = Math.max(270, Math.min(800, startContext - deltaX));
       setContextPanelSize(latest);
     };
     const onUp = () => {
@@ -208,12 +210,12 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       try {
         window.localStorage.setItem(CONTEXT_PANEL_SIZE_KEY, String(latest));
       } catch {
-        // localStorage 접근 불가(프라이빗 모드 등) — 이번 세션 폭만 유지
+        // localStorage 접근 불가
       }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [contextPanelSize, contextGroupRef]);
+  }, [contextPanelSize]);
   // MOCK_NOTES를 가변 상태로 복사 → 제목 수정/새 노트 생성 시 사이드바/헤더/컨텍스트 패널 즉시 반영
   const [notes, setNotes] = useState<MockNote[]>(() => [...MOCK_NOTES]);
   const [folders, setFolders] = useState<MockFolder[]>(() => [...MOCK_FOLDERS]);
@@ -318,6 +320,41 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const handleNoteClick = useCallback((noteId: string) => {
     openNoteInPane(state.activeId, noteId);
   }, [state.activeId, openNoteInPane]);
+
+  /* 노트 탐색기 위로 OS 파일을 드래그&드롭하면 /import 화면과 동일한
+     uploadAndImportFile() 경로로 가져오기를 수행한다(현재 선택된 폴더로 들어감).
+     데모(Notion demo) 세션은 실제 자산 업로드 백엔드가 없어 지원하지 않는다. */
+  const handleDropFiles = useCallback((files: FileList) => {
+    if (USE_MOCK_NOTES || isNotionDemoSession()) {
+      pushToast("데모 모드에서는 드래그&드롭 가져오기를 지원하지 않습니다.", "err");
+      return;
+    }
+    void (async () => {
+      const fileList = Array.from(files);
+      let firstNoteId: string | null = null;
+      let successCount = 0;
+      for (const file of fileList) {
+        try {
+          const job = await uploadAndImportFile(file, selectedFolderId ?? undefined);
+          if (!job || job.status === "FAILED") {
+            pushToast(`${file.name} 가져오기에 실패했습니다.`, "err");
+            continue;
+          }
+          const noteIds = job.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
+          if (noteIds.length > 0) {
+            firstNoteId ??= noteIds[0];
+            successCount += noteIds.length;
+          }
+        } catch (error) {
+          pushToast(error instanceof Error ? error.message : `${file.name} 가져오기에 실패했습니다.`, "err");
+        }
+      }
+      if (successCount > 0) {
+        pushToast(`${successCount}개 노트를 가져왔어요`, "ok");
+        window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: firstNoteId ?? undefined } }));
+      }
+    })();
+  }, [selectedFolderId, pushToast]);
 
   /* 같은 패널 안에서 탭 hold & drag로 순서 변경. activeTabId는 건드리지 않으므로 활성 탭 상태는 유지된다. */
   const handleReorderTab = useCallback((paneId: string, tabId: string, targetIndex: number) => {
@@ -668,6 +705,37 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setSelectedFolderId((prev) => (prev === folderId ? null : prev));
   }, [folders]);
 
+  /* 노트 삭제 — notes 상태에서 제거하고 열려 있는 탭 정리 */
+  const handleDeleteNote = useCallback((noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    setPaneTabs((prevByPane) => {
+      const next = { ...prevByPane };
+      Object.keys(next).forEach((paneId) => {
+        const paneState = next[paneId];
+        if (!paneState) return;
+        const noteTabs = paneState.tabs.filter((t) => t.kind === "note" && t.noteId === noteId);
+        if (noteTabs.length === 0) return;
+
+        let newTabs = paneState.tabs.filter((t) => !(t.kind === "note" && t.noteId === noteId));
+        let newActiveTabId = paneState.activeTabId;
+
+        const isActiveTabClosing = noteTabs.some((t) => t.id === paneState.activeTabId);
+        if (isActiveTabClosing) {
+          if (newTabs.length > 0) {
+            const closingIndex = paneState.tabs.findIndex((t) => t.id === paneState.activeTabId);
+            newActiveTabId = (newTabs[closingIndex] ?? newTabs[closingIndex - 1] ?? newTabs[0]).id;
+          } else {
+            const startTabId = uid();
+            newTabs = [{ id: startTabId, kind: "start" }];
+            newActiveTabId = startTabId;
+          }
+        }
+        next[paneId] = { tabs: newTabs, activeTabId: newActiveTabId };
+      });
+      return next;
+    });
+  }, []);
+
   const handleSelectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);
   }, []);
@@ -743,32 +811,48 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   useEffect(() => {
     if (USE_MOCK_NOTES) return;
     let active = true;
-    setLoadError(null);
-    Promise.all([listNotes(), listFolders()])
-      .then(([noteData, folderData]) => {
-        if (!active) return;
-        const nextNotes = noteData.notes.map(workspaceNoteToMock);
-        const nextFolders = folderData.folders.map(workspaceFolderToMock);
-        setNotes(nextNotes);
-        setFolders(nextFolders);
 
-        if (initialTab.kind === "note" && nextNotes.some((note) => note.id === initialTab.noteId)) {
-          handleReplaceActiveTab(state.activeId, initialTab.noteId);
-          return;
-        }
-        if (initialTab.kind === "note" && nextNotes.length > 0) {
-          handleReplaceActiveTab(state.activeId, nextNotes[0].id);
-        }
-      })
-      .catch((error) => {
-        if (active) setLoadError(error instanceof Error ? error.message : "Workspace-Service에서 노트를 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        if (active) hydratedRef.current = true;
-      });
+    function loadFromServer(openNoteId?: string) {
+      setLoadError(null);
+      return Promise.all([listNotes(), listFolders()])
+        .then(([noteData, folderData]) => {
+          if (!active) return;
+          const nextNotes = noteData.notes.map(workspaceNoteToMock);
+          const nextFolders = folderData.folders.map(workspaceFolderToMock);
+          setNotes(nextNotes);
+          setFolders(nextFolders);
+
+          const targetNoteId = openNoteId ?? (initialTab.kind === "note" ? initialTab.noteId : null);
+          if (targetNoteId && nextNotes.some((note) => note.id === targetNoteId)) {
+            handleReplaceActiveTab(state.activeId, targetNoteId);
+            return;
+          }
+          if (!openNoteId && initialTab.kind === "note" && nextNotes.length > 0) {
+            handleReplaceActiveTab(state.activeId, nextNotes[0].id);
+          }
+        })
+        .catch((error) => {
+          if (active) setLoadError(error instanceof Error ? error.message : "Workspace-Service에서 노트를 불러오지 못했습니다.");
+        })
+        .finally(() => {
+          if (active) hydratedRef.current = true;
+        });
+    }
+
+    loadFromServer();
+
+    // Import 등 NotesWorkspace 외부(별도 마운트된 화면)에서 노트가 새로 생성된 경우, 이 컴포넌트는
+    // 라우트 전환에도 리마운트되지 않아(레이아웃에서 한 번만 마운트) mount 시점 fetch만으로는 새
+    // 노트를 못 본다. 외부에서 이 이벤트를 쏘면 목록을 다시 불러오고, 지정한 노트를 바로 연다.
+    function handleExternalRefresh(event: Event) {
+      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
+      void loadFromServer(noteId);
+    }
+    window.addEventListener("brainx:notes-refresh", handleExternalRefresh);
 
     return () => {
       active = false;
+      window.removeEventListener("brainx:notes-refresh", handleExternalRefresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -963,6 +1047,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       onCloseAllTabs={handleCloseAllTabs}
       onTogglePinTab={handleTogglePinTab}
       onSplitTab={handleSplitTab}
+      contextOpen={contextOpen}
+      onContextToggle={() => setContextOpen((prev) => !prev)}
     />
   );
 
@@ -972,26 +1058,30 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       <div className="flex h-full overflow-hidden">
 
         {/* ── 좌측: 노트 탐색기 ──────────────────────── */}
-        <NotesExplorer
-          notes={notes}
-          folders={folders}
-          activeNoteId={activeNoteId ?? ""}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={handleSelectFolder}
-          onNoteClick={handleNoteClick}
-          onCreateFolder={handleCreateFolder}
-          onCreateNote={handleNewNote}
-          onRenameFolder={handleRenameFolder}
-          onChangeFolderColor={handleChangeFolderColor}
-          onToggleFolderFavorite={handleToggleFolderFavorite}
-          onDeleteFolder={handleDeleteFolder}
-          onDragStart={handleSidebarDragStart}
-          onDragEnd={handleDragEnd}
-          onMoveNoteToFolder={handleMoveNoteToFolder}
-          onReorderNote={handleReorderNote}
-          onMoveFolderToParent={handleMoveFolderToParent}
-          onReorderFolder={handleReorderFolder}
-        />
+        {explorerOpen && (
+          <NotesExplorer
+            notes={notes}
+            folders={folders}
+            activeNoteId={activeNoteId ?? ""}
+            selectedFolderId={selectedFolderId}
+            onSelectFolder={handleSelectFolder}
+            onNoteClick={handleNoteClick}
+            onCreateFolder={handleCreateFolder}
+            onCreateNote={handleNewNote}
+            onRenameFolder={handleRenameFolder}
+            onChangeFolderColor={handleChangeFolderColor}
+            onToggleFolderFavorite={handleToggleFolderFavorite}
+            onDeleteFolder={handleDeleteFolder}
+            onDeleteNote={handleDeleteNote}
+            onDragStart={handleSidebarDragStart}
+            onDragEnd={handleDragEnd}
+            onMoveNoteToFolder={handleMoveNoteToFolder}
+            onReorderNote={handleReorderNote}
+            onMoveFolderToParent={handleMoveFolderToParent}
+            onReorderFolder={handleReorderFolder}
+            onDropFiles={handleDropFiles}
+          />
+        )}
 
         {/* ── 중앙: 에디터 영역 ───────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -1042,34 +1132,28 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
               컴포넌트를 그대로 쓴다. */}
           <div className="flex flex-1 overflow-hidden">
             {contextOpen ? (
-              <Group elementRef={contextGroupElRef} groupRef={contextGroupRef} orientation="horizontal" style={{ flex: 1, overflow: "hidden" }}>
-                <Panel id="notes-main-panel" defaultSize={100 - contextPanelSize} minSize="40%" style={{ overflow: "hidden" }}>
+              <>
+                <div className="flex-1 min-w-0 overflow-hidden" ref={contextGroupElRef}>
                   {paneTree}
-                </Panel>
+                </div>
 
-                {/* 라이브러리 내장 Separator 대신 직접 만든 드래그 핸들 — 위 주석 참고(첫 드래그가
-                    실제 마우스 이동량의 일부만 반영되던 버그를 라이브러리의 내부 드래그 경로를
-                    타지 않는 방식으로 피했다). 키보드 접근성(좌우 화살표로 미세 조절)은 직접
-                    구현해 라이브러리 Separator가 제공하던 것을 동등하게 유지한다. */}
+                {/* 우측 패널 리사이즈 핸들 */}
                 <div
                   role="separator"
                   aria-orientation="vertical"
-                  aria-valuenow={Math.round(contextPanelSize)}
-                  aria-valuemin={16}
-                  aria-valuemax={42}
+                  aria-valuenow={contextPanelSize}
+                  aria-valuemin={270}
+                  aria-valuemax={800}
                   tabIndex={0}
                   onMouseDown={handleContextSeparatorMouseDown}
                   onKeyDown={(e) => {
                     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                     e.preventDefault();
-                    const next = Math.min(42, Math.max(16, contextPanelSize + (e.key === "ArrowLeft" ? 2 : -2)));
-                    contextGroupRef.current?.setLayout({ "notes-main-panel": 100 - next, "notes-context-panel": next });
+                    const next = Math.max(270, Math.min(800, contextPanelSize + (e.key === "ArrowLeft" ? 20 : -20)));
                     setContextPanelSize(next);
                     try {
                       window.localStorage.setItem(CONTEXT_PANEL_SIZE_KEY, String(next));
-                    } catch {
-                      // localStorage 접근 불가 — 이번 세션 폭만 유지
-                    }
+                    } catch {}
                   }}
                   style={{
                     width: 4,
@@ -1082,12 +1166,13 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgb(var(--line) / 0.35)"; }}
                 />
 
-                <Panel
-                  id="notes-context-panel"
-                  defaultSize={contextPanelSize}
-                  minSize="16%"
-                  maxSize="42%"
-                  style={{ overflow: "hidden" }}
+                <div
+                  style={{
+                    width: contextPanelSize,
+                    minWidth: "min(270px, 100vw)",
+                    flexShrink: 0,
+                    overflow: "hidden",
+                  }}
                 >
                   <RightSidebar
                     key={activeNoteId ?? "start"}
@@ -1097,20 +1182,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                     pendingAiRequest={aiRequest}
                     onAiRequestHandled={() => setAiRequest(null)}
                   />
-                </Panel>
-              </Group>
-            ) : (
-              <>
-                <div className="flex-1 overflow-hidden">{paneTree}</div>
-                <button
-                  type="button"
-                  onClick={() => setContextOpen(true)}
-                  title="컨텍스트 패널 열기"
-                  className="flex w-6 shrink-0 flex-col items-center justify-center border-l border-line/50 bg-bg2/30 text-txt3 transition-colors hover:bg-surface2/50 hover:text-txt"
-                >
-                  <ChevronLeft size={13} />
-                </button>
+                </div>
               </>
+            ) : (
+              <div className="flex-1 overflow-hidden">{paneTree}</div>
             )}
           </div>
         </div>

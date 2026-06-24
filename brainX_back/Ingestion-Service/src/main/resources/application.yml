@@ -9,7 +9,7 @@ spring:
   application:
     name: ingestion-service
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/brainx_ingestion}
+    url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${INGESTION_DB_NAME:brainx_ingestion}}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
@@ -42,6 +42,10 @@ workspace-service:
 
 cdn:
   base-url: ${CDN_BASE_URL:https://cdn.brainx.com}
+
+asset:
+  storage-dir: ${ASSET_STORAGE_DIR:./asset-storage}
+  max-size-bytes: ${ASSET_MAX_SIZE_BYTES:5368709120}
 
 logging:
   level:

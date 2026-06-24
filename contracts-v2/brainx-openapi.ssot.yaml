@@ -51,7 +51,7 @@ paths:
   /api/v1/auth/email-availability:
     get:
       operationId: checkEmailAvailability
-      summary: 이메일 중복 확인
+      summary: ?�메??중복 ?�인
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -100,7 +100,7 @@ paths:
   /api/v1/auth/email-verifications:
     post:
       operationId: requestEmailVerification
-      summary: 이메일 인증 코드 요청
+      summary: ?�메???�증 코드 ?�청
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -116,7 +116,7 @@ paths:
       - EmailVerificationRequested
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 인증코드 생성/저장은 동기, 메일 발송은 EmailVerificationRequested 이벤트로 비동기 처리한다.
+      description: ?�증코드 ?�성/?�?��? ?�기, 메일 발송?� EmailVerificationRequested ?�벤?�로 비동�?처리?�다.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -179,7 +179,7 @@ paths:
   /api/v1/auth/email-verifications/verify:
     post:
       operationId: verifyEmailVerification
-      summary: 이메일 인증 코드 확인
+      summary: ?�메???�증 코드 ?�인
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -254,7 +254,7 @@ paths:
   /api/v1/auth/password/temporary:
     post:
       operationId: issueTemporaryPassword
-      summary: 임시 비밀번호 발급
+      summary: ?�시 비�?번호 발급
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -267,7 +267,7 @@ paths:
       - PasswordChanged
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: PASSWORD_CHANGE 목적의 이메일 인증 코드 확인 후 임시 비밀번호를 발급하고 이메일로 발송한다. 임시 비밀번호 원문은 API 응답에 포함하지 않는다.
+      description: PASSWORD_CHANGE 목적???�메???�증 코드 ?�인 ???�시 비�?번호�?발급?�고 ?�메?�로 발송?�다. ?�시 비�?번호 ?�문?� API ?�답???�함?��? ?�는??
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -330,7 +330,7 @@ paths:
   /api/v1/auth/signup/email:
     post:
       operationId: signupWithEmail
-      summary: 이메일 회원가입
+      summary: ?�메???�원가??
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -344,7 +344,7 @@ paths:
       - ConsentRecorded
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 회원 생성과 JWT 발급은 동기. 기본 플랜/기본 워크스페이스/웰컴 메일은 이벤트 기반 후처리.
+      description: ?�원 ?�성�?JWT 발급?� ?�기. 기본 ?�랜/기본 ?�크?�페?�스/?�컴 메일?� ?�벤??기반 ?�처�?
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -407,7 +407,7 @@ paths:
   /api/v1/auth/login/local:
     post:
       operationId: loginLocal
-      summary: 자체 로그인
+      summary: ?�체 로그??
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -480,7 +480,7 @@ paths:
   /api/v1/auth/logout:
     post:
       operationId: logout
-      summary: 로그아웃
+      summary: 로그?�웃
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -556,7 +556,7 @@ paths:
   /api/v1/auth/token/refresh:
     post:
       operationId: refreshToken
-      summary: 토큰 재발급
+      summary: ?�큰 ?�발�?
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -628,7 +628,7 @@ paths:
   /api/v1/auth/oauth/{provider}/authorize:
     get:
       operationId: getOAuthAuthorizeUrl
-      summary: 소셜 로그인 인증 URL 요청
+      summary: ?�셜 로그???�증 URL ?�청
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -700,7 +700,7 @@ paths:
   /api/v1/auth/oauth/{provider}/callback:
     post:
       operationId: handleOAuthCallback
-      summary: 소셜 로그인 콜백
+      summary: ?�셜 로그??콜백
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -781,7 +781,7 @@ paths:
   /api/v1/auth/onboarding/complete:
     post:
       operationId: completeOnboarding
-      summary: OAuth 신규 가입 온보딩 완료
+      summary: OAuth ?�규 가???�보???�료
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -797,7 +797,7 @@ paths:
       - UserProfileUpdated
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: OAuth 신규 가입자는 온보딩 완료 시 프로필, 관심사, 필수/선택 동의를 함께 제출한다.
+      description: OAuth ?�규 가?�자???�보???�료 ???�로?? 관?�사, ?�수/?�택 ?�의�??�께 ?�출?�다.
       requestBody:
         required: true
         content:
@@ -858,7 +858,7 @@ paths:
   /api/v1/users/me:
     get:
       operationId: getMyProfile
-      summary: 내 프로필 조회
+      summary: ???�로??조회
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -931,7 +931,7 @@ paths:
   /api/v1/users/me/profile:
     patch:
       operationId: updateMyProfile
-      summary: 프로필 수정
+      summary: ?�로???�정
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1008,7 +1008,7 @@ paths:
   /api/v1/users/me/password:
     patch:
       operationId: changeMyPassword
-      summary: 비밀번호 변경
+      summary: 비�?번호 변�?
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1084,7 +1084,7 @@ paths:
   /api/v1/users/me/2fa/email:
     post:
       operationId: configureEmailTwoFactor
-      summary: 이메일 2FA 설정
+      summary: ?�메??2FA ?�정
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1158,7 +1158,7 @@ paths:
   /api/v1/users/me/social-accounts:
     post:
       operationId: linkSocialAccount
-      summary: 소셜 계정 연결
+      summary: ?�셜 계정 ?�결
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1232,7 +1232,7 @@ paths:
   /api/v1/users/me/social-accounts/{provider}:
     delete:
       operationId: unlinkSocialAccount
-      summary: 소셜 계정 연결 해제
+      summary: ?�셜 계정 ?�결 ?�제
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1306,7 +1306,7 @@ paths:
   /api/v1/users/me/consents:
     put:
       operationId: updateMyConsents
-      summary: 개인정보 동의 수정
+      summary: 개인?�보 ?�의 ?�정
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1383,7 +1383,7 @@ paths:
   /api/v1/users/me/deletion-request:
     post:
       operationId: requestMyDeletion
-      summary: 회원 탈퇴 요청
+      summary: ?�원 ?�퇴 ?�청
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1396,7 +1396,7 @@ paths:
       - UserDeletionRequested
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 30일 유예 후 삭제/익명화는 Deletion Orchestrator가 처리한다.
+      description: 30???�예 ????��/?�명?�는 Deletion Orchestrator가 처리?�다.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1459,7 +1459,7 @@ paths:
       - bearerAuth: []
     delete:
       operationId: cancelMyDeletion
-      summary: 회원 탈퇴 요청 취소
+      summary: ?�원 ?�퇴 ?�청 취소
       tags:
       - Identity & Access
       x-producer-service: identity-access
@@ -1527,7 +1527,7 @@ paths:
   /api/v1/support/tickets:
     post:
       operationId: createSupportTicket
-      summary: 문의 접수
+      summary: 문의 ?�수
       tags:
       - Support
       x-producer-service: commerce-operations
@@ -1539,7 +1539,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 기존 /support/inquiries와 /support/tickets 중복을 tickets로 통합한다.
+      description: 기존 /support/inquiries?� /support/tickets 중복??tickets�??�합?�다.
       requestBody:
         required: true
         content:
@@ -1600,7 +1600,7 @@ paths:
       - bearerAuth: []
     get:
       operationId: listMySupportTickets
-      summary: 내 문의 목록 조회
+      summary: ??문의 목록 조회
       tags:
       - Support
       x-producer-service: commerce-operations
@@ -1667,7 +1667,7 @@ paths:
   /api/v1/support/tickets/{ticketId}:
     get:
       operationId: getMySupportTicket
-      summary: 문의 상세 조회
+      summary: 문의 ?�세 조회
       tags:
       - Support
       x-producer-service: commerce-operations
@@ -1740,7 +1740,7 @@ paths:
   /api/v1/workspace/sync:
     get:
       operationId: syncWorkspace
-      summary: 워크스페이스 동기화
+      summary: ?�크?�페?�스 ?�기??
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -1814,10 +1814,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes:
     post:
       operationId: createNote
-      summary: 노트 생성
+      summary: ?�트 ?�성
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -1899,10 +1900,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}:
     get:
       operationId: getNote
-      summary: 노트 상세 조회
+      summary: ?�트 ?�세 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -1972,9 +1974,10 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
     delete:
       operationId: deleteNote
-      summary: 노트 삭제
+      summary: ?�트 ??��
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2057,10 +2060,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/content:
     put:
       operationId: saveNoteContent
-      summary: 노트 본문 저장
+      summary: ?�트 본문 ?�??
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2073,7 +2077,7 @@ paths:
       - NoteContentSaved
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 버전 충돌 검사는 동기 처리한다. 검색/임베딩/요약/통계는 이벤트 기반 후처리한다.
+      description: 버전 충돌 검?�는 ?�기 처리?�다. 검???�베???�약/?�계???�벤??기반 ?�처리한??
       parameters:
       - name: noteId
         in: path
@@ -2138,10 +2142,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/metadata:
     patch:
       operationId: patchNoteMetadata
-      summary: 노트 메타데이터 수정
+      summary: ?�트 메�??�이???�정
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2221,10 +2226,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/versions:
     get:
       operationId: listNoteVersions
-      summary: 노트 버전 목록 조회
+      summary: ?�트 버전 목록 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2294,10 +2300,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/versions/{versionId}/restore:
     post:
       operationId: restoreNoteVersion
-      summary: 노트 버전 복원
+      summary: ?�트 버전 복원
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2374,10 +2381,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/views:
     post:
       operationId: recordNoteView
-      summary: 노트 열람 기록 저장
+      summary: ?�트 ?�람 기록 ?�??
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2457,10 +2465,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/recent-activities:
     get:
       operationId: listRecentActivities
-      summary: 최근 열람 노트 조회
+      summary: 최근 ?�람 ?�트 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2531,10 +2540,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/folders:
     post:
       operationId: createFolder
-      summary: 폴더 생성
+      summary: ?�더 ?�성
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2610,10 +2620,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/folders/tree:
     get:
       operationId: getFolderTree
-      summary: 폴더 트리 조회
+      summary: ?�더 ?�리 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2680,10 +2691,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/folders/{folderId}:
     patch:
       operationId: patchFolder
-      summary: 폴더 수정
+      summary: ?�더 ?�정
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2760,9 +2772,10 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
     delete:
       operationId: deleteFolder
-      summary: 폴더 삭제
+      summary: ?�더 ??��
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2776,7 +2789,7 @@ paths:
       - NotesMoved
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 하위 노트가 많으면 NotesMoved 이벤트 후 projection 갱신은 비동기 처리한다.
+      description: ?�위 ?�트가 많으�?NotesMoved ?�벤????projection 갱신?� 비동�?처리?�다.
       parameters:
       - name: folderId
         in: path
@@ -2841,10 +2854,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/tags/suggestions:
     get:
       operationId: suggestTags
-      summary: 태그 자동완성 조회
+      summary: ?�그 ?�동?�성 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2914,10 +2928,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/tags:
     put:
       operationId: putNoteTags
-      summary: 노트 태그 설정
+      summary: ?�트 ?�그 ?�정
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -2994,10 +3009,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/favorites/{targetType}/{targetId}:
     put:
       operationId: putFavorite
-      summary: 즐겨찾기 설정/해제
+      summary: 즐겨찾기 ?�정/?�제
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3082,10 +3098,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/links:
     post:
       operationId: createNoteLink
-      summary: 노트 링크 생성
+      summary: ?�트 링크 ?�성
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3163,10 +3180,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/links/{linkId}:
     delete:
       operationId: deleteNoteLink
-      summary: 노트 링크 삭제
+      summary: ?�트 링크 ??��
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3242,10 +3260,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/backlinks:
     get:
       operationId: getBacklinks
-      summary: 백링크 조회
+      summary: 백링??조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3315,10 +3334,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/graph:
     get:
       operationId: getGraph
-      summary: 마인드맵 그래프 조회
+      summary: 마인?�맵 그래??조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3405,10 +3425,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/graph/layouts/{layoutId}:
     put:
       operationId: saveGraphLayout
-      summary: 그래프 레이아웃 저장
+      summary: 그래???�이?�웃 ?�??
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3485,10 +3506,11 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/share-links:
     post:
       operationId: createShareLink
-      summary: 공유 링크 생성
+      summary: 공유 링크 ?�성
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3568,7 +3590,7 @@ paths:
   /api/v1/share-links/{shareId}:
     get:
       operationId: getPublicSharedNote
-      summary: 공개 공유 노트 조회
+      summary: 공개 공유 ?�트 조회
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3639,7 +3661,7 @@ paths:
       security: []
     patch:
       operationId: patchShareLink
-      summary: 공유 링크 수정/폐기
+      summary: 공유 링크 ?�정/?�기
       tags:
       - Knowledge Workspace
       x-producer-service: knowledge-workspace
@@ -3719,12 +3741,18 @@ paths:
   /api/v1/assets/upload-sessions:
     post:
       operationId: createAssetUploadSession
-      summary: 파일 업로드 세션 생성
+      summary: ?�일 ?�로???�션 ?�성
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
       x-visibility: public
-      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Implemented. No pre-signed external storage (S3 etc.) exists yet, so
+        uploadUrl returns a same-origin path
+        (/api/v1/assets/upload-sessions/{uploadSessionId}/binary, see PUT
+        below) backed by local disk storage on content-ingestion-publishing.
+        Will be swapped for a real pre-signed URL once object storage is
+        provisioned, without changing this request/response shape.
       x-consumers:
       - id: web.note-editor
         type: frontend
@@ -3732,6 +3760,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3796,14 +3827,19 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
-  /api/v1/assets/upload-sessions/{uploadSessionId}/complete:
-    post:
-      operationId: completeAssetUpload
-      summary: 파일 업로드 완료 처리
+  /api/v1/assets/upload-sessions/{uploadSessionId}/binary:
+    put:
+      operationId: uploadAssetBinary
+      summary: 파일 바이너리 업로드
+      description: >
+        Implemented as a stand-in for a pre-signed storage URL until real
+        object storage is provisioned (see x-implementation-note on
+        createAssetUploadSession above). Accepts the raw file as
+        multipart/form-data under the "file" field and stores it on local
+        disk keyed by uploadSessionId.
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3812,6 +3848,91 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
+      - id: web.support
+        type: frontend
+        description: User support center
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: uploadSessionId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccessBase'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/assets/upload-sessions/{uploadSessionId}/complete:
+    post:
+      operationId: completeAssetUpload
+      summary: 파일 업로드 완료 처리
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-implementation-note: >
+        Implemented. Marks the asset UPLOADED. conversionJobId is always
+        returned as null — actual markdown/note extraction happens
+        synchronously inside POST /api/v1/imports/file/jobs or
+        /api/v1/imports/obsidian/jobs, not at completion time. AssetUploaded /
+        ConversionJobRequested events are not yet published (see Notion/
+        Obsidian import jobs for the same synchronous-processing pattern).
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor
+      - id: web.import
+        type: frontend
+        description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3888,11 +4009,17 @@ paths:
   /api/v1/assets/{assetId}:
     get:
       operationId: getAsset
-      summary: 파일 상세 조회
+      summary: ?�일 ?�세 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
+      x-implementation-note: >
+        Implemented. downloadUrl always points to
+        GET /api/v1/assets/{assetId}/file (see below) since there is no
+        external object storage yet. variants is always an empty array
+        (no image/thumbnail variants are generated). Does not verify asset
+        ownership against the caller — see implementation note on
+        GET /api/v1/assets/{assetId}/file for why.
       x-visibility: public
       x-consumers:
       - id: web.note-editor
@@ -3901,6 +4028,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
       - id: web.support
         type: frontend
         description: User support center
@@ -3965,10 +4095,67 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+  /api/v1/assets/{assetId}/file:
+    get:
+      operationId: getAssetFile
+      summary: 파일 원본 바이너리 다운로드/스트리밍
+      description: >
+        Added to support viewing the original file in place rather than only
+        converted/extracted text — the PDF/HTML embed viewers (web.note-editor's
+        PdfBlock/HtmlBlock nodes and the dedicated full-panel
+        PdfViewerPanel/HtmlViewerPanel, all in brainx-next) load this URL
+        directly as an <iframe src>, and the ImageBlock node loads it as an
+        <img src> for imported images. Not in the original SSOT; added
+        alongside the PDF viewer feature, later reused for image/HTML.
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-implementation-note: >
+        Implemented, streaming bytes from local disk (see
+        createAssetUploadSession's note on uploadUrl — same lack of external
+        object storage). Sets Content-Type from the stored asset content type
+        and Content-Disposition: inline so browsers render PDFs instead of
+        downloading them. Deliberately does not verify asset ownership
+        against the caller: this endpoint is loaded via plain browser
+        navigation (<iframe src>, <img src>), which cannot attach an
+        Authorization header, so an owner check would 404 for every viewer
+        embedded in a note that was not created by whichever identity the
+        request resolves to without a token (dev-test-user). TEMP: revisit
+        once real session/cookie-based auth exists so this can be scoped to
+        users who actually have access to the note referencing the asset.
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: Markdown/WYSIWYG note editor — PdfBlock/HtmlBlock nodes and the dedicated PdfViewerPanel/HtmlViewerPanel render this URL in an iframe; ImageBlock node renders it as an img src
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: assetId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success. Raw file bytes with the asset's original Content-Type.
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
   /api/v1/conversions:
     post:
       operationId: requestConversion
-      summary: 파일 변환 요청
+      summary: ?�일 변???�청
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4048,7 +4235,7 @@ paths:
   /api/v1/conversions/{conversionJobId}:
     get:
       operationId: getConversionJob
-      summary: 파일 변환 상태 조회
+      summary: ?�일 변???�태 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4125,7 +4312,7 @@ paths:
   /api/v1/imports/notion/oauth/authorize:
     post:
       operationId: createNotionOAuthAuthorizeUrl
-      summary: Notion OAuth 연결 URL 생성
+      summary: Notion OAuth ?�결 URL ?�성
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4273,7 +4460,7 @@ paths:
   /api/v1/imports/notion/pages:
     get:
       operationId: listNotionPages
-      summary: Notion 연동 계정의 페이지 목록 조회
+      summary: Notion ?�동 계정???�이지 목록 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4338,7 +4525,7 @@ paths:
   /api/v1/imports/notion/jobs:
     post:
       operationId: requestNotionImportJob
-      summary: Notion 가져오기 작업 요청
+      summary: Notion 가?�오�??�업 ?�청
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4363,6 +4550,21 @@ paths:
         COMPLETED or FAILED status. Kafka events (ImportJobRequested,
         ImportJobCompleted) are not yet published. Migration to true async
         processing and bulkCreateNotesInternal is planned.
+
+        Image blocks: Notion's "file"-type images (hosted on Notion's own S3)
+        are served via a presigned GET URL that expires after 1 hour
+        (X-Amz-Expires=3600) — embedding that URL directly in the note would
+        render fine right after import and then break. Instead, the image is
+        downloaded immediately and persisted as our own asset (same storage
+        as the asset-upload endpoints), and the note's markdown gets
+        `![](asset://{assetId})` instead of the Notion URL — brainx-next's
+        markdownToHtml recognizes the `asset://` scheme and resolves it to
+        GET /api/v1/assets/{assetId}/file at render time (same assetId
+        pattern as the PdfBlock/ImageBlock/HtmlBlock nodes). "external"-type
+        images (hosted outside Notion) are not re-downloaded since their
+        URLs don't expire. If the download fails for any reason, the
+        original (possibly time-limited) Notion URL is used as a fallback
+        rather than failing the whole import.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4426,7 +4628,7 @@ paths:
   /api/v1/imports/obsidian/jobs:
     post:
       operationId: requestObsidianImportJob
-      summary: Obsidian Vault 가져오기 요청
+      summary: Obsidian Vault 가?�오�??�청
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4435,6 +4637,9 @@ paths:
       - id: web.import
         type: frontend
         description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop ZIP/file import onto the note tree
       x-produces-events:
       - ImportJobRequested
       x-internal-sync-calls:
@@ -4442,12 +4647,42 @@ paths:
         operationId: bulkCreateNotesInternal
         reason: import worker must create notes through the Workspace authoritative ledger
         required: true
+      - targetService: knowledge-workspace
+        operationId: createFolder
+        reason: import worker recreates the ZIP's internal directory structure as real folders before placing each entry's note inside the matching folder
+        required: false
       x-async-boundary: true
       x-implementation-note: >
-        Current implementation persists the job record and returns 202
-        immediately with status PENDING. Actual Obsidian ZIP extraction and
-        note creation are not yet implemented — the job stays in PENDING state.
-        Kafka event (ImportJobRequested) is not published.
+        Current implementation processes the ZIP synchronously within the
+        request (same pattern as Notion import): downloads the uploaded
+        asset, extracts every entry, converts each to markdown and creates
+        one note per entry via Workspace-Service, then returns
+        COMPLETED/FAILED. Accepts any ZIP archive, not only Obsidian vault
+        exports (entry type is detected by extension/content-type, reusing
+        the same converters as /api/v1/imports/file/jobs). Poll
+        GET /api/v1/imports/{importJobId} for the full result. Kafka event
+        (ImportJobRequested) is not yet published.
+
+        The ZIP's internal directory structure is recreated as real
+        Workspace folders (one POST /api/v1/folders call per unique
+        directory path, parents created before children, memoized so each
+        path is only created once) nested under targetFolderId, and each
+        entry's note is created inside the folder matching its original
+        path. Empty directories (no files inside) are not recreated, since
+        ZIP directory entries are skipped during extraction.
+
+        PDF/image/HTML entries are a special case: instead of extracting text
+        into the note's markdown, the original bytes are persisted as their
+        own asset (via the same storage as the asset-upload endpoints) and
+        the created note's content is set to a single embed marker — one of
+        `<div data-pdf-block="true" data-asset-id="..." data-file-name="...">`,
+        `<div data-image-block="true" data-asset-id="..." data-file-name="...">`,
+        or `<div data-html-block="true" data-asset-id="..." data-file-name="...">`
+        depending on file type — that brainx-next's PdfBlock/ImageBlock/HtmlBlock
+        nodes (PDF and HTML also get a dedicated full-panel viewer,
+        PdfViewerPanel/HtmlViewerPanel) render by pointing an iframe/img at
+        GET /api/v1/assets/{assetId}/file. The note carries no extracted/
+        searchable text for PDF/image/HTML entries in this mode.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4508,10 +4743,118 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+  /api/v1/imports/file/jobs:
+    post:
+      operationId: requestFileImportJob
+      summary: 단일 파일 가져오기 요청 (CSV/PDF/Text/Markdown/HTML/Word)
+      tags:
+      - Content Ingestion & Publishing
+      x-producer-service: content-ingestion-publishing
+      x-visibility: public
+      x-consumers:
+      - id: web.import
+        type: frontend
+        description: Notion/Obsidian import screens
+      - id: web.notes-explorer
+        type: frontend
+        description: Notes Explorer sidebar — drag & drop file import onto the note tree
+      x-produces-events:
+      - ImportJobRequested
+      x-internal-sync-calls:
+      - targetService: knowledge-workspace
+        operationId: bulkCreateNotesInternal
+        reason: import worker must create notes through the Workspace authoritative ledger
+        required: true
+      - targetService: knowledge-workspace
+        operationId: createFolder
+        reason: when the uploaded asset is itself a ZIP, the import worker recreates its internal directory structure as real folders before placing each entry's note inside the matching folder (not applicable to single non-ZIP files)
+        required: false
+      x-async-boundary: true
+      x-implementation-note: >
+        Added to cover single-file import (CSV/PDF/Text/Markdown/HTML/DOCX)
+        for the "콘텐츠 가져오기"/"파일 기반 가져오기" import screens and the Notes
+        Explorer drag & drop dropzone, which previously had no corresponding
+        backend contract and were client-side mocks only. Processes
+        synchronously like Notion/Obsidian import: extracts markdown/text
+        from the uploaded asset (uploadedAssetId, created via the
+        asset-upload endpoints above) and creates one note via
+        Workspace-Service. If the asset is itself a ZIP, it is exploded into
+        one note per entry (including recreating the ZIP's directory
+        structure as folders), same as /api/v1/imports/obsidian/jobs. Kafka
+        event (ImportJobRequested) is not yet published.
+
+        If the uploaded asset is a PDF, image, or HTML file, the note's
+        content is instead set to an embed marker referencing the asset's own
+        GET /api/v1/assets/{assetId}/file — see the equivalent note on
+        requestObsidianImportJob above for the exact format and rationale
+        (viewer-only, no extracted text). PDF/HTML render in a dedicated
+        full-panel viewer outside the normal Tiptap note editor; images
+        render inline inside the normal note editor via the same ImageBlock
+        node used for pasted images.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileImportJobCreateRequest'
+      responses:
+        '202':
+          description: Accepted. Returns job ID and status only. Poll GET /api/v1/imports/{importJobId} for full result including createdNotes.
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ImportJobAcceptedData'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/imports/{importJobId}:
     get:
       operationId: getImportJob
-      summary: 가져오기 작업 상태 조회
+      summary: 가?�오�??�업 ?�태 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4584,7 +4927,7 @@ paths:
   /api/v1/exports:
     post:
       operationId: requestExportJob
-      summary: 내보내기 작업 요청
+      summary: ?�보?�기 ?�업 ?�청
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4610,7 +4953,7 @@ paths:
         sets status to COMPLETED with a CDN download URL (cdnBaseUrl/export/{noteId}.{format}).
         checkEntitlementsInternal and getNoteSnapshotInternal are not called.
         Kafka event (ExportJobRequested) is not published.
-        The 202 response returns only {exportJobId, status} — downloadUrl is
+        The 202 response returns only {exportJobId, status} ??downloadUrl is
         omitted from the create response even though it is available. Use
         GET /api/v1/exports/{exportJobId} to retrieve the downloadUrl.
       parameters:
@@ -4676,7 +5019,7 @@ paths:
   /api/v1/exports/{exportJobId}:
     get:
       operationId: getExportJob
-      summary: 내보내기 작업 상태 조회
+      summary: ?�보?�기 ?�업 ?�태 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4749,7 +5092,7 @@ paths:
   /api/v1/blog-templates:
     get:
       operationId: listBlogTemplates
-      summary: 블로그 템플릿 목록 조회
+      summary: 블로�??�플�?목록 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4823,20 +5166,36 @@ paths:
   /v1/publish-jobs:
     post:
       operationId: requestPublishJob
-      summary: 발행 작업 요청
+      summary: 발행 ?�업 ?�청
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
-      x-implementation-status: not-implemented
       x-visibility: public
       x-consumers:
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: Markdown/WYSIWYG note editor — intended consumer, not yet wired up (see x-implementation-note)
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
       description: Currently implemented as a synchronous clipboard publishing helper. The service receives noteContent and returns converted clipboard content immediately.
+      x-implementation-note: >
+        Implemented (PublishController/PublishService): for platform=tistory
+        the note's markdown is converted to HTML with a small hand-rolled
+        converter (headings/lists/blockquote/code blocks/bold/italic/inline
+        code; wiki-links rendered as plain text), for platform=notion/copy
+        the raw markdown is returned as-is. Response always has
+        status=COMPLETED synchronously — there is no real Tistory/Notion API
+        call, this only prepares clipboardContent/openUrl for the frontend
+        to copy and open the target site itself. brainx-next does not call
+        this endpoint yet (no caller in the codebase) despite the
+        x-consumers entry above describing the intended integration.
+        SecurityConfig permits this path without authentication
+        (`/v1/publish-jobs/**`), which does not match the `bearerAuth`
+        security requirement below; the controller falls back to
+        userId="anonymous" when unauthenticated. TEMP-style gap, same
+        pattern as the other permitAll routes — revisit once real
+        login/session auth exists.
       requestBody:
         required: true
         content:
@@ -4898,7 +5257,7 @@ paths:
   /api/v1/extension/captures:
     post:
       operationId: captureFromExtension
-      summary: 크롬 확장 캡처 저장
+      summary: ?�롬 ?�장 캡처 ?�??
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -4979,7 +5338,7 @@ paths:
   /api/v1/api-clients:
     post:
       operationId: createApiClient
-      summary: API 클라이언트 생성
+      summary: API ?�라?�언???�성
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -5056,7 +5415,7 @@ paths:
   /api/v1/mcp/tools:
     get:
       operationId: listMcpTools
-      summary: MCP 도구 목록 조회
+      summary: MCP ?�구 목록 조회
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -5124,7 +5483,7 @@ paths:
   /api/v1/mcp/tool-calls:
     post:
       operationId: callMcpTool
-      summary: MCP 도구 호출
+      summary: MCP ?�구 ?�출
       tags:
       - Content Ingestion & Publishing
       x-producer-service: content-ingestion-publishing
@@ -5205,7 +5564,7 @@ paths:
   /api/v1/intelligence/semantic-search:
     post:
       operationId: semanticSearch
-      summary: 시맨틱 검색
+      summary: ?�맨??검??
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5223,7 +5582,7 @@ paths:
         reason: capability/quota must be decided synchronously before model call or job acceptance
         required: true
       x-async-boundary: false
-      description: Intelligence는 원본 노트를 소유하지 않고 Workspace 이벤트 기반 read model/vector index를 조회한다.
+      description: Intelligence???�본 ?�트�??�유?��? ?�고 Workspace ?�벤??기반 read model/vector index�?조회?�다.
       requestBody:
         required: true
         content:
@@ -5285,7 +5644,7 @@ paths:
   /api/v1/ai/inline-assists:
     post:
       operationId: createInlineAssist
-      summary: AI 인라인 어시스트
+      summary: AI ?�라???�시?�트
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5322,7 +5681,7 @@ paths:
                   summary: Delta stream with terminal event
                   value: 'event: delta
 
-                    data: {"text":"JWT는 "}
+                    data: {"text":"JWT??"}
 
 
                     event: done
@@ -5361,7 +5720,7 @@ paths:
   /api/v1/ai/suggestions/{suggestionId}/decision:
     post:
       operationId: decideAiSuggestion
-      summary: AI 제안 수락/거절/재생성 결정
+      summary: AI ?�안 ?�락/거절/?�생??결정
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5377,7 +5736,7 @@ paths:
       - AiSuggestionDecisionRecorded
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: v1은 Workspace patch 없이 Accepted/Rejected/Regenerated 결정을 AiSuggestionDecisionRecorded 이벤트로만 기록한다.
+      description: v1?� Workspace patch ?�이 Accepted/Rejected/Regenerated 결정??AiSuggestionDecisionRecorded ?�벤?�로�?기록?�다.
       parameters:
       - name: suggestionId
         in: path
@@ -5445,7 +5804,7 @@ paths:
   /api/v1/ai/chat-threads:
     post:
       operationId: createChatThread
-      summary: AI 채팅 스레드 생성
+      summary: AI 채팅 ?�레???�성
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5519,7 +5878,7 @@ paths:
   /api/v1/ai/chat-threads/{threadId}/messages:
     post:
       operationId: sendChatMessage
-      summary: AI 채팅 메시지 전송
+      summary: AI 채팅 메시지 ?�송
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5562,7 +5921,7 @@ paths:
                   summary: Delta stream with terminal event
                   value: 'event: delta
 
-                    data: {"text":"JWT는 "}
+                    data: {"text":"JWT??"}
 
 
                     event: done
@@ -5601,7 +5960,7 @@ paths:
   /api/v1/ai/chat-threads/{threadId}:
     get:
       operationId: getChatThread
-      summary: 채팅 스레드 조회
+      summary: 채팅 ?�레??조회
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5674,7 +6033,7 @@ paths:
   /api/v1/ai/models:
     get:
       operationId: listAiModels
-      summary: 사용 가능한 AI 모델 목록
+      summary: ?�용 가?�한 AI 모델 목록
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5744,7 +6103,7 @@ paths:
   /api/v1/ai/model-settings:
     put:
       operationId: putAiModelSettings
-      summary: AI 모델 설정 변경
+      summary: AI 모델 ?�정 변�?
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5818,7 +6177,7 @@ paths:
   /api/v1/notes/{noteId}/summary:
     get:
       operationId: getNoteSummary
-      summary: 노트 요약 조회
+      summary: ?�트 ?�약 조회
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5833,7 +6192,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 캐시 미스 시에는 동기 LLM 호출 대신 SummaryGenerationRequested 이벤트/잡으로 처리할 수 있다.
+      description: 캐시 미스 ?�에???�기 LLM ?�출 ?�??SummaryGenerationRequested ?�벤???�으�?처리?????�다.
       parameters:
       - name: noteId
         in: path
@@ -5895,7 +6254,7 @@ paths:
   /api/v1/ai/folder-organization-proposals:
     post:
       operationId: createFolderOrganizationProposal
-      summary: AI 폴더 정리 제안 요청
+      summary: AI ?�더 ?�리 ?�안 ?�청
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -5913,7 +6272,7 @@ paths:
         reason: capability/quota must be decided synchronously before model call or job acceptance
         required: true
       x-async-boundary: false
-      description: AI 비용이 발생하므로 토큰 사용량 이벤트를 추가했다.
+      description: AI 비용??발생?��?�??�큰 ?�용???�벤?��? 추�??�다.
       requestBody:
         required: true
         content:
@@ -6057,7 +6416,7 @@ paths:
   /api/v1/ai/clusters:
     post:
       operationId: requestAiClusterJob
-      summary: AI 클러스터링 요청
+      summary: AI ?�러?�터�??�청
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6138,7 +6497,7 @@ paths:
   /api/v1/ai/clusters/{clusterJobId}:
     get:
       operationId: getAiClusterJob
-      summary: AI 클러스터링 결과 조회
+      summary: AI ?�러?�터�?결과 조회
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6211,7 +6570,7 @@ paths:
   /api/v1/ai/bridge-concepts:
     post:
       operationId: createBridgeConcepts
-      summary: 징검다리 개념 추천
+      summary: 징�??�리 개념 추천
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6290,7 +6649,7 @@ paths:
   /api/v1/ai/insight-reports:
     post:
       operationId: requestInsightReport
-      summary: AI 인사이트 리포트 요청
+      summary: AI ?�사?�트 리포???�청
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6374,7 +6733,7 @@ paths:
   /api/v1/ai/insight-reports/{reportId}:
     get:
       operationId: getInsightReport
-      summary: AI 인사이트 리포트 조회
+      summary: AI ?�사?�트 리포??조회
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6450,7 +6809,7 @@ paths:
   /api/v1/users/me/style-profile:
     get:
       operationId: getStyleProfile
-      summary: 문체 프로필 조회
+      summary: 문체 ?�로??조회
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6516,7 +6875,7 @@ paths:
       - bearerAuth: []
     put:
       operationId: putStyleProfile
-      summary: 문체 프로필 설정
+      summary: 문체 ?�로???�정
       tags:
       - Knowledge Intelligence
       x-producer-service: knowledge-intelligence
@@ -6590,7 +6949,7 @@ paths:
   /api/v1/plans:
     get:
       operationId: listPlans
-      summary: 플랜 목록 조회
+      summary: ?�랜 목록 조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -6659,7 +7018,7 @@ paths:
   /api/v1/users/me/subscription:
     get:
       operationId: getMySubscription
-      summary: 내 구독 정보 조회
+      summary: ??구독 ?�보 조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -6729,7 +7088,7 @@ paths:
   /api/v1/subscriptions/checkout-sessions:
     post:
       operationId: createCheckoutSession
-      summary: 결제 체크아웃 세션 생성
+      summary: 결제 체크?�웃 ?�션 ?�성
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -6805,7 +7164,7 @@ paths:
   /api/v1/subscriptions/checkout-sessions/{checkoutSessionId}/confirm:
     post:
       operationId: confirmCheckoutSession
-      summary: 결제 승인 confirm (Toss Payments)
+      summary: 결제 ?�인 confirm (Toss Payments)
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -6821,10 +7180,10 @@ paths:
       x-internal-sync-calls: []
       x-async-boundary: false
       description: >
-        Toss successUrl 리다이렉트에서 받은 paymentKey/orderId/amount로 Toss Payments
-        confirm API를 서버 간 호출해 결제를 최종 승인한다. 클라이언트가 보낸 amount는
-        체크아웃 세션 생성 시 서버에 저장해 둔 금액과 대조해 위변조를 막는다. 승인 성공 시
-        구독 플랜을 즉시 업그레이드한다.
+        Toss successUrl 리다?�렉?�에??받�? paymentKey/orderId/amount�?Toss Payments
+        confirm API�??�버 �??�출??결제�?최종 ?�인?�다. ?�라?�언?��? 보낸 amount??
+        체크?�웃 ?�션 ?�성 ???�버???�?�해 ??금액�??�조해 ?��?조�? 막는?? ?�인 ?�공 ??
+        구독 ?�랜??즉시 ?�그?�이?�한??
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: checkoutSessionId
@@ -6887,7 +7246,7 @@ paths:
   /api/v1/subscriptions/change:
     post:
       operationId: changeSubscription
-      summary: 구독 플랜 변경
+      summary: 구독 ?�랜 변�?
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7039,7 +7398,7 @@ paths:
   /api/v1/payments/webhooks/{provider}:
     post:
       operationId: handlePaymentWebhook
-      summary: 결제 웹훅 수신
+      summary: 결제 ?�훅 ?�신
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7057,7 +7416,7 @@ paths:
       - InvoiceIssued
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 서명 검증과 idempotency 저장 후 빠르게 ACK하고 결제 후처리는 이벤트로 비동기 처리한다.
+      description: ?�명 검증과 idempotency ?�????빠르�?ACK?�고 결제 ?�처리는 ?�벤?�로 비동�?처리?�다.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: provider
@@ -7129,7 +7488,7 @@ paths:
   /api/v1/users/me/token-usage:
     get:
       operationId: getMyTokenUsage
-      summary: 내 토큰 사용량 조회
+      summary: ???�큰 ?�용??조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7218,7 +7577,7 @@ paths:
   /api/v1/users/me/knowledge-dashboard:
     get:
       operationId: getKnowledgeDashboard
-      summary: 지식 성장 대시보드 조회
+      summary: 지???�장 ?�?�보??조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7233,7 +7592,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 조회 API지만 데이터 자체는 Workspace 이벤트 기반 projection이다.
+      description: 조회 API지�??�이???�체??Workspace ?�벤??기반 projection?�다.
       parameters:
       - name: period
         in: query
@@ -7299,7 +7658,7 @@ paths:
   /api/v1/users/me/wordcloud:
     get:
       operationId: getWordcloud
-      summary: 워드클라우드 데이터 조회
+      summary: ?�드?�라?�드 ?�이??조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7314,7 +7673,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 조회 API지만 데이터 자체는 NoteContentSaved/NoteTagsChanged 이벤트 기반 projection이다.
+      description: 조회 API지�??�이???�체??NoteContentSaved/NoteTagsChanged ?�벤??기반 projection?�다.
       parameters:
       - name: folderId
         in: query
@@ -7388,7 +7747,7 @@ paths:
   /api/v1/events/client:
     post:
       operationId: collectClientEvent
-      summary: 클라이언트 행동 이벤트 수집
+      summary: ?�라?�언???�동 ?�벤???�집
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7413,7 +7772,7 @@ paths:
       - ClientEventReceived
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 사용자의 behaviorAnalyticsOptional 동의 상태를 확인한 뒤 저장/폐기한다.
+      description: ?�용?�의 behaviorAnalyticsOptional ?�의 ?�태�??�인?????�???�기?�다.
       requestBody:
         required: true
         content:
@@ -7475,7 +7834,7 @@ paths:
   /api/v1/users/me/guides:
     get:
       operationId: listGuides
-      summary: 사용 가이드 목록 조회
+      summary: ?�용 가?�드 목록 조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7548,7 +7907,7 @@ paths:
   /api/v1/users/me/guides/{guideId}:
     put:
       operationId: dismissGuide
-      summary: 사용 가이드 닫기
+      summary: ?�용 가?�드 ?�기
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7634,7 +7993,7 @@ paths:
   /api/v1/landing/config:
     get:
       operationId: getLandingConfig
-      summary: 랜딩 페이지 설정 조회
+      summary: ?�딩 ?�이지 ?�정 조회
       tags:
       - Commerce & Operations
       x-producer-service: commerce-operations
@@ -7700,7 +8059,7 @@ paths:
   /api/v1/admin/users:
     post:
       operationId: createAdminUser
-      summary: 관리자 계정 생성
+      summary: 관리자 계정 ?�성
       tags:
       - Admin
       x-producer-service: commerce-operations
@@ -7777,7 +8136,7 @@ paths:
   /api/v1/admin/token-usage:
     get:
       operationId: getAdminTokenUsage
-      summary: 관리자 토큰 사용량 조회
+      summary: 관리자 ?�큰 ?�용??조회
       tags:
       - Admin
       x-producer-service: commerce-operations
@@ -7947,7 +8306,7 @@ paths:
   /api/v1/admin/support/tickets/{ticketId}/replies:
     post:
       operationId: replySupportTicketAsAdmin
-      summary: 관리자 문의 답변 등록
+      summary: 관리자 문의 ?��? ?�록
       tags:
       - Admin
       x-producer-service: commerce-operations
@@ -8030,7 +8389,7 @@ paths:
   /internal/v1/entitlements/check:
     post:
       operationId: checkEntitlementsInternal
-      summary: '[Internal] 권한/쿼터 확인'
+      summary: '[Internal] 권한/쿼터 ?�인'
       tags:
       - Internal Service APIs
       x-producer-service: commerce-operations
@@ -8048,7 +8407,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 서비스 간 동기 preflight. 이벤트로 대체하지 않는다.
+      description: ?�비??�??�기 preflight. ?�벤?�로 ?�체하지 ?�는??
       requestBody:
         required: true
         content:
@@ -8110,7 +8469,7 @@ paths:
   /internal/v1/workspace/notes/bulk-create:
     post:
       operationId: bulkCreateNotesInternal
-      summary: '[Internal] 노트 일괄 생성 command'
+      summary: '[Internal] ?�트 ?�괄 ?�성 command'
       tags:
       - Internal Service APIs
       x-producer-service: knowledge-workspace
@@ -8123,7 +8482,7 @@ paths:
       - NoteCreated
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: Import/extension/MCP가 노트 원장에 직접 쓰지 않도록 하는 내부 command API.
+      description: Import/extension/MCP가 ?�트 ?�장??직접 ?��? ?�도�??�는 ?��? command API.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -8187,7 +8546,7 @@ paths:
   /internal/v1/workspace/notes/{noteId}/snapshot:
     get:
       operationId: getNoteSnapshotInternal
-      summary: '[Internal] 노트 최신 스냅샷 조회'
+      summary: '[Internal] ?�트 최신 ?�냅??조회'
       tags:
       - Internal Service APIs
       x-producer-service: knowledge-workspace
@@ -8202,7 +8561,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 기본은 이벤트 기반 read model 사용. 반드시 최신 원문이 필요한 작업에서만 호출한다.
+      description: 기본?� ?�벤??기반 read model ?�용. 반드??최신 ?�문???�요???�업?�서�??�출?�다.
       parameters:
       - name: noteId
         in: path
@@ -8264,7 +8623,7 @@ paths:
   /internal/v1/workspace/notes/{noteId}/content-patches:
     post:
       operationId: patchNoteContentInternal
-      summary: '[Internal] 노트 본문 패치 command'
+      summary: '[Internal] ?�트 본문 ?�치 command'
       tags:
       - Internal Service APIs
       x-producer-service: knowledge-workspace
@@ -8277,7 +8636,7 @@ paths:
       - NoteContentSaved
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: AI 제안 수락 등 외부 서비스의 노트 변경을 Workspace 원장으로 강제한다.
+      description: AI ?�안 ?�락 ???��? ?�비?�의 ?�트 변경을 Workspace ?�장?�로 강제?�다.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: noteId
@@ -8353,6 +8712,11 @@ components:
       type: apiKey
       in: cookie
       name: refresh_token
+    guestSessionAuth:
+      type: apiKey
+      in: cookie
+      name: brainx_guest_id
+      description: Gateway-issued guest workspace session cookie for temporary non-member note, folder, link, and graph trial data.
     scopedApiKey:
       type: apiKey
       in: header
@@ -9221,21 +9585,21 @@ components:
       type: object
       nullable: true
       description: >-
-        노트 단위 타이포그래피 설정. 본문 콘텐츠(markdown)와는 별개로 저장되는 노트별
-        설정값이며, 설정하지 않은 노트는 기본 스타일을 그대로 사용한다.
+        ?�트 ?�위 ?�?�포그래???�정. 본문 콘텐�?markdown)?�??별개�??�?�되???�트�?
+        ?�정값이�? ?�정?��? ?��? ?�트??기본 ?��??�을 그�?�??�용?�다.
       properties:
         scalePercent:
           type: integer
           nullable: true
-          description: 기본 글꼴 크기 배율(%). null이면 100%(기본값).
+          description: 기본 글�??�기 배율(%). null?�면 100%(기본�?.
         fontFamily:
           type: string
           nullable: true
-          description: 노트 전체 기본 글꼴. null이면 앱 기본 글꼴.
+          description: ?�트 ?�체 기본 글�? null?�면 ??기본 글�?
         overrides:
           type: object
           nullable: true
-          description: 레벨별 개별 글자 크기(px) 오버라이드. 설정한 레벨은 scalePercent와 무관하게 이 값을 유지한다.
+          description: ?�벨�?개별 글???�기(px) ?�버?�이?? ?�정???�벨?� scalePercent?� 무�??�게 ??값을 ?��??�다.
           properties:
             body:
               type: integer
@@ -9311,8 +9675,8 @@ components:
           type: integer
           nullable: true
           description: >-
-            같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다. null이면 정렬
-            순서가 지정되지 않은 것으로 간주하고 기본 정렬(생성일 등)을 따른다.
+            같�? 부�??�더 ?�에?�의 ?�렬 ?�서. 값이 ?�을?�록 ?�에 ?�시?�다. null?�면 ?�렬
+            ?�서가 지?�되지 ?��? 것으�?간주?�고 기본 ?�렬(?�성???????�른??
       additionalProperties: false
     NoteMetadataData:
       type: object
@@ -9335,7 +9699,7 @@ components:
         order:
           type: integer
           nullable: true
-          description: 같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다.
+          description: 같�? 부�??�더 ?�에?�의 ?�렬 ?�서. 값이 ?�을?�록 ?�에 ?�시?�다.
       required:
       - noteId
       - version
@@ -9454,8 +9818,8 @@ components:
           type: integer
           nullable: true
           description: >-
-            같은 부모 폴더 안에서의 정렬 순서. 값이 작을수록 앞에 표시된다. null이면 정렬
-            순서가 지정되지 않은 것으로 간주하고 기본 정렬(이름 등)을 따른다.
+            같�? 부�??�더 ?�에?�의 ?�렬 ?�서. 값이 ?�을?�록 ?�에 ?�시?�다. null?�면 ?�렬
+            ?�서가 지?�되지 ?��? 것으�?간주?�고 기본 ?�렬(?�름 ?????�른??
       required:
       - folderId
       - name
@@ -9582,13 +9946,13 @@ components:
           type: string
           nullable: true
           description: >-
-            본문에 실제로 표시되는 링크 텍스트. 위키링크 별칭([[노트|별칭]])이나 임의 앵커
-            텍스트가 targetTitle과 다를 때만 값을 보낸다. null이면 targetTitle과 동일하게
-            표시된 것으로 간주한다.
+            본문???�제�??�시?�는 링크 ?�스?? ?�키링크 별칭([[?�트|별칭]])?�나 ?�의 ?�커
+            ?�스?��? targetTitle�??��? ?�만 값을 보낸?? null?�면 targetTitle�??�일?�게
+            ?�시??것으�?간주?�다.
         headingAnchor:
           type: string
           nullable: true
-          description: 위키링크 [[노트#헤딩]]의 헤딩 식별자. 헤딩 앵커가 없으면 null.
+          description: ?�키링크 [[?�트#?�딩]]???�딩 ?�별?? ?�딩 ?�커가 ?�으�?null.
       required:
       - targetTitle
       - createIfMissing
@@ -9936,7 +10300,7 @@ components:
             implementation ignores this field and uses the server-side default.
       additionalProperties: false
       x-implementation-note: >
-        Implemented without required redirectUri — redirectUri is fixed in
+        Implemented without required redirectUri ??redirectUri is fixed in
         application.yml as notion.redirect-uri. Request body is not required
         in the current Ingestion-Service controller.
     OAuthUrlData:
@@ -10023,6 +10387,17 @@ components:
           nullable: true
       required:
       - uploadedZipAssetId
+      additionalProperties: false
+    FileImportJobCreateRequest:
+      type: object
+      properties:
+        uploadedAssetId:
+          type: string
+        targetFolderId:
+          type: string
+          nullable: true
+      required:
+      - uploadedAssetId
       additionalProperties: false
     ImportJobAcceptedData:
       type: object
@@ -10892,11 +11267,11 @@ components:
     CheckoutSessionData:
       type: object
       description: >
-        Toss Payments는 호스팅된 결제 페이지 URL 모델이 아니라 클라이언트 SDK + 서버 confirm
-        모델을 사용한다. provider가 toss인 경우 checkoutUrl은 null이고, 프론트는
-        clientKey/orderId/amount/orderName으로 Toss SDK widget을 직접 구동한 뒤,
-        결제 승인 콜백에서 POST /api/v1/subscriptions/checkout-sessions/{checkoutSessionId}/confirm
-        을 호출해 결제를 확정해야 한다.
+        Toss Payments???�스?�된 결제 ?�이지 URL 모델???�니???�라?�언??SDK + ?�버 confirm
+        모델???�용?�다. provider가 toss??경우 checkoutUrl?� null?�고, ?�론?�는
+        clientKey/orderId/amount/orderName?�로 Toss SDK widget??직접 구동????
+        결제 ?�인 콜백?�서 POST /api/v1/subscriptions/checkout-sessions/{checkoutSessionId}/confirm
+        ???�출??결제�??�정?�야 ?�다.
       properties:
         checkoutSessionId:
           type: string
@@ -10912,11 +11287,11 @@ components:
         clientKey:
           type: string
           nullable: true
-          description: Toss Payments 클라이언트 키 (provider가 toss일 때만 채워짐).
+          description: Toss Payments ?�라?�언????(provider가 toss???�만 채워�?.
         orderId:
           type: string
           nullable: true
-          description: Toss 결제 승인 confirm 호출 시 사용할 주문 ID (provider가 toss일 때만 채워짐).
+          description: Toss 결제 ?�인 confirm ?�출 ???�용??주문 ID (provider가 toss???�만 채워�?.
         orderName:
           type: string
           nullable: true
@@ -10932,7 +11307,7 @@ components:
       additionalProperties: false
     CheckoutSessionConfirmRequest:
       type: object
-      description: Toss 결제 승인 리다이렉트(successUrl)에서 받은 paymentKey/orderId/amount를 그대로 전달한다.
+      description: Toss 결제 ?�인 리다?�렉??successUrl)?�서 받�? paymentKey/orderId/amount�?그�?�??�달?�다.
       properties:
         paymentKey:
           type: string
@@ -11245,6 +11620,7 @@ components:
           enum:
           - NOTION_IMPORT
           - OBSIDIAN_IMPORT
+          - FILE_IMPORT
           - EXTENSION_CAPTURE
           - MCP_TOOL_CALL
         targetFolderId:

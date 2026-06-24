@@ -113,6 +113,34 @@ public class IngestionResponse {
 
     @Getter
     @Builder
+    public static class AssetUploadSessionResponse {
+        private String uploadSessionId;
+        private String uploadUrl;
+        private long maxSizeBytes;
+    }
+
+    @Getter
+    @Builder
+    public static class AssetUploadCompleteResponse {
+        private String assetId;
+        private String conversionJobId;
+        private String status;
+    }
+
+    @Getter
+    @Builder
+    public static class AssetDetailResponse {
+        private String assetId;
+        private String fileName;
+        private String contentType;
+        private long sizeBytes;
+        private List<Object> variants;
+        private String downloadUrl;
+        private java.time.LocalDateTime createdAt;
+    }
+
+    @Getter
+    @Builder
     public static class ExportJobCreatedResponse {
         private String exportJobId;
         private String status;
