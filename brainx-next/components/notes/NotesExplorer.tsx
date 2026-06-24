@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus } from "lucide-react";
+import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus, MoreHorizontal } from "lucide-react";
 import { CollapseChevron } from "./CollapseChevron";
 import { HoverInfoCard } from "./HoverInfoCard";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, SortOption } from "@/lib/notes/noteTypes";
 import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
-import FolderTree from "./FolderTree";
+import FolderTree, { NoteMenu, FolderMenu } from "./FolderTree";
+import { Btn } from "@/components/brainx-ui";
 
 /** 즐겨찾기 섹션의 노트 행 — FolderTree.tsx의 NoteRow와 별개 렌더링 경로라 hover 카드도
     똑같이 따로 달아준다(요구사항: 탐색기 어디서든 hover 정보가 보여야 함). */
@@ -18,6 +19,8 @@ function FavNoteRow({
   onDragStart,
   onDragEnd,
   onToggleFavorite,
+  onDeleteNote,
+  onRenameNote,
 }: {
   note: MockNote;
   isActive: boolean;
@@ -25,15 +28,36 @@ function FavNoteRow({
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
   onToggleFavorite: (id: string) => void;
+  onDeleteNote?: (id: string) => void;
+  onRenameNote?: (id: string, newTitle: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(note.title);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renaming]);
+
+  const commitRename = useCallback(() => {
+    const name = renameDraft.trim();
+    if (name && name !== note.title) onRenameNote?.(note.id, name);
+    else setRenameDraft(note.title);
+    setRenaming(false);
+  }, [renameDraft, note.id, note.title, onRenameNote]);
 
   return (
     <div
       ref={rowRef}
-      draggable
-      onClick={() => onNoteClick(note.id)}
+      draggable={!renaming}
+      onClick={() => { if (!renaming) onNoteClick(note.id); }}
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", note.id);
         e.dataTransfer.effectAllowed = "copy";
@@ -42,22 +66,64 @@ function FavNoteRow({
       onDragEnd={onDragEnd}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuAnchor({ x: e.clientX, y: e.clientY });
+        setMenuOpen(true);
+      }}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[13px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
         isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
       style={{ background: isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
     >
       <FileText size={11} className="shrink-0" style={{ color: "#f59e0b" }} />
-      <span className="flex-1 truncate">{note.title}</span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(note.id); }}
-        className="shrink-0 p-0.5 opacity-100"
-      >
-        <Star size={10} className="fill-yellow-400 text-yellow-400" />
-      </button>
+      {renaming ? (
+        <input
+          ref={renameInputRef}
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") { setRenaming(false); setRenameDraft(note.title); }
+          }}
+          onBlur={commitRename}
+          className="flex-1 rounded border border-primary/40 bg-surface px-1 py-0 text-[12px] text-txt outline-none"
+        />
+      ) : (
+        <span className="flex-1 truncate">{note.title}</span>
+      )}
 
-      <HoverInfoCard anchorRef={rowRef} hovered={hovered}>
+      {!renaming && (
+        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => { setMenuAnchor(null); setMenuOpen((v) => !v); }}
+            title="더보기"
+            className={cx(
+              "grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary",
+              !hovered && !menuOpen && "opacity-0 group-hover:opacity-100"
+            )}
+          >
+            <MoreHorizontal size={11} />
+          </button>
+
+          {menuOpen && (
+            <NoteMenu
+              note={note}
+              isFavorite
+              anchor={menuAnchor}
+              onStartRename={() => setRenaming(true)}
+              onToggleFavorite={() => onToggleFavorite(note.id)}
+              onDelete={() => onDeleteNote?.(note.id)}
+              onClose={() => { setMenuOpen(false); setMenuAnchor(null); }}
+            />
+          )}
+        </div>
+      )}
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !renaming && !menuOpen}>
         <p className="mb-1 truncate font-semibold text-txt">{note.title}</p>
         <p className="text-txt3">마지막 수정</p>
         <p className="mb-1.5 text-txt2">{formatRelativeTime(note.updatedAt)}</p>
@@ -68,7 +134,129 @@ function FavNoteRow({
   );
 }
 
-/** 즐겨찾기 섹션의 폴더 행. */
+/** 검색 결과(평면 리스트)의 노트 행 — FavNoteRow와 거의 동일한 구조지만 활성 노트 강조가
+    필요해 별도 컴포넌트로 분리했다. */
+function SearchNoteRow({
+  note,
+  isActive,
+  isFavorite,
+  onNoteClick,
+  onDragStart,
+  onDragEnd,
+  onToggleFavorite,
+  onDeleteNote,
+  onRenameNote,
+}: {
+  note: MockNote;
+  isActive: boolean;
+  isFavorite: boolean;
+  onNoteClick: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onToggleFavorite: (id: string) => void;
+  onDeleteNote?: (id: string) => void;
+  onRenameNote?: (id: string, newTitle: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(note.title);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renaming]);
+
+  const commitRename = useCallback(() => {
+    const name = renameDraft.trim();
+    if (name && name !== note.title) onRenameNote?.(note.id, name);
+    else setRenameDraft(note.title);
+    setRenaming(false);
+  }, [renameDraft, note.id, note.title, onRenameNote]);
+
+  return (
+    <div
+      draggable={!renaming}
+      onClick={() => { if (!renaming) onNoteClick(note.id); }}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", note.id);
+        e.dataTransfer.effectAllowed = "copy";
+        onDragStart(note.id);
+      }}
+      onDragEnd={onDragEnd}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuAnchor({ x: e.clientX, y: e.clientY });
+        setMenuOpen(true);
+      }}
+      className={cx(
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
+        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
+      )}
+      style={{ background: isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
+    >
+      <FileText size={11} className="shrink-0 text-txt3" />
+      {renaming ? (
+        <input
+          ref={renameInputRef}
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") { setRenaming(false); setRenameDraft(note.title); }
+          }}
+          onBlur={commitRename}
+          className="flex-1 rounded border border-primary/40 bg-surface px-1 py-0 text-[12px] text-txt outline-none"
+        />
+      ) : (
+        <span className="flex-1 truncate">{note.title}</span>
+      )}
+      {isFavorite && !renaming && (
+        <Star size={10} className="shrink-0 fill-yellow-400 text-yellow-400" />
+      )}
+
+      {!renaming && (
+        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => { setMenuAnchor(null); setMenuOpen((v) => !v); }}
+            title="더보기"
+            className={cx(
+              "grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary",
+              !hovered && !menuOpen && "opacity-0 group-hover:opacity-100"
+            )}
+          >
+            <MoreHorizontal size={11} />
+          </button>
+
+          {menuOpen && (
+            <NoteMenu
+              note={note}
+              isFavorite={isFavorite}
+              anchor={menuAnchor}
+              onStartRename={() => setRenaming(true)}
+              onToggleFavorite={() => onToggleFavorite(note.id)}
+              onDelete={() => onDeleteNote?.(note.id)}
+              onClose={() => { setMenuOpen(false); setMenuAnchor(null); }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 즐겨찾기 섹션의 폴더 행 — FolderTree.tsx의 FolderNode와 별개 렌더링 경로지만, 동일한
+    FolderMenu/우클릭/"..." 메뉴 UX를 그대로 제공한다(요구사항: 파일/노트와 폴더 모두 동일
+    기준). 이 행은 트리처럼 자식을 펼쳐 보여주지 않으므로 "새 폴더 생성"/"노트 생성"은
+    즉시 기본 이름으로 생성한다(FolderNode의 inline 입력 UI는 여기 없음). */
 function FavFolderRow({
   folder,
   childFolderCount,
@@ -76,6 +264,11 @@ function FavFolderRow({
   isSelected,
   onSelectFolder,
   onToggleFavorite,
+  onCreateFolder,
+  onCreateNote,
+  onRenameFolder,
+  onChangeFolderColor,
+  onDeleteFolder,
 }: {
   folder: MockFolder;
   childFolderCount: number;
@@ -83,33 +276,100 @@ function FavFolderRow({
   isSelected: boolean;
   onSelectFolder: (id: string) => void;
   onToggleFavorite: (id: string) => void;
+  onCreateFolder: (parentFolderId: string | null, name: string) => void;
+  onCreateNote: (folderId?: string) => void;
+  onRenameFolder: (folderId: string, newName: string) => void;
+  onChangeFolderColor: (folderId: string, color: string) => void;
+  onDeleteFolder: (folderId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(folder.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renaming]);
+
+  const commitRename = useCallback(() => {
+    const name = renameDraft.trim();
+    if (name && name !== folder.name) onRenameFolder(folder.id, name);
+    else setRenameDraft(folder.name);
+    setRenaming(false);
+  }, [renameDraft, folder.id, folder.name, onRenameFolder]);
 
   return (
     <div
       ref={rowRef}
-      onClick={() => onSelectFolder(folder.id)}
+      onClick={() => { if (!renaming) onSelectFolder(folder.id); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenuAnchor({ x: e.clientX, y: e.clientY });
+        setMenuOpen(true);
+      }}
       className={cx(
-        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[14px] transition-colors",
+        "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
         isSelected ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
       style={{ background: isSelected ? "rgb(var(--primary) / 0.12)" : undefined }}
     >
       <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
-      <span className="flex-1 truncate">{folder.name}</span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleFavorite(folder.id); }}
-        className="shrink-0 p-0.5 opacity-100"
-        title="즐겨찾기 해제"
-      >
-        <Star size={10} className="fill-yellow-400 text-yellow-400" />
-      </button>
+      {renaming ? (
+        <input
+          ref={renameInputRef}
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename();
+            if (e.key === "Escape") { setRenaming(false); setRenameDraft(folder.name); }
+          }}
+          onBlur={commitRename}
+          className="flex-1 rounded border border-primary/40 bg-surface px-1 py-0 text-[12px] text-txt outline-none"
+        />
+      ) : (
+        <span className="flex-1 truncate">{folder.name}</span>
+      )}
 
-      <HoverInfoCard anchorRef={rowRef} hovered={hovered}>
+      {!renaming && (
+        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => { setMenuAnchor(null); setMenuOpen((v) => !v); }}
+            title="더보기"
+            className={cx(
+              "grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary",
+              !hovered && !menuOpen && "opacity-0 group-hover:opacity-100"
+            )}
+          >
+            <MoreHorizontal size={11} />
+          </button>
+
+          {menuOpen && (
+            <FolderMenu
+              folder={folder}
+              anchor={menuAnchor}
+              onCreateSubfolder={() => onCreateFolder(folder.id, "새 폴더")}
+              onCreateNote={() => onCreateNote(folder.id)}
+              onStartRename={() => setRenaming(true)}
+              onChangeColor={(color) => onChangeFolderColor(folder.id, color)}
+              onToggleFavorite={() => onToggleFavorite(folder.id)}
+              onDelete={() => onDeleteFolder(folder.id)}
+              onClose={() => { setMenuOpen(false); setMenuAnchor(null); }}
+            />
+          )}
+        </div>
+      )}
+
+      <HoverInfoCard anchorRef={rowRef} hovered={hovered && !renaming && !menuOpen}>
         <p className="mb-1.5 flex items-center gap-1.5 truncate font-semibold text-txt">
           <Folder size={11} className="shrink-0" style={{ color: folder.color ?? "#eab308" }} />
           {folder.name}
@@ -228,6 +488,7 @@ interface Props {
   onToggleFolderFavorite: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
   onDeleteNote: (noteId: string) => void;
+  onRenameNote?: (noteId: string, newTitle: string) => void;
   onDragStart: (noteId: string) => void;
   onDragEnd: () => void;
   onMoveNoteToFolder: (noteId: string, targetFolderId: string | null) => void;
@@ -251,6 +512,7 @@ export default function NotesExplorer({
   onToggleFolderFavorite,
   onDeleteFolder,
   onDeleteNote,
+  onRenameNote,
   onDragStart,
   onDragEnd,
   onMoveNoteToFolder,
@@ -327,27 +589,16 @@ export default function NotesExplorer({
 
       {/* ── 헤더 ──────────────────────────────────────── */}
       <div className="border-b border-line/50 px-3 py-3 space-y-2.5">
-        {/* 타이틀 + 카운트 */}
-        <div className="flex items-center px-0.5">
-          <span className="text-[12px] font-semibold text-txt">노트 탐색기</span>
-          <span
-            className="ml-2 rounded-full px-1.5 py-px text-[10px] font-medium text-txt3"
-            style={{ background: "rgb(var(--surface2))" }}
-          >
-            {notes.length}
-          </span>
-        </div>
-
         {/* + 새 노트 버튼 */}
-        <button
-          type="button"
+        <Btn
+          variant="primary"
+          size="md"
+          icon="plus"
+          className="w-full text-[14px]"
           onClick={() => onCreateNote(selectedFolderId ?? undefined)}
-          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-full text-[13px] font-semibold text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md active:scale-[0.98]"
-          style={{ background: "rgb(var(--primary))" }}
         >
-          <Plus size={15} />
           새 노트
-        </button>
+        </Btn>
 
         {/* 검색창 */}
         <div
@@ -372,6 +623,16 @@ export default function NotesExplorer({
 
       {/* ── 콘텐츠 ──────────────────────────────────── */}
       <div className="scroll-thin flex-1 overflow-y-auto py-2">
+        {/* 타이틀 + 카운트 */}
+        <div className="flex items-center px-3.5 py-1 mb-1.5">
+          <span className="text-[13px] font-bold text-txt">노트 탐색기</span>
+          <span
+            className="ml-2 rounded-full px-1.5 py-px text-[10px] font-medium text-txt3"
+            style={{ background: "rgb(var(--surface2))" }}
+          >
+            {notes.length}
+          </span>
+        </div>
 
         {isSearching ? (
           /* 검색 중: 폴더 무시하고 평면 리스트로 표시 */
@@ -380,34 +641,18 @@ export default function NotesExplorer({
               <p className="px-2 py-4 text-center text-[11px] text-txt3">검색 결과가 없습니다</p>
             ) : (
               searchResults.map((note) => (
-                <div
+                <SearchNoteRow
                   key={note.id}
-                  draggable
-                  onClick={() => onNoteClick(note.id)}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", note.id);
-                    e.dataTransfer.effectAllowed = "copy";
-                    onDragStart(note.id);
-                  }}
+                  note={note}
+                  isActive={note.id === activeNoteId}
+                  isFavorite={favorites.has(note.id)}
+                  onNoteClick={onNoteClick}
+                  onDragStart={onDragStart}
                   onDragEnd={onDragEnd}
-                  className={cx(
-                    "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[13px] transition-colors",
-                    note.id === activeNoteId ? "font-medium text-txt" : "text-txt2 hover:text-txt"
-                  )}
-                  style={{ background: note.id === activeNoteId ? "rgb(var(--primary) / 0.12)" : undefined }}
-                >
-                  <FileText size={11} className="shrink-0 text-txt3" />
-                  <span className="flex-1 truncate">{note.title}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleFavorite(note.id); }}
-                    className={cx(
-                      "shrink-0 p-0.5 transition-opacity",
-                      favorites.has(note.id) ? "opacity-100" : "opacity-0 group-hover:opacity-50"
-                    )}
-                  >
-                    <Star size={10} className={favorites.has(note.id) ? "fill-yellow-400 text-yellow-400" : "text-txt3"} />
-                  </button>
-                </div>
+                  onToggleFavorite={toggleFavorite}
+                  onDeleteNote={handleDeleteNote}
+                  onRenameNote={onRenameNote}
+                />
               ))
             )}
           </div>
@@ -422,7 +667,7 @@ export default function NotesExplorer({
                 >
                   <CollapseChevron expanded={favExpanded} size={11} />
                   <Star size={11} className="shrink-0 fill-yellow-400 text-yellow-400" />
-                  <span className="flex-1 text-[11px] font-semibold text-txt">즐겨찾기</span>
+                  <span className="flex-1 text-[13px] font-bold text-txt">즐겨찾기</span>
                   <span className="text-[10px] text-txt3">{favNotes.length + favFolders.length}</span>
                 </button>
 
@@ -437,6 +682,11 @@ export default function NotesExplorer({
                         isSelected={selectedFolderId === folder.id}
                         onSelectFolder={onSelectFolder}
                         onToggleFavorite={onToggleFolderFavorite}
+                        onCreateFolder={onCreateFolder}
+                        onCreateNote={onCreateNote}
+                        onRenameFolder={onRenameFolder}
+                        onChangeFolderColor={onChangeFolderColor}
+                        onDeleteFolder={onDeleteFolder}
                       />
                     ))}
                     {favNotes.map((note) => (
@@ -448,6 +698,8 @@ export default function NotesExplorer({
                         onDragStart={onDragStart}
                         onDragEnd={onDragEnd}
                         onToggleFavorite={toggleFavorite}
+                        onDeleteNote={handleDeleteNote}
+                        onRenameNote={onRenameNote}
                       />
                     ))}
                   </div>
@@ -481,7 +733,7 @@ export default function NotesExplorer({
                 <button
                   type="button"
                   onClick={() => setCreatingRootFolder(true)}
-                  className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-[11px] text-txt3 transition-colors hover:bg-surface2/40 hover:text-txt2"
+                  className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-[13px] font-bold text-txt3 transition-colors hover:bg-surface2/40 hover:text-txt2"
                 >
                   <Plus size={12} className="shrink-0" />
                   <span>새 폴더 (루트)</span>
@@ -504,6 +756,9 @@ export default function NotesExplorer({
               onToggleFolderFavorite={onToggleFolderFavorite}
               onDeleteFolder={onDeleteFolder}
               onDeleteNote={handleDeleteNote}
+              favorites={favorites}
+              onToggleNoteFavorite={toggleFavorite}
+              onRenameNote={onRenameNote}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               onMoveNoteToFolder={onMoveNoteToFolder}

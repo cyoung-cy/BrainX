@@ -8,6 +8,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.brainx.intelligence.chat.domain.ChatDomainException;
 import com.brainx.intelligence.exploration.domain.ExplorationDomainException;
 import com.brainx.intelligence.settings.domain.SettingsDomainException;
 
@@ -21,6 +22,7 @@ public class GlobalApiExceptionHandler {
         MethodArgumentNotValidException.class,
         BindException.class,
         HttpMessageNotReadableException.class,
+        ChatDomainException.class,
         ExplorationDomainException.class,
         SettingsDomainException.class,
         IllegalArgumentException.class

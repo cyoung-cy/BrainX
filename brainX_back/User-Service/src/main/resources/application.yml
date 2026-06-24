@@ -9,7 +9,7 @@ spring:
   application:
     name: User-Service
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/brainx_user}
+    url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${USER_DB_NAME:brainx_user}}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}

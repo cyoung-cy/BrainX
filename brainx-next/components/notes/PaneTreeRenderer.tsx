@@ -47,6 +47,8 @@ interface Props {
   onCloseAllTabs: (paneId: string) => void;
   onTogglePinTab: (paneId: string, tabId: string) => void;
   onSplitTab: (paneId: string, tabId: string, direction: "horizontal" | "vertical") => void;
+  contextOpen?: boolean;
+  onContextToggle?: () => void;
 }
 
 export default function PaneTreeRenderer({
@@ -83,6 +85,8 @@ export default function PaneTreeRenderer({
   onCloseAllTabs,
   onTogglePinTab,
   onSplitTab,
+  contextOpen,
+  onContextToggle,
 }: Props) {
   if (node.type === "leaf") {
     const tabsState = paneTabs[node.id];
@@ -135,6 +139,8 @@ export default function PaneTreeRenderer({
         onTogglePinTab={(tabId) => onTogglePinTab(node.id, tabId)}
         onSplitTabRight={(tabId) => onSplitTab(node.id, tabId, "horizontal")}
         onSplitTabDown={(tabId) => onSplitTab(node.id, tabId, "vertical")}
+        contextOpen={contextOpen}
+        onContextToggle={onContextToggle}
       />
     );
   }
@@ -180,6 +186,8 @@ export default function PaneTreeRenderer({
               onCloseAllTabs={onCloseAllTabs}
               onTogglePinTab={onTogglePinTab}
               onSplitTab={onSplitTab}
+              contextOpen={contextOpen}
+              onContextToggle={onContextToggle}
             />
           </Panel>
 

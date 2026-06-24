@@ -5,23 +5,25 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
-import { Extension, textblockTypeInputRule } from "@tiptap/core";
+import { Extension, InputRule, textblockTypeInputRule } from "@tiptap/core";
+import Heading from "@tiptap/extension-heading";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
-import type { EditorState } from "@tiptap/pm/state";
+import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { Link2, Highlighter, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink } from "lucide-react";
+import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment, Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { cx } from "@/lib/utils";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { typographyCssVars } from "@/lib/notes/typography";
+import { titleDragGuard } from "@/lib/notes/titleDragGuard";
 import { HeadingFold } from "./headingFold";
 import { CodeBlockView } from "./CodeBlockView";
 import { QuickSwatchRow, MoreColorPopover, TEXT_COLOR_QUICK, HIGHLIGHT_SWATCHES } from "./ColorPalette";
@@ -35,6 +37,7 @@ import { useWikiLinkContext } from "./WikiLinkContext";
 import { SlashCommandSuggestion } from "./SlashCommand";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import { TaskListMarkdownBridge } from "./TaskListMarkdownBridge";
+import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
 // 표를 쓰지 않는 노트에서는 이 작은 플로팅 툴바조차 메인 청크에 묶이지 않도록 분리한다.
 // Table/TableCell 등 TipTap extension 자체는 그대로 유지(동적 등록은 사이드 이펙트 위험이
 // 커서 시도하지 않음) — 여기서 지연시키는 건 순수 React UI뿐이다.
@@ -47,13 +50,20 @@ import { lowlight } from "./lowlightSetup";
 export type EditMode = "read" | "edit";
 export type AiActionType = "summarize" | "rewrite";
 
+const INLINE_REWRITE_CONTEXT_CHARS = 1000;
+
 /* ── Markdown → HTML (초기 로딩) ─────────────────────────────────────── */
 function escHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function inlineHtml(text: string) {
-  return text
+  return escHtml(text)
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, href: string) => {
+      const safeHref = href.replace(/"/g, "&quot;");
+      return `<a href="${safeHref}">${label}</a>`;
+    })
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -114,11 +124,14 @@ function markdownToHtml(md: string): string {
     if (inCode) { codeLines.push(line); continue; }
 
     if (line.startsWith("### ")) {
-      flushList(); out.push(`<h3>${inlineHtml(line.slice(4))}</h3>`);
+      // "#"+공백을 지우지 않고 그대로 둔다 — 헤딩이 이제 실제 텍스트에 마크다운 기호를
+      // 포함하는 라이브 프리뷰 방식이라(MarkdownHeading 참고), 시드 데이터도 동일한 형태로
+      // 로드해야 변환된 헤딩과 똑같이 그 기호 위/사이로 커서를 자유롭게 둘 수 있다.
+      flushList(); out.push(`<h3>### ${inlineHtml(line.slice(4))}</h3>`);
     } else if (line.startsWith("## ")) {
-      flushList(); out.push(`<h2>${inlineHtml(line.slice(3))}</h2>`);
+      flushList(); out.push(`<h2>## ${inlineHtml(line.slice(3))}</h2>`);
     } else if (line.startsWith("# ")) {
-      flushList(); out.push(`<h1>${inlineHtml(line.slice(2))}</h1>`);
+      flushList(); out.push(`<h1># ${inlineHtml(line.slice(2))}</h1>`);
     } else if (line.startsWith("> ")) {
       flushList();
       out.push(`<blockquote><p>${inlineHtml(line.slice(2))}</p></blockquote>`);
@@ -161,6 +174,151 @@ function resolveEditorHtml(rawContent: string): string {
   if (trimmed === "") return "";
   if (trimmed.startsWith("<")) return rawContent;
   return markdownToHtml(rawContent);
+}
+
+function markdownToEditorInsertionHtml(rawContent: string): string {
+  const trimmed = rawContent.trim();
+  if (trimmed === "") return "";
+  if (trimmed.startsWith("<")) return trimmed;
+  if (isInlineMarkdown(trimmed)) return inlineHtml(trimmed);
+  return markdownToHtml(trimmed);
+}
+
+function isInlineMarkdown(value: string) {
+  if (value.includes("\n")) return false;
+  return !/^(#{1,6}\s|>\s|([-*]|\d+\.)\s|```)/.test(value);
+}
+
+function escapeMarkdownText(text: string) {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/~/g, "\\~");
+}
+
+function escapeMarkdownCode(text: string) {
+  return text.replace(/`/g, "\\`");
+}
+
+function escapeMarkdownLinkUrl(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function serializeRangeAsMarkdown(editor: Editor, range: { from: number; to: number }) {
+  return serializeFragmentAsMarkdown(editor.state.doc.slice(range.from, range.to).content).trim();
+}
+
+function serializeFragmentAsMarkdown(fragment: Fragment, depth = 0) {
+  const blocks: string[] = [];
+  fragment.forEach((node) => {
+    const serialized = serializeNodeAsMarkdown(node, depth).trimEnd();
+    if (serialized.trim()) blocks.push(serialized);
+  });
+  return blocks.join("\n\n");
+}
+
+function serializeNodeAsMarkdown(node: ProseMirrorNode, depth = 0): string {
+  switch (node.type.name) {
+    case "paragraph":
+      return serializeInlineContent(node);
+    case "heading": {
+      const level = Math.min(6, Math.max(1, Number(node.attrs.level ?? 1)));
+      return `${"#".repeat(level)} ${serializeInlineContent(node)}`;
+    }
+    case "blockquote":
+      return serializeFragmentAsMarkdown(node.content, depth)
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n");
+    case "bulletList":
+      return serializeListAsMarkdown(node, false, depth);
+    case "orderedList":
+      return serializeListAsMarkdown(node, true, depth);
+    case "listItem":
+      return serializeListItemAsMarkdown(node, "- ", depth);
+    case "codeBlock": {
+      const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+      return `\`\`\`${language}\n${node.textContent}\n\`\`\``;
+    }
+    case "horizontalRule":
+      return "---";
+    case "image": {
+      const alt = typeof node.attrs.alt === "string" ? escapeMarkdownText(node.attrs.alt) : "";
+      const src = typeof node.attrs.src === "string" ? escapeMarkdownLinkUrl(node.attrs.src) : "";
+      return src ? `![${alt}](${src})` : alt;
+    }
+    default:
+      if (node.isText) return serializeMarkedText(node.text ?? "", node.marks);
+      if (node.isTextblock) return serializeInlineContent(node);
+      if (node.isLeaf) return node.textContent ? escapeMarkdownText(node.textContent) : "";
+      return serializeFragmentAsMarkdown(node.content, depth);
+  }
+}
+
+function serializeInlineContent(node: ProseMirrorNode) {
+  let output = "";
+  node.forEach((child) => {
+    if (child.isText) {
+      output += serializeMarkedText(child.text ?? "", child.marks);
+    } else if (child.type.name === "hardBreak") {
+      output += "\n";
+    } else if (child.type.name === "image") {
+      output += serializeNodeAsMarkdown(child);
+    } else {
+      output += child.textContent ? escapeMarkdownText(child.textContent) : "";
+    }
+  });
+  return output;
+}
+
+function serializeMarkedText(text: string, marks: readonly Mark[]) {
+  if (!text) return "";
+  const codeMark = marks.find((mark) => mark.type.name === "code");
+  let output = codeMark ? `\`${escapeMarkdownCode(text)}\`` : escapeMarkdownText(text);
+
+  for (const mark of marks) {
+    if (mark.type.name === "code") continue;
+    if (mark.type.name === "bold") output = `**${output}**`;
+    else if (mark.type.name === "italic") output = `*${output}*`;
+    else if (mark.type.name === "strike") output = `~~${output}~~`;
+    else if (mark.type.name === "link" && typeof mark.attrs.href === "string") {
+      output = `[${output}](${escapeMarkdownLinkUrl(mark.attrs.href)})`;
+    }
+  }
+  return output;
+}
+
+function serializeListAsMarkdown(node: ProseMirrorNode, ordered: boolean, depth: number) {
+  const items: string[] = [];
+  let number = Number(node.attrs.start ?? 1);
+  node.forEach((child) => {
+    if (child.type.name !== "listItem") return;
+    const marker = ordered ? `${number}. ` : "- ";
+    items.push(serializeListItemAsMarkdown(child, marker, depth));
+    number += 1;
+  });
+  return items.join("\n");
+}
+
+function serializeListItemAsMarkdown(node: ProseMirrorNode, marker: string, depth: number) {
+  const indent = "  ".repeat(depth);
+  const childBlocks: string[] = [];
+  node.forEach((child) => {
+    if (child.type.name === "paragraph") childBlocks.push(serializeInlineContent(child));
+    else childBlocks.push(serializeNodeAsMarkdown(child, depth + 1));
+  });
+
+  const [first = "", ...rest] = childBlocks.filter((block) => block.trim());
+  const continuation = `${indent}${" ".repeat(marker.length)}`;
+  const lines = [`${indent}${marker}${first}`];
+  for (const block of rest) {
+    lines.push(...block.split("\n").map((line) => `${continuation}${line}`));
+  }
+  return lines.join("\n");
 }
 
 /* ── Obsidian Live Preview ────────────────────────────────────────────── */
@@ -208,39 +366,29 @@ function computeLivePreviewDecorations(editor: Editor, state: EditorState): Deco
   const { $from, from, to } = selection;
   const decos: Decoration[] = [];
 
-  /* ── Heading prefix 위젯
-     커서가 안에 있을 때(opacity 0.45) + 빈 heading(opacity 0.3)에 항상 표시.
-     빈 heading에 marker를 보여야 Enter→split 후 시각적으로 heading이 남아 있게 됨. */
+  /* ── 헤딩의 "## " 마크다운 기호 — Obsidian Live Preview 방식(커서가 그 줄에 있을 때만 표시)
+     "## "는 decoration 위젯이 아니라 heading 노드의 실제 텍스트 내용 일부다(아래 MarkdownHeading
+     커스텀 input rule이 입력된 "#"+공백을 지우지 않고 그대로 둔다) — 그래야 사용자가 그 위/사이로
+     커서를 자유롭게 두고 직접 고칠 수 있다. 표시 여부(cursorInside)는 selection에 의존하지만,
+     이 함수를 호출하는 Plugin.apply()가 실제 드래그 중(mousedown~mouseup)에는 이 함수를 절대
+     다시 호출하지 않고 이전 decoration을 위치만 매핑해 그대로 쓴다(파일 상단 MarkdownLivePreview
+     주석 참고, blockquote/인라인 코드 마커도 이미 같은 패턴) — 그래서 cursorInside가 바뀌어도
+     "드래그가 진행되는 동안" DOM이 흔들리는 일은 없다(과거 버그는 정확히 이 보호가 없을 때만
+     발생했다). 단순 클릭/화살표 이동처럼 드래그가 아닌 선택 변경은 한 번에 끝나는 동작이라
+     이 토글로 인한 DOM 변경이 진행 중인 네이티브 제스처를 방해할 일이 없다. */
   doc.forEach((node, offset) => {
     if (node.type.name !== "heading") return;
-    const level   = node.attrs.level as number;
+    const match = /^#{1,6}\s*/.exec(node.textContent);
+    if (!match || match[0].length === 0) return;
     const nodeEnd = offset + node.nodeSize;
     const cursorInside = from > offset && to < nodeEnd;
-    const isEmpty = node.textContent === "";
-    if (!cursorInside && !isEmpty) return;
-
-    const opacity = cursorInside ? 0.45 : 0.3;
-    const prefix  = "#".repeat(level) + " ";
+    const start = offset + 1;
+    const end = start + match[0].length;
     decos.push(
-      Decoration.widget(
-        offset + 1,
-        () => {
-          const s = document.createElement("span");
-          s.textContent = prefix;
-          s.style.cssText =
-            `color:rgb(var(--txt3));opacity:${opacity};font-size:inherit;` +
-            `font-weight:inherit;line-height:inherit;` +
-            `user-select:none;pointer-events:none;`;
-          return s;
-        },
-        { side: -1, key: `md-h-prefix-${offset}-${level}-${cursorInside ? 1 : 0}` }
-      )
+      Decoration.inline(start, end, {
+        class: cursorInside ? "md-heading-syntax" : "md-heading-syntax-hidden",
+      })
     );
-    if (cursorInside) {
-      decos.push(
-        Decoration.node(offset, nodeEnd, { class: "md-source-active" })
-      );
-    }
   });
 
   /* ── Blockquote prefix (커서가 있을 때만) ── */
@@ -584,9 +732,86 @@ const MarkdownCodeFenceEnter = Extension.create({
   },
 });
 
+/* ── 마크다운 헤딩 Live Preview ───────────────────────────────────────────
+   기존 구현은 "## "를 decoration 위젯(비편집 영역)으로 보여줬다 — 보기엔 똑같아도 실제
+   텍스트가 아니라서 그 위/사이에 커서를 둘 수 없었고(클릭해도 항상 "제목" 시작 위치로
+   스냅), Backspace/Delete로 "#" 하나만 지우는 것도 불가능했다. 진짜 "마크다운을 편집하면서
+   동시에 렌더링되는" 경험을 위해 "#"+공백을 heading 노드의 실제 텍스트로 유지하도록
+   바꿨다 — Obsidian처럼 커서가 그 줄에 있을 때만 "#"를 보여주는 표시/숨김은 위
+   computeLivePreviewDecorations의 cursorInside 기반 `.md-heading-syntax`/
+   `.md-heading-syntax-hidden` decoration이 담당한다(실제 드래그 중에는 그 함수 자체가
+   재호출되지 않도록 보호돼 있어 안전 — 같은 파일의 MarkdownLivePreview 주석 참고). */
+// MarkdownHeading/HeadingLevelSync 둘 다 같은 레벨 목록을 알아야 한다 — 확장 인스턴스를 서로
+// 찾아 옵션을 읽는 대신(생성 순서/타이밍에 의존해 깨지기 쉬움) 모듈 스코프 상수 하나를 공유한다.
+const SUPPORTED_HEADING_LEVELS = [1, 2, 3] as const;
+
+const MarkdownHeading = Heading.extend({
+  addInputRules() {
+    const levels = this.options.levels as number[];
+    const maxLevel = Math.max(...levels);
+    return [
+      new InputRule({
+        // 기본 tiptap headingRule과 동일한 트리거("#"~"######" + 공백 1개, 줄 맨 앞)지만,
+        // handler에서 매치된 텍스트를 지우지 않는다(기본은 `tr.delete(range.from, range.to)`로
+        // 지운 뒤 setBlockType — 여기서는 그 delete를 빼고 setBlockType만 한다).
+        find: new RegExp(`^(#{1,${maxLevel}})\\s$`),
+        handler: ({ state, range, match }) => {
+          const level = Math.min(match[1].length, maxLevel) as 1 | 2 | 3 | 4 | 5 | 6;
+          if (!levels.includes(level)) return null;
+          // range는 이미 문서에 들어가 있는 "#" 글자들만 가리킨다(range.to는 트리거로 쓰인
+          // 공백이 아직 삽입되기 *전* 커서 위치) — prosemirror-inputrules는 매치에 쓰인 마지막
+          // 글자(공백)를 자동으로 넣어주지 않고, 핸들러가 트랜잭션에 직접 step을 안 넣으면
+          // 이 규칙 자체가 무시된다(run()의 `!tr.steps.length` 체크). 그 공백을 직접 삽입해야
+          // "## 제목"처럼 "#"와 본문 사이의 띄어쓰기가 실제 텍스트로 남는다.
+          const trailing = match[0].slice(match[1].length);
+          state.tr
+            .insertText(trailing, range.to)
+            .setBlockType(range.from, range.from, this.type, { level });
+        },
+      }),
+    ];
+  },
+});
+
+/* 위 input rule로 "## 제목"이 만들어진 뒤에도, 사용자가 그 "#" 영역을 직접 편집(스페이스/문자
+   입력, Backspace, Delete)할 수 있어야 한다 — 매 트랜잭션 뒤 모든 heading의 실제 텍스트를
+   다시 읽어 앞부분 "#" 개수에 맞춰 level 속성을 재동기화한다("## "→"###"면 레벨 3으로,
+   "#"가 하나도 안 남으면 평범한 문단으로). attrs만 바꾸거나 type만 바꾸는 것이라(텍스트 길이는
+   그대로) 다른 노드의 위치가 밀리지 않아, newState.doc을 순회하며 바로 적용해도 안전하다. */
+const HeadingLevelSync = Extension.create({
+  name: "headingLevelSync",
+  addProseMirrorPlugins() {
+    const levels: readonly number[] = SUPPORTED_HEADING_LEVELS;
+    const maxLevel = Math.max(...levels);
+    return [
+      new Plugin({
+        key: new PluginKey("headingLevelSync"),
+        appendTransaction(transactions, _oldState, newState) {
+          if (!transactions.some((tr) => tr.docChanged)) return null;
+          let tr: Transaction | null = null;
+          newState.doc.forEach((node, offset) => {
+            if (node.type.name !== "heading") return;
+            const match = /^#{1,6}/.exec(node.textContent);
+            const hashCount = match ? match[0].length : 0;
+            if (hashCount === 0) {
+              // "#"가 전부 지워졌다 — 평범한 문단으로 되돌린다.
+              (tr ?? (tr = newState.tr)).setNodeMarkup(offset, newState.schema.nodes.paragraph, {});
+              return;
+            }
+            const level = Math.min(hashCount, maxLevel);
+            if (!levels.includes(level)) return;
+            if (node.attrs.level !== level) {
+              (tr ?? (tr = newState.tr)).setNodeMarkup(offset, undefined, { ...node.attrs, level });
+            }
+          });
+          return tr;
+        },
+      }),
+    ];
+  },
+});
+
 /* ── Heading marker keyboard editing ─────────────────────────────────── */
-// Backspace at heading start → 레벨 감소 (level 1이면 StarterKit에 위임)
-// # at heading start (parentOffset 0) → 레벨 증가
 const HeadingMarkerEdit = Extension.create({
   name: "headingMarkerEdit",
   priority: 200,
@@ -627,26 +852,25 @@ const HeadingMarkerEdit = Extension.create({
           return false;
         }
       },
-      "#": () => {
+      /* "#"/Backspace로 헤딩 레벨을 직접 조작하던 핸들러는 제거했다 — "## "가 이제 진짜
+         텍스트라서, "#"를 누르면 평범한 문자 입력으로 처리되고(레벨은 아래 HeadingLevelSync가
+         결과 텍스트의 "#" 개수를 다시 세어 동기화), Backspace도 평범한 문자 삭제로 처리된다.
+         이전처럼 "커서가 맨 앞일 때만" 특별 동작하는 게 아니라, 헤딩 어디서든(예: "#|#" 사이,
+         "##| 제목") 자연스럽게 "#"를 추가/삭제해 레벨을 바꿀 수 있게 하는 게 목적이다. */
+      /* 헤딩 안에서 Home 키가 줄 시작으로 안 가는 네이티브 버그가 있었다(Playwright로 실측:
+         일반 문단에서는 정상, 헤딩 안에서만 무반응). ProseMirror 모델 기준으로 직접 텍스트
+         시작 위치로 이동시켜 우회한다 — "## "가 실제 텍스트가 된 지금도 안전망으로 유지. */
+      Home: () => {
         const { state } = this.editor;
-        const { $from, empty } = state.selection;
-        if (!empty || $from.parentOffset !== 0) return false;
+        const { $from } = state.selection;
         if ($from.parent.type.name !== "heading") return false;
-        const level = $from.parent.attrs.level as number;
-        if (level >= 6) return false;
-        return this.editor.commands.setHeading({ level: (level + 1) as 1 | 2 | 3 | 4 | 5 | 6 });
+        return this.editor.commands.setTextSelection($from.start());
       },
-      Backspace: () => {
+      "Shift-Home": () => {
         const { state } = this.editor;
-        const { $from, empty } = state.selection;
-        if (!empty || $from.parentOffset !== 0) return false;
+        const { $from, to } = state.selection;
         if ($from.parent.type.name !== "heading") return false;
-        const level = $from.parent.attrs.level as number;
-        if (level <= 1) {
-          // H1 커서 맨 앞 → paragraph로 변환 (joinBackward/앞줄 merge 방지)
-          return this.editor.commands.setParagraph();
-        }
-        return this.editor.chain().setHeading({ level: (level - 1) as 1 | 2 | 3 | 4 | 5 | 6 }).run();
+        return this.editor.commands.setTextSelection({ from: $from.start(), to });
       },
     };
   },
@@ -658,11 +882,13 @@ function BubbleBtn({
   onClick,
   title,
   children,
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -670,9 +896,14 @@ function BubbleBtn({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={cx(
         "grid h-[26px] min-w-[26px] place-items-center rounded px-1 transition-colors",
-        active ? "bg-primary/15 text-primary" : "text-txt2 hover:bg-surface2/70 hover:text-txt"
+        disabled
+          ? "cursor-not-allowed text-txt3/50"
+          : active
+            ? "bg-primary/15 text-primary"
+            : "text-txt2 hover:bg-surface2/70 hover:text-txt"
       )}
     >
       {children}
@@ -998,12 +1229,85 @@ function LinkPopover({
   );
 }
 
+type RewriteRange = {
+  from: number;
+  to: number;
+};
+
+type RewriteSuggestionState =
+  | {
+      status: "loading";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+    }
+  | {
+      status: "ready";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      suggestionId: string;
+      modelId: string;
+    }
+  | {
+      status: "error";
+      requestId: number;
+      range: RewriteRange;
+      originalPlainText: string;
+      selectedMarkdown: string;
+      contextBefore: string;
+      contextAfter: string;
+      text: string;
+      message: string;
+      suggestionId?: string;
+    };
+
+function selectedText(editor: Editor, range: RewriteRange) {
+  return editor.state.doc.textBetween(range.from, range.to, " ");
+}
+
+function inlineContext(editor: Editor, range: RewriteRange) {
+  const docSize = editor.state.doc.content.size;
+  return {
+    contextBefore: serializeRangeAsMarkdown(editor, {
+      from: Math.max(0, range.from - INLINE_REWRITE_CONTEXT_CHARS),
+      to: range.from,
+    }),
+    contextAfter: serializeRangeAsMarkdown(editor, {
+      from: range.to,
+      to: Math.min(docSize, range.to + INLINE_REWRITE_CONTEXT_CHARS),
+    }),
+  };
+}
+
+function insertMarkdownContent(editor: Editor, range: RewriteRange, text: string) {
+  editor
+    .chain()
+    .focus()
+    .insertContentAt({ from: range.from, to: range.to }, markdownToEditorInsertionHtml(text))
+    .run();
+}
+
+function messageFromUnknown(error: unknown) {
+  return error instanceof Error ? error.message : "AI 다시쓰기 요청에 실패했습니다.";
+}
+
 function BubbleToolbar({
   editor,
+  noteId,
   onAiAction,
   popoverOpenRef,
 }: {
   editor: Editor;
+  noteId: string;
   onAiAction: (type: AiActionType, text: string) => void;
   popoverOpenRef: React.MutableRefObject<boolean>;
 }) {
@@ -1012,12 +1316,166 @@ function BubbleToolbar({
     return editor.state.doc.textBetween(from, to, " ");
   }, [editor]);
 
+  const [rewriteSuggestion, setRewriteSuggestion] = useState<RewriteSuggestionState | null>(null);
+  const rewriteRequestIdRef = useRef(0);
+  const rewriteAbortRef = useRef<AbortController | null>(null);
+  const rewritePanelOpen = rewriteSuggestion !== null;
+
+  useEffect(() => {
+    if (!rewritePanelOpen) return;
+    popoverOpenRef.current = true;
+    return () => { popoverOpenRef.current = false; };
+  }, [rewritePanelOpen, popoverOpenRef]);
+
+  useEffect(() => {
+    return () => rewriteAbortRef.current?.abort();
+  }, []);
+
+  const requestRewrite = useCallback(async (saved?: RewriteSuggestionState) => {
+    const range = saved?.range ?? { from: editor.state.selection.from, to: editor.state.selection.to };
+    if (range.from === range.to) return;
+
+    const originalPlainText = saved?.originalPlainText ?? selectedText(editor, range);
+    if (!originalPlainText.trim()) return;
+
+    const selectedMarkdown = saved?.selectedMarkdown ?? (serializeRangeAsMarkdown(editor, range) || originalPlainText);
+
+    const context = saved
+      ? { contextBefore: saved.contextBefore, contextAfter: saved.contextAfter }
+      : inlineContext(editor, range);
+    const requestId = rewriteRequestIdRef.current + 1;
+    rewriteRequestIdRef.current = requestId;
+    rewriteAbortRef.current?.abort();
+    const controller = new AbortController();
+    rewriteAbortRef.current = controller;
+
+    setRewriteSuggestion({
+      status: "loading",
+      requestId,
+      range,
+      originalPlainText,
+      selectedMarkdown,
+      contextBefore: context.contextBefore,
+      contextAfter: context.contextAfter,
+      text: "",
+    });
+
+    let streamedText = "";
+    try {
+      const done = await createInlineAssistStream(
+        {
+          noteId,
+          selectedText: selectedMarkdown,
+          contextBefore: context.contextBefore,
+          contextAfter: context.contextAfter,
+          action: "REWRITE",
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (text) => {
+            streamedText += text;
+            setRewriteSuggestion((current) =>
+              current?.requestId === requestId
+                ? { ...current, status: "loading", text: streamedText }
+                : current
+            );
+          },
+        }
+      );
+      if (!done) throw new Error("AI 다시쓰기 완료 이벤트를 받지 못했습니다.");
+
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "ready",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              suggestionId: done.suggestionId,
+              modelId: done.modelId,
+            }
+          : current
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setRewriteSuggestion((current) =>
+        current?.requestId === requestId
+          ? {
+              status: "error",
+              requestId,
+              range,
+              originalPlainText,
+              selectedMarkdown,
+              contextBefore: context.contextBefore,
+              contextAfter: context.contextAfter,
+              text: streamedText,
+              message: messageFromUnknown(error),
+            }
+          : current
+      );
+    }
+  }, [editor, noteId]);
+
+  const acceptRewrite = useCallback(async () => {
+    if (!rewriteSuggestion || rewriteSuggestion.status !== "ready") return;
+    const currentText = selectedText(editor, rewriteSuggestion.range);
+    if (currentText !== rewriteSuggestion.originalPlainText) {
+      setRewriteSuggestion({
+        ...rewriteSuggestion,
+        status: "error",
+        message: "선택 영역이 변경되어 제안을 적용할 수 없습니다.",
+        suggestionId: rewriteSuggestion.suggestionId,
+      });
+      return;
+    }
+
+    insertMarkdownContent(editor, rewriteSuggestion.range, rewriteSuggestion.text);
+    setRewriteSuggestion(null);
+    decideAiSuggestion(rewriteSuggestion.suggestionId, { decision: "ACCEPTED" }).catch((error) => {
+      console.warn("Failed to record accepted AI suggestion.", error);
+    });
+  }, [editor, rewriteSuggestion]);
+
+  const rejectRewrite = useCallback(() => {
+    const suggestionId = rewriteSuggestion?.status === "ready" || rewriteSuggestion?.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    setRewriteSuggestion(null);
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REJECTED" }).catch((error) => {
+        console.warn("Failed to record rejected AI suggestion.", error);
+      });
+    }
+  }, [rewriteSuggestion]);
+
+  const regenerateRewrite = useCallback(() => {
+    if (!rewriteSuggestion) return;
+    const suggestionId = rewriteSuggestion.status === "ready" || rewriteSuggestion.status === "error"
+      ? rewriteSuggestion.suggestionId
+      : undefined;
+    if (suggestionId) {
+      decideAiSuggestion(suggestionId, { decision: "REGENERATED" }).catch((error) => {
+        console.warn("Failed to record regenerated AI suggestion.", error);
+      });
+    }
+    void requestRewrite(rewriteSuggestion);
+  }, [requestRewrite, rewriteSuggestion]);
+
   const [recentTextColors, setRecentTextColors] = useState<string[]>([]);
   const [recentHighlights, setRecentHighlights] = useState<string[]>([]);
   const pushRecent = (list: string[], value: string) => [value, ...list.filter((v) => v !== value)].slice(0, 4);
 
   const currentTextColor = (editor.getAttributes("textStyle").color as string) ?? null;
   const currentHighlight = (editor.getAttributes("highlight").color as string) ?? null;
+  const rewritePreviewHtml =
+    rewriteSuggestion && rewriteSuggestion.status !== "error" && rewriteSuggestion.text.trim()
+      ? markdownToHtml(rewriteSuggestion.text)
+      : null;
 
   return (
     <div
@@ -1120,13 +1578,82 @@ function BubbleToolbar({
       >
         <Sparkles size={13} />
       </BubbleBtn>
-      <BubbleBtn
-        active={false}
-        onClick={() => onAiAction("rewrite", getSelectedText())}
-        title="AI로 다시쓰기"
-      >
-        <Wand2 size={13} />
-      </BubbleBtn>
+      <div className="relative">
+        <BubbleBtn
+          active={rewritePanelOpen}
+          disabled={rewriteSuggestion?.status === "loading"}
+          onClick={() => void requestRewrite()}
+          title="AI로 다시쓰기"
+        >
+          {rewriteSuggestion?.status === "loading" ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+        </BubbleBtn>
+        {rewriteSuggestion ? (
+          <div
+            className="absolute right-0 top-full z-50 mt-1.5 w-[320px] overflow-hidden rounded-lg border border-line/60 p-2.5"
+            style={{ background: "rgb(var(--surface))", boxShadow: "0 10px 28px -6px rgba(2,6,23,0.48)" }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[11.5px] font-semibold text-txt2">
+              <Wand2 size={13} className="text-primary" />
+              <span className="flex-1">AI 다시쓰기 제안</span>
+              {rewriteSuggestion.status === "ready" ? (
+                <span className="rounded bg-surface2/70 px-1.5 py-0.5 text-[10.5px] text-txt3">{rewriteSuggestion.modelId}</span>
+              ) : null}
+            </div>
+            <div className="max-h-44 overflow-y-auto rounded-md border border-line/40 bg-surface2/30 px-2.5 py-2 text-[12.5px] leading-relaxed text-txt2">
+              {rewriteSuggestion.status === "error" ? (
+                <span className="text-red-400">{rewriteSuggestion.message}</span>
+              ) : rewritePreviewHtml ? (
+                <div className="tiptap-note-content" dangerouslySetInnerHTML={{ __html: rewritePreviewHtml }} />
+              ) : (
+                <span className="text-txt3">다시 쓰는 중...</span>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              {rewriteSuggestion.status === "ready" ? (
+                <>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={regenerateRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="다시 생성"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={rejectRewrite}
+                    className="grid h-7 w-7 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                    title="거절"
+                  >
+                    <X size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void acceptRewrite()}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11.5px] font-semibold text-white transition-colors hover:brightness-110"
+                  >
+                    <Check size={13} />
+                    수락
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={rejectRewrite}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-semibold text-txt3 transition-colors hover:bg-surface2/70 hover:text-txt"
+                >
+                  <X size={13} />
+                  닫기
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1333,11 +1860,16 @@ const BrainXTableHeader = TableHeader.extend({
 const NOTE_EDITOR_EXTENSIONS = [
   StarterKit.configure({
     codeBlock: false,
+    // 기본 Heading은 "#"+공백을 지워버리는 input rule을 쓴다(라이브 프리뷰와 상충) — 아래
+    // MarkdownHeading(이 "#"를 실제 텍스트로 유지)으로 대체한다.
+    heading: false,
     // protocols 기본 허용 목록(http/https/mailto 등)에는 brainx-note:// 같은 커스텀 스킴이
     // 없어서 기본 검증을 통과하지 못해 setLink가 조용히 실패한다(LinkPopover의 노트 연결
     // 기능, INTERNAL_LINK_PREFIX) — 추가해줘야 내부 노트 링크가 실제로 적용된다.
     link: { openOnClick: false, autolink: false, protocols: ["http", "https", "mailto", "tel", "brainx-note"] },
   }),
+  MarkdownHeading.configure({ levels: [...SUPPORTED_HEADING_LEVELS] }),
+  HeadingLevelSync,
   MarkdownLivePreview,
   MarkdownCodeFenceEnter,
   HeadingMarkerEdit,
@@ -1577,7 +2109,15 @@ function rangeToAnchorRect(range: Range): { left: number; top: number; bottom: n
   return null;
 }
 
-function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: (type: AiActionType, text: string) => void }) {
+function CustomBubbleMenu({
+  editor,
+  noteId,
+  onAiAction,
+}: {
+  editor: Editor;
+  noteId: string;
+  onAiAction: (type: AiActionType, text: string) => void;
+}) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number; bottom: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -1588,6 +2128,11 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
   const popoverOpenRef = useRef(false);
 
   const updateAnchor = useCallback(() => {
+    // 제목 input 안에서 드래그가 진행 중이면 이 본문 에디터의 selection/버블메뉴 상태를
+    // 전혀 건드리지 않는다 — 제목은 제목 컴포넌트 내부에서 독립적으로 selection/focus를
+    // 관리해야 하고, 본문 쪽 로직(여기)이 그 사이에 끼어들면 안 된다(EditorPanel.tsx의 제목
+    // input mousedown이 켜고, window capture 단계 mouseup에서 끈다).
+    if (titleDragGuard.active) return;
     if (!editor.isEditable) {
       setAnchor(null);
       return;
@@ -1635,7 +2180,14 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
       const belongsHere = !!anchorEl && editor.view.dom.contains(anchorEl);
 
       if (!belongsHere) {
-        if (settling || popoverOpenRef.current) return; // 잔여 collapse 가능성 — 마지막 위치 유지, 숨기지 않음
+        // anchor가 확실히 이 에디터 바깥에 있다 — settling(이 에디터 "자기 자신"의 드래그가
+        // 남긴 잔여 collapse를 무시하기 위한 보호)을 여기서도 적용하면 안 된다. anchor가
+        // 다른 곳이면 "다른 곳에서 새로운 선택이 시작됐다"는 확실한 신호이므로 즉시
+        // 숨겨야 한다. settling을 이 분기에도 걸어두면, 직전 드래그(이 패널 안에서의 진짜
+        // 드래그)의 150ms settle 구간과 겹쳐서 전혀 무관한 새 선택(예: 제목 영역 드래그,
+        // 다른 패널 드래그)이 시작돼도 이 패널의 버블 메뉴가 안 사라지는 버그가 있었다
+        // (제목을 드래그하면 다른 패널까지 선택이 이어지는 것처럼 보이던 문제의 원인).
+        if (popoverOpenRef.current) return;
         setAnchor(null);
         return;
       }
@@ -1734,7 +2286,7 @@ function CustomBubbleMenu({ editor, onAiAction }: { editor: Editor; onAiAction: 
         zIndex: 2000,
       }}
     >
-      <BubbleToolbar editor={editor} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
+      <BubbleToolbar editor={editor} noteId={noteId} onAiAction={onAiAction} popoverOpenRef={popoverOpenRef} />
     </div>,
     document.body
   );
@@ -2014,7 +2566,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           event.target.value = "";
         }}
       />
-      {editor && <CustomBubbleMenu editor={editor} onAiAction={onAiAction} />}
+      {editor && <CustomBubbleMenu editor={editor} noteId={note.id} onAiAction={onAiAction} />}
       {editor && <TableToolbar editor={editor} />}
       {editor && <WikiLinkAutocomplete editor={editor} />}
       {editor && (

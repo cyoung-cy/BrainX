@@ -148,6 +148,8 @@ export function SlashCommandMenu({
   const [state, setState] = useState(() => SlashCommandKey.getState(editor.state) ?? null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     const update = () => setState(SlashCommandKey.getState(editor.state) ?? null);
@@ -175,6 +177,13 @@ export function SlashCommandMenu({
   useEffect(() => {
     setSelectedIndex(0);
   }, [query, active]);
+
+  // 키보드로 선택이 이동할 때 메뉴 스크롤도 따라가야 한다 — max-h-[280px]+overflow-y-auto라
+  // 후보가 많으면(코드블록 이후 항목들) 스크롤 없이는 선택이 화면 밖으로 밀려나 "더 안
+  // 내려가는 것처럼" 보였다(실제로는 selectedIndex는 계속 증가하고 있었음).
+  useEffect(() => {
+    itemRefs.current[selectedIndex]?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
 
   useLayoutEffect(() => {
     if (!active || !range) {
@@ -233,6 +242,7 @@ export function SlashCommandMenu({
 
   return createPortal(
     <div
+      ref={listRef}
       style={{
         position: "fixed",
         left: Math.max(4, Math.min(pos.left, window.innerWidth - 244)),
@@ -248,6 +258,7 @@ export function SlashCommandMenu({
           return (
             <button
               key={c.id}
+              ref={(el) => { itemRefs.current[idx] = el; }}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => commit(c)}

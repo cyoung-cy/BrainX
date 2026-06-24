@@ -1,0 +1,104 @@
+package com.brainx.intelligence.chat.domain;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+public record ChatMessage(
+    String messageId,
+    String threadId,
+    String userId,
+    ChatRole role,
+    String content,
+    String modelId,
+    Map<String, Object> noteScope,
+    List<ChatCitation> citations,
+    ChatTokenUsage tokenUsage,
+    Instant createdAt
+) {
+
+    public ChatMessage {
+        messageId = requireText(messageId, "messageId");
+        threadId = requireText(threadId, "threadId");
+        userId = requireText(userId, "userId");
+        if (role == null) {
+            throw new ChatDomainException("role must not be null.");
+        }
+        content = requireText(content, "content");
+        modelId = modelId == null || modelId.isBlank() ? null : modelId.trim();
+        noteScope = immutableMap(noteScope);
+        citations = immutableList(citations);
+        createdAt = createdAt == null ? Instant.now() : createdAt;
+    }
+
+    public static ChatMessage user(
+        String messageId,
+        String threadId,
+        String userId,
+        String content,
+        String modelId,
+        Map<String, Object> noteScope,
+        Instant createdAt
+    ) {
+        return new ChatMessage(
+            messageId,
+            threadId,
+            userId,
+            ChatRole.USER,
+            content,
+            modelId,
+            noteScope,
+            List.of(),
+            null,
+            createdAt
+        );
+    }
+
+    public static ChatMessage assistant(
+        String messageId,
+        String threadId,
+        String userId,
+        String content,
+        String modelId,
+        List<ChatCitation> citations,
+        ChatTokenUsage tokenUsage,
+        Instant createdAt
+    ) {
+        return new ChatMessage(
+            messageId,
+            threadId,
+            userId,
+            ChatRole.ASSISTANT,
+            content,
+            modelId,
+            Map.of(),
+            citations,
+            tokenUsage,
+            createdAt
+        );
+    }
+
+    private static String requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new ChatDomainException(name + " must not be blank.");
+        }
+        return value.trim();
+    }
+
+    private static Map<String, Object> immutableMap(Map<String, Object> values) {
+        if (values == null || values.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
+    }
+
+    private static List<ChatCitation> immutableList(List<ChatCitation> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(new ArrayList<>(values));
+    }
+}
