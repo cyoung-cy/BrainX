@@ -65,7 +65,7 @@ class NoteAutoLinkServiceTest {
         aiChatPort.responses.add("""
             [
               {"anchorText":"Knowledge Graphs","targetNoteId":"target","reason":"same topic","confidence":0.8},
-              {"anchorText":"Missing Anchor","targetNoteId":"target","reason":"bad","confidence":0.7}
+              {"anchorText":"Missing Anchor","targetNoteId":"target","reason":"bad","confidence":0.8}
             ]
             """);
         aiChatPort.responses.add("[]");
@@ -84,6 +84,7 @@ class NoteAutoLinkServiceTest {
         assertThat(strategy.suggestions()).hasSize(1);
         assertThat(strategy.suggestions().getFirst().anchor().matchedText()).isEqualTo("Knowledge Graphs");
         assertThat(strategy.filteredInvalidAnchorCount()).isEqualTo(1);
+        assertThat(strategy.filteredQualityCount()).isZero();
         assertThat(strategy.usageRecords()).hasSize(2);
         assertThat(strategy.usageSummary().inputTokens()).isEqualTo(20);
     }
@@ -126,13 +127,319 @@ class NoteAutoLinkServiceTest {
             .doesNotContain("targetNoteId: c-low");
     }
 
+    @Test
+    void lowConfidenceAndGenericAnchorAreQualityFiltered() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Source", "Kafka and Detailed anchor phrase both appear."));
+        projectionStore.notes.add(note("target", "Target", "Target details."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [
+              {"anchorText":"Detailed anchor phrase","targetNoteId":"target","reason":"good","confidence":0.8},
+              {"anchorText":"Detailed anchor phrase","targetNoteId":"target","reason":"weak","confidence":0.7},
+              {"anchorText":"Kafka","targetNoteId":"target","reason":"generic","confidence":0.95}
+            ]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).hasSize(1);
+        assertThat(strategy.suggestions().getFirst().anchor().matchedText()).isEqualTo("Detailed anchor phrase");
+        assertThat(strategy.filteredQualityCount()).isEqualTo(2);
+    }
+
+    @Test
+    void vectorLlmRequiresStrongVectorScoreAfterLlm() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Source", "Detailed anchor phrase points to weak target."));
+        projectionStore.notes.add(note("weak-target", "Weak Target", "Weak target details."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        chunkRetrieval.queuedResults.add(List.of(chunk("weak-target", "Weak Target", 0.55d)));
+        chunkRetrieval.queuedResults.add(List.of());
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Detailed anchor phrase","targetNoteId":"weak-target","reason":"weak vector","confidence":0.95}]
+            """);
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.VECTOR_LLM,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.candidatePairCount()).isEqualTo(1);
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredQualityCount()).isEqualTo(1);
+    }
+
+    @Test
+    void sameSourceTargetKeepsBestSuggestionOnly() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note(
+            "source",
+            "Source",
+            "Detailed anchor phrase and Another detailed anchor phrase are both present."
+        ));
+        projectionStore.notes.add(note("target", "Target", "Target details."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [
+              {"anchorText":"Detailed anchor phrase","targetNoteId":"target","reason":"ok","confidence":0.8},
+              {"anchorText":"Another detailed anchor phrase","targetNoteId":"target","reason":"better","confidence":0.95}
+            ]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).hasSize(1);
+        assertThat(strategy.suggestions().getFirst().anchor().matchedText()).isEqualTo("Another detailed anchor phrase");
+        assertThat(strategy.filteredQualityCount()).isEqualTo(1);
+    }
+
+    @Test
+    void targetFloodingIsLimited() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        for (int index = 1; index <= 6; index++) {
+            projectionStore.notes.add(note(
+                "source-" + index,
+                "Source " + index,
+                "Detailed anchor phrase " + index + " points to one target."
+            ));
+        }
+        projectionStore.notes.add(note("z-target", "Target", "Target details."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        for (int index = 1; index <= 6; index++) {
+            aiChatPort.responses.add("""
+                [{"anchorText":"Detailed anchor phrase %d","targetNoteId":"z-target","reason":"same target","confidence":0.9}]
+                """.formatted(index));
+        }
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).hasSize(5);
+        assertThat(strategy.suggestions()).allMatch(suggestion -> suggestion.targetNoteId().equals("z-target"));
+        assertThat(strategy.filteredQualityCount()).isEqualTo(1);
+    }
+
+    @Test
+    void duplicateNormalizedTitlesAreFiltered() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "BrainX - 뇌 탐사", "Detailed anchor phrase is here."));
+        projectionStore.notes.add(note("target", "brainx 뇌 탐사 (Brain Exploration)", "Detailed target evidence."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Detailed anchor phrase","targetNoteId":"target","reason":"same title","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredDuplicateTitleCount()).isEqualTo(1);
+    }
+
+    @Test
+    void broadTargetWithLowOverlapIsWeakRelationFilteredByRule() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Save markdown file", "Local file persistence mentions Detailed anchor phrase."));
+        projectionStore.notes.add(note("target", "BrainX 도메인 기준 MSA / API / 이벤트 계약", "Service contracts and event envelope."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Detailed anchor phrase","targetNoteId":"target","reason":"broad project topic","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredWeakRelationCount()).isEqualTo(1);
+        assertThat(aiChatPort.requests).hasSize(2);
+    }
+
+    @Test
+    void broadTargetWithUnrelatedSourceTitleAndShallowAnchorOverlapIsWeakRelationFiltered() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Save markdown content to a file", "1. Database per Service"));
+        projectionStore.notes.add(note(
+            "target",
+            "BrainX 도메인 기준 MSA / API / 이벤트 계약",
+            "Database per Service and service ownership are described here."
+        ));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Database per Service","targetNoteId":"target","reason":"database per service","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredWeakRelationCount()).isEqualTo(1);
+    }
+
+    @Test
+    void fileOperationTitleToBroadTargetIsWeakRelationFiltered() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note(
+            "source",
+            "Save the markdown content to a file",
+            "### ① Database per Service (데이터 격리)"
+        ));
+        projectionStore.notes.add(note(
+            "target",
+            "BrainX 도메인 기준 MSA / API / 이벤트 계약",
+            "Database per Service and event contract details."
+        ));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Database per Service","targetNoteId":"target","reason":"too broad","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredWeakRelationCount()).isEqualTo(1);
+    }
+
+    @Test
+    void relationVerifierKeepsAcceptedRelationAndRecordsUsage() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Workspace Notes", "Workspace contract anchor explains integration."));
+        projectionStore.notes.add(note("target", "BrainX 도메인 기준 MSA / API / 이벤트 계약", "Workspace contract responsibility."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Workspace contract anchor","targetNoteId":"target","reason":"contract detail","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("""
+            {"relationType":"EXPANDS","confidence":0.86,"reason":"target expands the contract"}
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort, true).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).hasSize(1);
+        assertThat(strategy.filteredWeakRelationCount()).isZero();
+        assertThat(strategy.usageRecords()).extracting("featureId")
+            .contains("note-auto-link-relation-verifier-chat");
+        assertThat(strategy.usageSummary().inputTokens()).isEqualTo(30);
+    }
+
+    @Test
+    void relationVerifierRejectsWeakRelation() {
+        FakeNoteSourcePort projectionStore = new FakeNoteSourcePort();
+        projectionStore.notes.add(note("source", "Workspace Notes", "Workspace contract anchor explains integration."));
+        projectionStore.notes.add(note("target", "BrainX 도메인 기준 MSA / API / 이벤트 계약", "Workspace contract responsibility."));
+        FakeChunkRetrieval chunkRetrieval = new FakeChunkRetrieval();
+        FakeAiChatPort aiChatPort = new FakeAiChatPort();
+        aiChatPort.responses.add("""
+            [{"anchorText":"Workspace contract anchor","targetNoteId":"target","reason":"too broad","confidence":0.95}]
+            """);
+        aiChatPort.responses.add("""
+            {"relationType":"BROAD_TOPIC","confidence":0.92,"reason":"only broad domain"}
+            """);
+        aiChatPort.responses.add("[]");
+
+        var result = service(projectionStore, chunkRetrieval, aiChatPort, true).analyze(new AutoLinkCommand(
+            "user-1",
+            "group-1",
+            NoteAutoLinkStrategy.LLM_ONLY,
+            50,
+            "gpt-5.4-mini"
+        ));
+
+        var strategy = result.strategies().getFirst();
+        assertThat(strategy.suggestions()).isEmpty();
+        assertThat(strategy.filteredWeakRelationCount()).isEqualTo(1);
+    }
+
     private static NoteAutoLinkService service(
         FakeNoteSourcePort projectionStore,
         FakeChunkRetrieval chunkRetrieval,
         FakeAiChatPort aiChatPort
     ) {
+        return service(projectionStore, chunkRetrieval, aiChatPort, false);
+    }
+
+    private static NoteAutoLinkService service(
+        FakeNoteSourcePort projectionStore,
+        FakeChunkRetrieval chunkRetrieval,
+        FakeAiChatPort aiChatPort,
+        boolean relationVerifierEnabled
+    ) {
         NoteAutoLinkProperties properties = new NoteAutoLinkProperties();
         properties.setMaxNotes(50);
+        properties.setRelationVerifierEnabled(relationVerifierEnabled);
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
         FakeUsageCapture usageCapture = new FakeUsageCapture();
         beanFactory.registerSingleton("autoLinkUsageCapturePort", usageCapture);

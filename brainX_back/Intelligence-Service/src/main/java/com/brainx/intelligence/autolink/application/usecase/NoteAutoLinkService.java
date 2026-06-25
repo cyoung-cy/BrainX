@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -61,11 +62,82 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
     private static final String SOURCE_SERVICE = "AI-Service";
     private static final String VECTOR_FEATURE_ID = "note-auto-link-vector-refine-chat";
     private static final String LLM_ONLY_FEATURE_ID = "note-auto-link-llm-only-chat";
+    private static final String RELATION_VERIFIER_FEATURE_ID = "note-auto-link-relation-verifier-chat";
     private static final int SOURCE_WINDOW_LENGTH = 1_200;
     private static final int SOURCE_WINDOW_OVERLAP = 150;
     private static final int SOURCE_MARKDOWN_PROMPT_LIMIT = 4_000;
     private static final int NOTE_CARD_EXCERPT_LIMIT = 500;
     private static final int EVIDENCE_LIMIT = 600;
+    private static final int ANCHOR_CONTEXT_RADIUS = 240;
+    private static final Set<String> GENERIC_ANCHOR_TERMS = Set.of(
+        "ai",
+        "api",
+        "crud",
+        "db",
+        "kafka",
+        "msa",
+        "rag",
+        "ui",
+        "검색",
+        "랜딩",
+        "목록",
+        "문서",
+        "서비스",
+        "이벤트",
+        "정리"
+    );
+    private static final Set<String> BROAD_TARGET_TERMS = Set.of(
+        "api",
+        "architecture",
+        "contract",
+        "msa",
+        "spec",
+        "계약",
+        "구조",
+        "도메인",
+        "명세",
+        "아키텍처",
+        "통합"
+    );
+    private static final Set<String> VENDOR_ONLY_TERMS = Set.of(
+        "chromadb",
+        "openai",
+        "pinecone",
+        "qdrant",
+        "voyage",
+        "weaviate"
+    );
+    private static final Set<String> WEAK_RELATION_TYPES = Set.of(
+        "BROAD_TOPIC",
+        "SAME_DOMAIN_ONLY",
+        "VENDOR_NAME_ONLY",
+        "WEAK_ANALOGY",
+        "UNRELATED"
+    );
+    private static final Set<String> TOKEN_STOP_WORDS = Set.of(
+        "and",
+        "api",
+        "app",
+        "db",
+        "file",
+        "for",
+        "service",
+        "the",
+        "to",
+        "ui",
+        "기능",
+        "문서",
+        "서비스",
+        "설정",
+        "정리"
+    );
+    private static final Set<String> FILE_OPERATION_TITLE_TERMS = Set.of(
+        "content",
+        "file",
+        "markdown",
+        "save",
+        "text"
+    );
 
     private final NoteAutoLinkProperties properties;
     private final AutoLinkNoteSourcePort noteSourcePort;
@@ -179,6 +251,9 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
         int llmCalls = 0;
         int candidatePairCount = 0;
         int filteredInvalidAnchors = 0;
+        int filteredQuality = 0;
+        int filteredDuplicateTitles = 0;
+        int filteredWeakRelations = 0;
 
         for (AutoLinkNoteSource source : notes) {
             List<VectorCandidate> candidates = vectorCandidates(userId, documentGroupId, source, notesById);
@@ -201,12 +276,18 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
                 NoteAutoLinkStrategy.VECTOR_LLM,
                 source,
                 notesById,
+                modelId,
                 parseLlmSuggestions(response.content()),
                 candidatesByTarget(candidates)
             );
             suggestions.addAll(validated.suggestions());
             filteredInvalidAnchors += validated.filteredInvalidAnchorCount();
+            filteredQuality += validated.filteredQualityCount();
+            filteredDuplicateTitles += validated.filteredDuplicateTitleCount();
+            filteredWeakRelations += validated.filteredWeakRelationCount();
         }
+        RankedSuggestions ranked = rankSuggestions(suggestions);
+        filteredQuality += ranked.filteredQualityCount();
         return strategyResult(
             NoteAutoLinkStrategy.VECTOR_LLM,
             STATUS_COMPLETED,
@@ -215,7 +296,10 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             llmCalls,
             candidatePairCount,
             filteredInvalidAnchors,
-            suggestions,
+            filteredQuality,
+            filteredDuplicateTitles,
+            filteredWeakRelations,
+            ranked.suggestions(),
             List.of(),
             startedAt
         );
@@ -228,6 +312,9 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
         List<AutoLinkSuggestion> suggestions = new ArrayList<>();
         int llmCalls = 0;
         int filteredInvalidAnchors = 0;
+        int filteredQuality = 0;
+        int filteredDuplicateTitles = 0;
+        int filteredWeakRelations = 0;
 
         for (AutoLinkNoteSource source : notes) {
             List<NoteCard> otherCards = cards.stream()
@@ -251,12 +338,18 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
                 NoteAutoLinkStrategy.LLM_ONLY,
                 source,
                 notesById,
+                modelId,
                 parseLlmSuggestions(response.content()),
                 Map.of()
             );
             suggestions.addAll(validated.suggestions());
             filteredInvalidAnchors += validated.filteredInvalidAnchorCount();
+            filteredQuality += validated.filteredQualityCount();
+            filteredDuplicateTitles += validated.filteredDuplicateTitleCount();
+            filteredWeakRelations += validated.filteredWeakRelationCount();
         }
+        RankedSuggestions ranked = rankSuggestions(suggestions);
+        filteredQuality += ranked.filteredQualityCount();
         return strategyResult(
             NoteAutoLinkStrategy.LLM_ONLY,
             STATUS_COMPLETED,
@@ -265,7 +358,10 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             llmCalls,
             Math.max(0, notes.size() * (notes.size() - 1)),
             filteredInvalidAnchors,
-            suggestions,
+            filteredQuality,
+            filteredDuplicateTitles,
+            filteredWeakRelations,
+            ranked.suggestions(),
             List.of(),
             startedAt
         );
@@ -372,19 +468,37 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
         NoteAutoLinkStrategy strategy,
         AutoLinkNoteSource source,
         Map<String, AutoLinkNoteSource> notesById,
+        String modelId,
         List<LlmSuggestion> llmSuggestions,
         Map<String, VectorCandidate> vectorCandidatesByTarget
     ) {
         List<AutoLinkSuggestion> suggestions = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         int filtered = 0;
+        int filteredQuality = 0;
+        int filteredDuplicateTitles = 0;
+        int filteredWeakRelations = 0;
         for (LlmSuggestion llmSuggestion : llmSuggestions) {
             if (suggestions.size() >= properties.getMaxSuggestionsPerNote()) {
                 break;
             }
+            if (llmSuggestion.confidence() < properties.getMinConfidence()) {
+                filteredQuality++;
+                continue;
+            }
             AutoLinkNoteSource target = notesById.get(llmSuggestion.targetNoteId());
             if (target == null || target.noteId().equals(source.noteId())) {
                 filtered++;
+                continue;
+            }
+            if (sameNormalizedTitle(source.title(), target.title())) {
+                filteredDuplicateTitles++;
+                continue;
+            }
+            VectorCandidate vectorCandidate = vectorCandidatesByTarget.get(target.noteId());
+            if (strategy == NoteAutoLinkStrategy.VECTOR_LLM
+                && (vectorCandidate == null || vectorCandidate.vectorScore() < properties.getVectorStrongScore())) {
+                filteredQuality++;
                 continue;
             }
             Optional<AnchorRange> anchor = anchorLocator.locate(source.markdown(), llmSuggestion.anchorText());
@@ -392,11 +506,20 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
                 filtered++;
                 continue;
             }
-            String key = source.noteId() + "::" + target.noteId() + "::" + anchor.get().startOffset() + "::" + anchor.get().endOffset();
-            if (!seen.add(key)) {
+            if (isLowQualityAnchor(anchor.get().matchedText())) {
+                filteredQuality++;
                 continue;
             }
-            VectorCandidate vectorCandidate = vectorCandidatesByTarget.get(target.noteId());
+            String evidence = evidence(strategy, target, vectorCandidate);
+            if (isWeakRelation(strategy, source, target, anchor.get(), llmSuggestion, vectorCandidate, evidence, modelId)) {
+                filteredWeakRelations++;
+                continue;
+            }
+            String key = source.noteId() + "::" + target.noteId() + "::" + anchor.get().startOffset() + "::" + anchor.get().endOffset();
+            if (!seen.add(key)) {
+                filteredQuality++;
+                continue;
+            }
             suggestions.add(new AutoLinkSuggestion(
                 UUID.randomUUID().toString(),
                 source.noteId(),
@@ -407,10 +530,272 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
                 llmSuggestion.confidence(),
                 vectorCandidate == null ? null : vectorCandidate.vectorScore(),
                 llmSuggestion.reason(),
-                evidence(strategy, target, vectorCandidate)
+                evidence
             ));
         }
-        return new ValidatedSuggestions(suggestions, filtered);
+        return new ValidatedSuggestions(suggestions, filtered, filteredQuality, filteredDuplicateTitles, filteredWeakRelations);
+    }
+
+    private RankedSuggestions rankSuggestions(List<AutoLinkSuggestion> suggestions) {
+        if (suggestions.isEmpty()) {
+            return new RankedSuggestions(List.of(), 0);
+        }
+        List<AutoLinkSuggestion> ranked = suggestions.stream()
+            .sorted(Comparator.comparingDouble(this::qualityScore).reversed())
+            .toList();
+        Map<String, Integer> sourceTargetCounts = new HashMap<>();
+        Map<String, Integer> sourceCounts = new HashMap<>();
+        Map<String, Integer> targetCounts = new HashMap<>();
+        List<AutoLinkSuggestion> accepted = new ArrayList<>();
+        int filteredQuality = 0;
+        for (AutoLinkSuggestion suggestion : ranked) {
+            String sourceTargetKey = suggestion.sourceNoteId() + "::" + suggestion.targetNoteId();
+            if (sourceTargetCounts.getOrDefault(sourceTargetKey, 0) >= properties.getMaxSuggestionsPerSourceTarget()
+                || sourceCounts.getOrDefault(suggestion.sourceNoteId(), 0) >= properties.getMaxSuggestionsPerNote()
+                || targetCounts.getOrDefault(suggestion.targetNoteId(), 0) >= properties.getMaxSuggestionsPerTargetNote()) {
+                filteredQuality++;
+                continue;
+            }
+            sourceTargetCounts.merge(sourceTargetKey, 1, Integer::sum);
+            sourceCounts.merge(suggestion.sourceNoteId(), 1, Integer::sum);
+            targetCounts.merge(suggestion.targetNoteId(), 1, Integer::sum);
+            accepted.add(suggestion);
+        }
+        return new RankedSuggestions(accepted, filteredQuality);
+    }
+
+    private double qualityScore(AutoLinkSuggestion suggestion) {
+        double score = suggestion.confidence() * 100.0d;
+        if (suggestion.vectorScore() != null) {
+            score += suggestion.vectorScore() * 40.0d;
+        }
+        String anchorText = suggestion.anchor().matchedText().trim();
+        if (anchorText.length() >= 20) {
+            score += 12.0d;
+        } else if (anchorText.length() >= 10) {
+            score += 6.0d;
+        }
+        if (anchorText.matches(".*\\s+.*")) {
+            score += 5.0d;
+        }
+        if (anchorText.length() <= 4) {
+            score -= 10.0d;
+        }
+        return score;
+    }
+
+    private boolean isLowQualityAnchor(String anchorText) {
+        String normalized = normalizeAnchorTerm(anchorText);
+        if (!StringUtils.hasText(normalized)) {
+            return true;
+        }
+        if (GENERIC_ANCHOR_TERMS.contains(normalized.toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+        int koreanChars = countKoreanChars(normalized);
+        boolean hasKorean = koreanChars > 0;
+        boolean singleTerm = !normalized.matches(".*\\s+.*");
+        return hasKorean && singleTerm && koreanChars < properties.getMinAnchorKoreanChars();
+    }
+
+    private boolean isWeakRelation(
+        NoteAutoLinkStrategy strategy,
+        AutoLinkNoteSource source,
+        AutoLinkNoteSource target,
+        AnchorRange anchor,
+        LlmSuggestion llmSuggestion,
+        VectorCandidate vectorCandidate,
+        String evidence,
+        String modelId
+    ) {
+        RelationRuleDecision ruleDecision = relationRuleDecision(strategy, source, target, anchor, vectorCandidate, evidence);
+        if (ruleDecision == RelationRuleDecision.WEAK) {
+            return true;
+        }
+        if (ruleDecision == RelationRuleDecision.STRONG || !properties.isRelationVerifierEnabled()) {
+            return false;
+        }
+        RelationVerification verification = verifyRelation(source, target, anchor, llmSuggestion, vectorCandidate, evidence, modelId);
+        if (verification == null) {
+            return false;
+        }
+        String relationType = verification.relationType().toUpperCase(Locale.ROOT);
+        return WEAK_RELATION_TYPES.contains(relationType)
+            || verification.confidence() < properties.getMinRelationConfidence();
+    }
+
+    private RelationRuleDecision relationRuleDecision(
+        NoteAutoLinkStrategy strategy,
+        AutoLinkNoteSource source,
+        AutoLinkNoteSource target,
+        AnchorRange anchor,
+        VectorCandidate vectorCandidate,
+        String evidence
+    ) {
+        Set<String> sourceTokens = contentTokens(sourceContext(source.markdown(), anchor));
+        sourceTokens.addAll(contentTokens(anchor.matchedText()));
+        Set<String> targetTokens = contentTokens(target.title() + " " + evidence);
+        Set<String> overlap = new HashSet<>(sourceTokens);
+        overlap.retainAll(targetTokens);
+        Set<String> sourceTitleOverlap = contentTokens(source.title());
+        sourceTitleOverlap.retainAll(targetTokens);
+        Set<String> anchorOverlap = contentTokens(anchor.matchedText());
+        anchorOverlap.retainAll(targetTokens);
+
+        boolean broadTarget = containsAny(contentTokens(target.title()), BROAD_TARGET_TERMS);
+        boolean vendorOnly = isVendorOnlyAnchor(anchor.matchedText(), overlap);
+        boolean strongVector = vectorCandidate != null && vectorCandidate.vectorScore() >= 0.82d;
+
+        if (vendorOnly) {
+            return RelationRuleDecision.WEAK;
+        }
+        if (broadTarget && looksLikeFileOperationTitle(source.title())) {
+            return RelationRuleDecision.WEAK;
+        }
+        if (overlap.size() >= 3 || strongVector && overlap.size() >= 2) {
+            return RelationRuleDecision.STRONG;
+        }
+        if (broadTarget
+            && sourceTitleOverlap.isEmpty()
+            && anchorOverlap.size() <= 2
+            && (vectorCandidate == null || vectorCandidate.vectorScore() < 0.75d)) {
+            return RelationRuleDecision.WEAK;
+        }
+        if (broadTarget && overlap.size() <= 1) {
+            return RelationRuleDecision.WEAK;
+        }
+        if (strategy == NoteAutoLinkStrategy.VECTOR_LLM && strongVector) {
+            return RelationRuleDecision.STRONG;
+        }
+        return broadTarget || overlap.size() <= 1
+            ? RelationRuleDecision.AMBIGUOUS
+            : RelationRuleDecision.STRONG;
+    }
+
+    private RelationVerification verifyRelation(
+        AutoLinkNoteSource source,
+        AutoLinkNoteSource target,
+        AnchorRange anchor,
+        LlmSuggestion llmSuggestion,
+        VectorCandidate vectorCandidate,
+        String evidence,
+        String modelId
+    ) {
+        AiChatResponse response = generate(
+            modelId,
+            RELATION_VERIFIER_FEATURE_ID,
+            source.userId(),
+            relationVerifierSystemPrompt(),
+            relationVerifierUserPrompt(source, target, anchor, llmSuggestion, vectorCandidate, evidence)
+        );
+        return response == null ? null : parseRelationVerification(response.content());
+    }
+
+    private RelationVerification parseRelationVerification(String content) {
+        if (!StringUtils.hasText(content)) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(jsonPayload(content));
+            String relationType = text(root, "relationType");
+            if (!StringUtils.hasText(relationType)) {
+                return null;
+            }
+            return new RelationVerification(
+                relationType,
+                confidence(root.get("confidence")),
+                text(root, "reason")
+            );
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private static boolean sameNormalizedTitle(String sourceTitle, String targetTitle) {
+        String source = normalizeTitleForDuplicateCheck(sourceTitle);
+        String target = normalizeTitleForDuplicateCheck(targetTitle);
+        return StringUtils.hasText(source) && source.equals(target);
+    }
+
+    private static String normalizeTitleForDuplicateCheck(String title) {
+        if (title == null) {
+            return "";
+        }
+        return title
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("\\([^)]*\\)", "")
+            .replaceAll("\\[[^]]*]", "")
+            .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\uAC00-\\uD7A3]+", "")
+            .trim();
+    }
+
+    private static String sourceContext(String markdown, AnchorRange anchor) {
+        if (markdown == null || markdown.isBlank()) {
+            return "";
+        }
+        int start = Math.max(0, anchor.startOffset() - ANCHOR_CONTEXT_RADIUS);
+        int end = Math.min(markdown.length(), anchor.endOffset() + ANCHOR_CONTEXT_RADIUS);
+        return markdown.substring(start, end);
+    }
+
+    private static Set<String> contentTokens(String value) {
+        Set<String> tokens = new HashSet<>();
+        if (value == null) {
+            return tokens;
+        }
+        String[] parts = value.toLowerCase(Locale.ROOT)
+            .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\uAC00-\\uD7A3]+", " ")
+            .trim()
+            .split("\\s+");
+        for (String part : parts) {
+            if (part.length() >= 2 && !TOKEN_STOP_WORDS.contains(part)) {
+                tokens.add(part);
+            }
+        }
+        return tokens;
+    }
+
+    private static boolean containsAny(Set<String> values, Set<String> expected) {
+        for (String value : values) {
+            if (expected.contains(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isVendorOnlyAnchor(String anchorText, Set<String> overlap) {
+        Set<String> anchorTokens = contentTokens(anchorText);
+        return anchorTokens.size() == 1
+            && VENDOR_ONLY_TERMS.contains(anchorTokens.iterator().next())
+            && overlap.size() <= 1;
+    }
+
+    private static boolean looksLikeFileOperationTitle(String title) {
+        Set<String> titleTokens = contentTokens(title);
+        return !titleTokens.isEmpty()
+            && FILE_OPERATION_TITLE_TERMS.containsAll(titleTokens);
+    }
+
+    private static String normalizeAnchorTerm(String anchorText) {
+        if (anchorText == null) {
+            return "";
+        }
+        return anchorText
+            .replaceAll("^[#>*\\-\\s]+", "")
+            .replaceAll("[`*_\\[\\]()]", "")
+            .trim();
+    }
+
+    private static int countKoreanChars(String value) {
+        int count = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current >= '\uAC00' && current <= '\uD7A3') {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<LlmSuggestion> parseLlmSuggestions(String content) {
@@ -475,6 +860,9 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             result.suggestionCount(),
             result.validAnchorCount(),
             result.filteredInvalidAnchorCount(),
+            result.filteredQualityCount(),
+            result.filteredDuplicateTitleCount(),
+            result.filteredWeakRelationCount(),
             result.elapsedMs(),
             result.suggestions(),
             usageRecords,
@@ -490,6 +878,9 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
         int llmCallCount,
         int candidatePairCount,
         int filteredInvalidAnchors,
+        int filteredQuality,
+        int filteredDuplicateTitles,
+        int filteredWeakRelations,
         List<AutoLinkSuggestion> suggestions,
         List<AutoLinkUsageRecord> usageRecords,
         Instant startedAt
@@ -504,6 +895,9 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             suggestions.size(),
             suggestions.size(),
             filteredInvalidAnchors,
+            filteredQuality,
+            filteredDuplicateTitles,
+            filteredWeakRelations,
             elapsedMs(startedAt),
             suggestions,
             usageRecords,
@@ -518,7 +912,7 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
         int analyzedNoteCount,
         Instant startedAt
     ) {
-        return strategyResult(strategy, status, modelId, analyzedNoteCount, 0, 0, 0, List.of(), List.of(), startedAt);
+        return strategyResult(strategy, status, modelId, analyzedNoteCount, 0, 0, 0, 0, 0, 0, List.of(), List.of(), startedAt);
     }
 
     private static AutoLinkComparison comparison(List<AutoLinkStrategyResult> results) {
@@ -635,6 +1029,7 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             You find useful note links. Return only strict JSON.
             The JSON must be an array of objects with anchorText, targetNoteId, reason, confidence.
             anchorText must be copied exactly from the source markdown.
+            Prefer specific headings or phrases over generic single nouns.
             Do not include markdown fences or commentary.
             """;
     }
@@ -644,7 +1039,18 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
             You find useful note links by comparing one source note to note cards from the same document group.
             Return only strict JSON array. Each object must have anchorText, targetNoteId, reason, confidence.
             anchorText must be copied exactly from the source markdown.
+            Prefer specific headings or phrases over generic single nouns.
             Do not include markdown fences or commentary.
+            """;
+    }
+
+    private static String relationVerifierSystemPrompt() {
+        return """
+            You verify whether a proposed note link is useful.
+            Return only strict JSON with relationType, confidence, reason.
+            Allowed useful relationType values: DEFINES, EXPANDS, IMPLEMENTS, REFERENCES, PREREQUISITE, CONTRASTS.
+            Reject weak values: BROAD_TOPIC, SAME_DOMAIN_ONLY, VENDOR_NAME_ONLY, WEAK_ANALOGY, UNRELATED.
+            Prefer rejection when the target only shares a broad domain with the source.
             """;
     }
 
@@ -676,6 +1082,29 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
                 .append("  excerpt: ").append(card.excerpt()).append("\n");
         }
         builder.append("\nReturn at most ").append(properties.getMaxSuggestionsPerNote()).append(" suggestions.");
+        return builder.toString();
+    }
+
+    private static String relationVerifierUserPrompt(
+        AutoLinkNoteSource source,
+        AutoLinkNoteSource target,
+        AnchorRange anchor,
+        LlmSuggestion llmSuggestion,
+        VectorCandidate vectorCandidate,
+        String evidence
+    ) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Source note title: ").append(source.title()).append('\n')
+            .append("Target note title: ").append(target.title()).append('\n')
+            .append("Anchor text: ").append(anchor.matchedText()).append('\n')
+            .append("Source context: ").append(snippet(normalizeWhitespace(sourceContext(source.markdown(), anchor)), EVIDENCE_LIMIT)).append('\n')
+            .append("Target evidence: ").append(snippet(normalizeWhitespace(evidence), EVIDENCE_LIMIT)).append('\n')
+            .append("Original reason: ").append(llmSuggestion.reason()).append('\n')
+            .append("Original confidence: ").append(llmSuggestion.confidence()).append('\n');
+        if (vectorCandidate != null) {
+            builder.append("Vector score: ").append(vectorCandidate.vectorScore()).append('\n');
+        }
+        builder.append("Return JSON only.");
         return builder.toString();
     }
 
@@ -868,9 +1297,31 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
     ) {
     }
 
+    private record RelationVerification(
+        String relationType,
+        double confidence,
+        String reason
+    ) {
+    }
+
     private record ValidatedSuggestions(
         List<AutoLinkSuggestion> suggestions,
-        int filteredInvalidAnchorCount
+        int filteredInvalidAnchorCount,
+        int filteredQualityCount,
+        int filteredDuplicateTitleCount,
+        int filteredWeakRelationCount
     ) {
+    }
+
+    private record RankedSuggestions(
+        List<AutoLinkSuggestion> suggestions,
+        int filteredQualityCount
+    ) {
+    }
+
+    private enum RelationRuleDecision {
+        STRONG,
+        AMBIGUOUS,
+        WEAK
     }
 }

@@ -89,11 +89,14 @@ brainx.vector.qdrant.collection-name=brainx_note_search_voyage_1024
 
 - document 저장: `NoteSearchDocument.chunkText`를 `AiEmbeddingPort`에 `inputType=DOCUMENT`로 전달하고, Voyage request는 `input_type=document`를 사용한다.
 - query 검색: query text를 `AiEmbeddingPort`에 `inputType=QUERY`로 전달하고, Voyage request는 `input_type=query`를 사용한다.
-- Qdrant point id는 `userId::documentGroupId::noteId::chunkIndex`에서 만든 deterministic UUID다.
+- Qdrant point id는 `userId::documentGroupId::chunkId`에서 만든 deterministic UUID다.
+- `chunkId`는 `noteId::sha256(chunkText)::duplicateOrdinal` 형식이다. `chunkIndex`는 point identity가 아니라 순서 metadata다.
 - Qdrant payload는 기존 metadata key를 유지하고 본문은 `doc_content`에 저장한다.
 - Qdrant payload에는 `documentGroupId`를 저장한다. 없거나 blank이면 `default`로 normalize한다.
 - Qdrant 검색 filter는 `userId AND documentGroupId` 기준으로 사용자와 문서 그룹을 함께 격리한다.
 - note 삭제/교체는 `userId + documentGroupId + noteId` filter로 기존 chunk를 삭제한 뒤 새 chunk를 upsert한다.
+- note 부분 갱신은 chunk manifest와 새 snapshot chunk를 비교해 변경된 chunk만 embedding/upsert하고, 사라진 stable `chunkId`의 point만 삭제한다.
+- 본문 embedding text가 같고 payload만 바뀐 chunk는 Voyage를 호출하지 않고 Qdrant `overwritePayload` mutation만 수행한다.
 - Workspace가 아직 group을 보내지 않으면 모든 note는 `default` group으로 색인된다. 향후 Workspace payload나 snapshot에 `documentGroupId`가 들어오면 Intelligence-Service는 같은 경로로 즉시 group별 격리를 적용한다.
 
 ## Usage와 비용
@@ -109,10 +112,14 @@ Voyage `usage.total_tokens`가 반환되면 `TokenUsagePort`에 실제 embedding
 
 `ExplorationService`의 query text token estimate는 entitlement와 public response `tokenEstimate`용으로만 남긴다. ledger에는 실제 provider usage가 있는 embedding adapter 경로만 기록한다.
 
+부분 재색인에서는 새 chunk 또는 embedding text가 바뀐 chunk만 document embedding usage를 기록한다. payload-only update와 delete-only update는 Voyage 호출이 없으므로 token usage record를 만들지 않는다.
+
 ## 주의점
 
 - Qdrant collection은 생성 시 vector dimension이 고정된다. 기존 collection이 다른 dimension으로 만들어졌다면 새 collection을 쓰거나 기존 collection을 삭제해야 한다.
 - 기존 collection은 unnamed vector와 주요 payload key를 유지하지만, `documentGroupId` payload가 없는 point는 group filter에서 누락될 수 있다. usage/cost 기록, index 상태, group 격리를 안정화하려면 재ingest를 권장한다.
+- `chunkIndex` 기반 point id로 만들어진 기존 point는 chunk manifest가 없으므로 note별 첫 재색인 때 full replace 경로로 정리된다.
+- 제목은 chunk embedding text prefix로 유지한다. title 변경은 모든 chunk embedding input을 바꾸므로 full replace/full re-embedding 대상이다.
 - application/domain layer에 Qdrant client, `RestClient`, provider별 DTO를 직접 주입하지 않는다.
 - Qdrant Java client wrapper bean은 component scan 조건부 등록에 의존하지 않는다. `@ConditionalOnBean` 처리 순서로 `QdrantVectorIndexClient`가 누락되면 RAG CLI는 no-op 검색 결과만 받을 수 있다. 원인 분석과 등록 원칙은 `docs/technical/conditional-on-bean.md`를 참고한다.
 - 제공된 API key가 채팅이나 로그에 노출된 적이 있으면 운영 사용 전에 rotation한다.

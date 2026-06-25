@@ -10,6 +10,7 @@ export interface UserGuideState {
   skillLevel: SkillLevel;
   totalEvents: number;
   firstSeenAt: string;
+  hasSeenWelcomeTour: boolean;
   
   completeTutorial: (tutorialId: string) => void;
   discoverFeature: (featureId: string) => void;
@@ -17,6 +18,8 @@ export interface UserGuideState {
   updateSkillLevel: (level: SkillLevel) => void;
   setUserId: (id: string) => void;
   resetTutorials: () => void;
+  markWelcomeTourSeen: () => void;
+  triggerTutorialReplay: () => void;
   isManualTrigger: boolean;
   clearManualTrigger: () => void;
 }
@@ -30,6 +33,7 @@ export const useGuideStore = create<UserGuideState>()(
       skillLevel: 'BEGINNER',
       totalEvents: 0,
       firstSeenAt: new Date().toISOString(),
+      hasSeenWelcomeTour: false,
       isManualTrigger: false,
 
       completeTutorial: (tutorialId) =>
@@ -53,7 +57,11 @@ export const useGuideStore = create<UserGuideState>()(
 
       setUserId: (userId) => set({ userId }),
 
-      resetTutorials: () => set({ completedTutorials: [], isManualTrigger: true }),
+      resetTutorials: () => set({ completedTutorials: [], hasSeenWelcomeTour: false, isManualTrigger: true }),
+
+      markWelcomeTourSeen: () => set({ hasSeenWelcomeTour: true }),
+
+      triggerTutorialReplay: () => set({ isManualTrigger: true }),
 
       clearManualTrigger: () => set({ isManualTrigger: false }),
     }),

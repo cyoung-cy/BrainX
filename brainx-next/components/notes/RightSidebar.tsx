@@ -7,7 +7,7 @@ import { Icon } from "@/components/brainx-ui";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { MOCK_CONTEXT_DATA } from "@/lib/notes/mockNotes";
 import { createChatThread, sendChatMessageStream } from "@/lib/intelligence-api";
-import { buildNoteAiContext } from "@/lib/ai-context";
+import { buildNoteAiContext, validateAiContextSufficiency } from "@/lib/ai-context";
 
 /* ── 헤딩 파싱 ─────────────────────────────────────────────────────────────
    note.content는 두 가지 형태일 수 있다 — 한 번도 편집 안 한 시드 노트는 원문 마크다운
@@ -249,6 +249,21 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     setAiInput("");
     setAiMessages((m) => [...m, { role: "ai", text: "", streaming: true }]);
 
+    const clientContext = buildNoteAiContext({
+      task: "note.ask",
+      surface: "RIGHT_SIDEBAR",
+      documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+      noteId: note.id,
+      title: note.title,
+      content: note.content,
+    });
+    const sufficiency = validateAiContextSufficiency("note.ask", clientContext);
+    if (!sufficiency.ok) {
+      updateLatestAiMessage(sufficiency.message, false);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
     const controller = new AbortController();
     aiRequestAbortRef.current = controller;
     let streamedText = "";
@@ -263,14 +278,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
             documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
             noteId: note.id,
           },
-          clientContext: buildNoteAiContext({
-            task: "note.ask",
-            surface: "RIGHT_SIDEBAR",
-            documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
-            noteId: note.id,
-            title: note.title,
-            content: note.content,
-          }),
+          clientContext,
           modelId: DEFAULT_CHAT_MODEL_ID,
         },
         {
@@ -328,6 +336,26 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     }
 
     if (type === "summarize") {
+      const clientContext = buildNoteAiContext({
+        task: "note.summarize.selection",
+        surface: "RIGHT_SIDEBAR",
+        documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+        noteId: activeNote.id,
+        title: activeNote.title,
+        selectedText,
+      });
+      const sufficiency = validateAiContextSufficiency("note.summarize.selection", clientContext);
+      if (!sufficiency.ok) {
+        setAiMessages((m) => {
+          const next = [...m];
+          next[next.length - 1] = { role: "ai", text: sufficiency.message, streaming: false };
+          return next;
+        });
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        onAiRequestHandled?.();
+        return;
+      }
+
       const controller = new AbortController();
       aiRequestAbortRef.current = controller;
       let streamedText = "";
@@ -341,14 +369,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
               documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
               noteId: activeNote.id,
             },
-            clientContext: buildNoteAiContext({
-              task: "note.summarize.selection",
-              surface: "RIGHT_SIDEBAR",
-              documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
-              noteId: activeNote.id,
-              title: activeNote.title,
-              selectedText,
-            }),
+            clientContext,
             modelId: DEFAULT_CHAT_MODEL_ID,
           },
           {

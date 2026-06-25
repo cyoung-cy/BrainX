@@ -12,6 +12,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteChunkDelta;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSummaryPort;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.NoteSummary;
@@ -30,13 +31,16 @@ class WorkspaceNoteEventHandlerTest {
     private final FakeWorkspace workspace = new FakeWorkspace();
     private final FakeSearchIndex searchIndex = new FakeSearchIndex();
     private final FakeSummaryPort summaryPort = new FakeSummaryPort();
+    private final FakeChunkManifestStore chunkManifestStore = new FakeChunkManifestStore();
     private final WorkspaceNoteEventHandler handler = new WorkspaceNoteEventHandler(
         objectMapper,
         projectionStore,
         workspace,
         searchIndex,
         summaryPort,
-        new MarkdownNoteChunker()
+        new MarkdownNoteChunker(),
+        chunkManifestStore,
+        new NoteChunkIndexPlanner()
     );
 
     @Test
@@ -231,6 +235,157 @@ class WorkspaceNoteEventHandlerTest {
     }
 
     @Test
+    void contentSavedAppliesDeltaWhenOnlyOneChunkChanged() {
+        String oldMarkdown = longParagraph("alpha") + "\n\n"
+            + longParagraph("bravo") + "\n\n"
+            + longParagraph("charlie") + "\n\n"
+            + longParagraph("delta");
+        String newMarkdown = longParagraph("alpha") + "\n\n"
+            + longParagraph("bravo changed") + "\n\n"
+            + longParagraph("charlie") + "\n\n"
+            + longParagraph("delta");
+        projectionStore.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Snapshot title",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            oldMarkdown,
+            false,
+            false,
+            false,
+            false,
+            "evt-old",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        chunkManifestStore.replaceForNote(
+            "user-1",
+            "group-1",
+            "note-1",
+            manifests(chunks(oldMarkdown, "hash-1", 1, List.of()), 1, "hash-1")
+        );
+        workspace.snapshot = new WorkspaceNotePort.NoteSnapshot(
+            "note-1",
+            "Snapshot title",
+            newMarkdown,
+            List.of(),
+            null,
+            2,
+            Instant.parse("2026-06-19T00:00:02Z")
+        );
+
+        handler.handle(context("evt-1", "NoteContentSaved", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","version":2,"markdownHash":"hash-2","savedAt":"2026-06-19T00:00:00Z"}
+            """));
+
+        assertThat(searchIndex.deletedKeys).isEmpty();
+        assertThat(searchIndex.deltas).hasSize(1);
+        NoteChunkDelta delta = searchIndex.deltas.getFirst();
+        assertThat(delta.upsertChunks()).hasSize(1);
+        assertThat(delta.deleteChunkIds()).hasSize(1);
+        assertThat(delta.payloadOnlyChunks()).hasSize(3);
+        assertThat(chunkManifestStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1"))
+            .hasSize(4)
+            .allSatisfy(manifest -> assertThat(manifest.indexedMarkdownHash()).isEqualTo("hash-2"));
+    }
+
+    @Test
+    void tagChangeUpdatesPayloadWithoutReembeddingChunks() {
+        String markdown = longParagraph("alpha") + "\n\n" + longParagraph("bravo");
+        projectionStore.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Snapshot title",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            markdown,
+            false,
+            false,
+            false,
+            false,
+            "evt-old",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        chunkManifestStore.replaceForNote(
+            "user-1",
+            "group-1",
+            "note-1",
+            manifests(chunks(markdown, "hash-1", 1, List.of()), 1, "hash-1")
+        );
+        workspace.snapshot = new WorkspaceNotePort.NoteSnapshot(
+            "note-1",
+            "Snapshot title",
+            markdown,
+            List.of("tag-1"),
+            null,
+            1,
+            Instant.parse("2026-06-19T00:00:02Z")
+        );
+
+        handler.handle(context("evt-1", "NoteTagsChanged", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","tags":["tag-1"]}
+            """));
+
+        assertThat(searchIndex.deletedKeys).isEmpty();
+        assertThat(searchIndex.savedDocuments).isEmpty();
+        assertThat(searchIndex.deltas).hasSize(1);
+        assertThat(searchIndex.deltas.getFirst().upsertChunks()).isEmpty();
+        assertThat(searchIndex.deltas.getFirst().deleteChunkIds()).isEmpty();
+        assertThat(searchIndex.deltas.getFirst().payloadOnlyChunks()).hasSize(2);
+    }
+
+    @Test
+    void titleChangeForcesFullReplace() {
+        String markdown = longParagraph("alpha") + "\n\n" + longParagraph("bravo");
+        projectionStore.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Old title",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            markdown,
+            false,
+            false,
+            false,
+            false,
+            "evt-old",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        chunkManifestStore.replaceForNote(
+            "user-1",
+            "group-1",
+            "note-1",
+            manifests(chunks(markdown, "hash-1", 1, List.of()), 1, "hash-1")
+        );
+        workspace.snapshot = new WorkspaceNotePort.NoteSnapshot(
+            "note-1",
+            "New title",
+            markdown,
+            List.of(),
+            null,
+            2,
+            Instant.parse("2026-06-19T00:00:02Z")
+        );
+
+        handler.handle(context("evt-1", "NoteMetadataChanged", """
+            {"noteId":"note-1","userId":"user-1","documentGroupId":"group-1","title":"New title","version":2}
+            """));
+
+        assertThat(searchIndex.deltas).isEmpty();
+        assertThat(searchIndex.deletedKeys).containsExactly("user-1::group-1::note-1");
+        assertThat(searchIndex.savedDocuments).hasSize(2);
+    }
+
+    @Test
     void deleteMarksProjectionAndRemovesIndexAndSummary() {
         projectionStore.save(new NoteProjection(
             "user-1",
@@ -247,6 +402,12 @@ class WorkspaceNoteEventHandlerTest {
             "evt-old",
             Instant.parse("2026-06-19T00:00:00Z")
         ));
+        chunkManifestStore.replaceForNote(
+            "user-1",
+            "default",
+            "note-1",
+            manifests(chunks("markdown", "hash-2", 2, List.of()), 2, "hash-2")
+        );
 
         handler.handle(context("evt-1", "NoteDeleted", """
             {"noteId":"note-1","userId":"user-1","deletedAt":"2026-06-19T00:00:00Z","permanent":true}
@@ -257,6 +418,7 @@ class WorkspaceNoteEventHandlerTest {
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.REMOVED);
         assertThat(projection.indexedVersion()).isNull();
         assertThat(searchIndex.deletedKeys).containsExactly("user-1::default::note-1");
+        assertThat(chunkManifestStore.deletedKeys).containsExactly("user-1::default::note-1");
         assertThat(summaryPort.deletedKeys).containsExactly("user-1::note-1");
     }
 
@@ -281,6 +443,45 @@ class WorkspaceNoteEventHandlerTest {
 
         NoteProjection projection = projectionStore.findByUserIdAndNoteId("user-1", "note-1").orElseThrow();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.FAILED);
+        assertThat(chunkManifestStore.replacedKeys).isEmpty();
+    }
+
+    private static String longParagraph(String marker) {
+        return (marker + " semantic content ").repeat(35);
+    }
+
+    private static List<NoteSearchDocument> chunks(
+        String markdown,
+        String markdownHash,
+        int version,
+        List<String> tags
+    ) {
+        return new MarkdownNoteChunker().chunk(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Snapshot title",
+            markdown,
+            tags,
+            markdownHash,
+            version
+        );
+    }
+
+    private static List<NoteIndexChunkManifest> manifests(
+        List<NoteSearchDocument> chunks,
+        int indexedVersion,
+        String indexedMarkdownHash
+    ) {
+        return chunks.stream()
+            .map(chunk -> NoteIndexChunkManifest.fromDocument(
+                chunk,
+                MarkdownNoteChunker.CHUNKER_VERSION,
+                indexedVersion,
+                indexedMarkdownHash,
+                Instant.parse("2026-06-19T00:00:01Z")
+            ))
+            .toList();
     }
 
     private EventProcessingContext context(String eventId, String eventType, String payloadJson) {
@@ -360,6 +561,45 @@ class WorkspaceNoteEventHandlerTest {
         }
     }
 
+    private static final class FakeChunkManifestStore implements NoteChunkManifestStore {
+
+        private final Map<String, List<NoteIndexChunkManifest>> manifests = new LinkedHashMap<>();
+        private final List<String> replacedKeys = new ArrayList<>();
+        private final List<String> deletedKeys = new ArrayList<>();
+
+        @Override
+        public List<NoteIndexChunkManifest> findByUserIdAndDocumentGroupIdAndNoteId(
+            String userId,
+            String documentGroupId,
+            String noteId
+        ) {
+            return manifests.getOrDefault(key(userId, documentGroupId, noteId), List.of());
+        }
+
+        @Override
+        public void replaceForNote(
+            String userId,
+            String documentGroupId,
+            String noteId,
+            List<NoteIndexChunkManifest> manifests
+        ) {
+            String key = key(userId, documentGroupId, noteId);
+            replacedKeys.add(key);
+            this.manifests.put(key, List.copyOf(manifests));
+        }
+
+        @Override
+        public void deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
+            String key = key(userId, documentGroupId, noteId);
+            deletedKeys.add(key);
+            manifests.remove(key);
+        }
+
+        private static String key(String userId, String documentGroupId, String noteId) {
+            return userId + "::" + documentGroupId + "::" + noteId;
+        }
+    }
+
     private static final class FakeWorkspace implements WorkspaceNotePort {
 
         private int requests;
@@ -388,6 +628,7 @@ class WorkspaceNoteEventHandlerTest {
 
         private final List<NoteSearchDocument> savedDocuments = new ArrayList<>();
         private final List<String> deletedKeys = new ArrayList<>();
+        private final List<NoteChunkDelta> deltas = new ArrayList<>();
 
         @Override
         public List<SemanticSearchResult> search(NoteSearchQuery query) {
@@ -416,6 +657,16 @@ class WorkspaceNoteEventHandlerTest {
             }
             deleteByUserIdAndDocumentGroupIdAndNoteId(userId, documentGroupId, noteId);
             savedDocuments.addAll(chunks);
+            return mutationApplied;
+        }
+
+        @Override
+        public boolean applyNoteChunkDelta(String userId, String documentGroupId, String noteId, NoteChunkDelta delta) {
+            if (failOnReplace) {
+                throw new RuntimeException("replace failed");
+            }
+            deltas.add(delta);
+            savedDocuments.addAll(delta.upsertChunks());
             return mutationApplied;
         }
 

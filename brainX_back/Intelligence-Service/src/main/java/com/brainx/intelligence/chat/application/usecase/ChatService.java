@@ -59,8 +59,11 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
     private static final String SOURCE_SERVICE = "AI-Service";
     private static final String NO_CONTEXT_ANSWER = "관련 노트 근거를 찾지 못했습니다.";
     private static final String OUT_OF_SCOPE_ANSWER = "BrainX 본 채팅은 내 노트 검색, 노트 기반 질문, 글 작성, 노트 적용 초안만 처리합니다.";
+    private static final String INSUFFICIENT_CONTEXT_ANSWER =
+        "현재 제공된 노트 내용이 너무 짧아 이 요청을 처리할 수 없습니다. 답변에 필요한 본문이나 선택 영역을 더 제공해 주세요.";
     private static final int HISTORY_LIMIT = 8;
     private static final int CONTEXT_SNIPPET_LENGTH = 1_200;
+    private static final int MIN_CLIENT_CONTEXT_CHARS = 80;
 
     private final ChatProperties properties;
     private final ChatRouteDecider chatRouteDecider;
@@ -154,6 +157,12 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
         ChatRoute route = routeDecision.route();
         if (route == ChatRoute.OUT_OF_SCOPE) {
             return withRouteEvent(routeDecision, fixedAnswerStream(thread, userMessage, modelId, OUT_OF_SCOPE_ANSWER));
+        }
+        if (requiresNoteContext(route)
+            && hasClientContext
+            && isRightSidebarContext(command.clientContext())
+            && clientContextContentLength(command.clientContext()) < MIN_CLIENT_CONTEXT_CHARS) {
+            return withRouteEvent(routeDecision, fixedAnswerStream(thread, userMessage, modelId, INSUFFICIENT_CONTEXT_ANSWER));
         }
 
         List<RagContext> contexts = hasClientContext || !requiresNoteContext(route)
@@ -470,6 +479,30 @@ public class ChatService implements CreateChatThreadUseCase, SendChatMessageUseC
             return false;
         }
         return "RIGHT_SIDEBAR".equals(stringValue(clientContext.get("source")));
+    }
+
+    private static int clientContextContentLength(Map<String, Object> clientContext) {
+        if (clientContext == null || clientContext.isEmpty()) {
+            return 0;
+        }
+        Object itemsValue = clientContext.get("items");
+        if (!(itemsValue instanceof List<?> items) || items.isEmpty()) {
+            return 0;
+        }
+        int length = 0;
+        for (Object itemValue : items) {
+            if (!(itemValue instanceof Map<?, ?> item)) {
+                continue;
+            }
+            if ("NOTE_TITLE".equals(stringValue(item.get("type")))) {
+                continue;
+            }
+            String text = stringValue(item.get("text")).trim();
+            if (StringUtils.hasText(text)) {
+                length += text.length();
+            }
+        }
+        return length;
     }
 
     private static List<AiChatMessage> promptMessages(

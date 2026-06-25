@@ -4,6 +4,7 @@
 
 - `conditional-on-bean.md`: Spring Boot `@ConditionalOnBean`의 의미, 주의점, Qdrant adapter 적용 맥락을 설명한다.
 - `ai-model-pricing-and-usage.md`: AI 모델 catalog 비용 필드, availability 결합, token usage/cost estimate 기록 정책을 설명한다.
+- `consumed-event-contract-alignment.md`: 구현된 consumed event handler와 AsyncAPI SSOT의 topic/payload 일치 수준을 추적한다.
 - `consumed-events-implementation-checkpoints.md`: `AI-Service`가 consumer로 받는 이벤트별 구현 체크포인트를 정리한다.
 - `external-search.md`: OpenAI Responses `web_search` 기반 외부 자료 검색 port, CLI 실행, usage 기록 정책을 설명한다.
 - `frontend-ai-context-management.md`: `brainx-next`가 노트 AI 작업별로 `clientContext`를 구성하고 Intelligence Service chat/inline assist API에 전달하는 정책을 설명한다.

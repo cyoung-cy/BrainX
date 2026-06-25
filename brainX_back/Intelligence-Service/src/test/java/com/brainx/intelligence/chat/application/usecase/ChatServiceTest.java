@@ -41,6 +41,10 @@ import reactor.core.publisher.Flux;
 
 class ChatServiceTest {
 
+    private static final String SUFFICIENT_CLIENT_CONTEXT =
+        "프론트가 선택한 문맥은 사용자의 질문에 답할 수 있을 만큼 충분한 본문을 포함한다. "
+            + "현재 노트의 핵심 흐름, 관련 개념, 설명에 필요한 근거 문장을 함께 제공한다.";
+
     private final ChatProperties properties = new ChatProperties();
     private final FakeChatRouteDecider routeDecider = new FakeChatRouteDecider();
     private final FakeChatPersistencePort persistencePort = new FakeChatPersistencePort();
@@ -176,7 +180,7 @@ class ChatServiceTest {
                 "type", "SELECTION",
                 "noteId", "note-1",
                 "documentGroupId", "group-1",
-                "text", "프론트가 선택한 문맥"
+                "text", SUFFICIENT_CLIENT_CONTEXT
             ))
         );
 
@@ -202,10 +206,53 @@ class ChatServiceTest {
             .contains("mode=SELECTION")
             .contains("source=RIGHT_SIDEBAR")
             .contains("type=SELECTION")
-            .contains("프론트가 선택한 문맥");
+            .contains(SUFFICIENT_CLIENT_CONTEXT);
         assertThat(persistencePort.messages.getFirst().clientContext())
             .containsEntry("mode", "SELECTION")
             .containsEntry("source", "RIGHT_SIDEBAR");
+    }
+
+    @Test
+    void rightSidebarClientContextTooShortReturnsFixedAnswerWithoutAiCall() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var clientContext = Map.<String, Object>of(
+            "mode", "NOTE_EXCERPT",
+            "source", "RIGHT_SIDEBAR",
+            "items", List.of(
+                Map.of(
+                    "type", "NOTE_TITLE",
+                    "noteId", "note-1",
+                    "documentGroupId", "group-1",
+                    "text", "짧은 노트"
+                ),
+                Map.of(
+                    "type", "NOTE_TEXT",
+                    "noteId", "note-1",
+                    "documentGroupId", "group-1",
+                    "text", "너무 짧음"
+                )
+            )
+        );
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "이 노트를 설명해줘",
+            Map.of("documentGroupId", "group-1"),
+            clientContext,
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events).hasSize(3);
+        assertThat(events.getFirst().eventName()).isEqualTo("route");
+        assertThat(events.get(1).eventName()).isEqualTo("delta");
+        assertThat(events.get(1).data().get("text")).asString().contains("현재 제공된 노트 내용이 너무 짧아");
+        assertThat(events.get(2).eventName()).isEqualTo("done");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isZero();
+        assertThat(persistencePort.messages.get(1).content()).contains("본문이나 선택 영역을 더 제공");
     }
 
     @Test

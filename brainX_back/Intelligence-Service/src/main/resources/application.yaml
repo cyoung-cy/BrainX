@@ -50,6 +50,13 @@ brainx:
     max-notes: ${BRAINX_NOTE_AUTO_LINK_MAX_NOTES:50}
     vector-top-k: ${BRAINX_NOTE_AUTO_LINK_VECTOR_TOP_K:20}
     min-vector-score: ${BRAINX_NOTE_AUTO_LINK_MIN_VECTOR_SCORE:0.35}
+    min-confidence: ${BRAINX_NOTE_AUTO_LINK_MIN_CONFIDENCE:0.75}
+    vector-strong-score: ${BRAINX_NOTE_AUTO_LINK_VECTOR_STRONG_SCORE:0.60}
+    min-anchor-korean-chars: ${BRAINX_NOTE_AUTO_LINK_MIN_ANCHOR_KOREAN_CHARS:4}
+    max-suggestions-per-source-target: ${BRAINX_NOTE_AUTO_LINK_MAX_SUGGESTIONS_PER_SOURCE_TARGET:1}
+    max-suggestions-per-target-note: ${BRAINX_NOTE_AUTO_LINK_MAX_SUGGESTIONS_PER_TARGET_NOTE:5}
+    relation-verifier-enabled: ${BRAINX_NOTE_AUTO_LINK_RELATION_VERIFIER_ENABLED:true}
+    min-relation-confidence: ${BRAINX_NOTE_AUTO_LINK_MIN_RELATION_CONFIDENCE:0.70}
     max-source-windows-per-note: ${BRAINX_NOTE_AUTO_LINK_MAX_SOURCE_WINDOWS_PER_NOTE:12}
     max-suggestions-per-note: ${BRAINX_NOTE_AUTO_LINK_MAX_SUGGESTIONS_PER_NOTE:5}
   chat:

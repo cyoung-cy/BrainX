@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.util.concurrent.ListenableFuture;
@@ -52,6 +53,37 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
             points.stream()
                 .map(DefaultQdrantVectorIndexClient::toPointStruct)
                 .toList(),
+            properties.getTimeout()
+        ));
+    }
+
+    @Override
+    public void deleteByPointIds(List<UUID> pointIds) {
+        ensureCollection();
+        if (pointIds == null || pointIds.isEmpty()) {
+            return;
+        }
+        await(qdrantClient.deleteAsync(
+            properties.getCollectionName(),
+            pointIds.stream()
+                .map(pointId -> id(pointId))
+                .toList(),
+            properties.getTimeout()
+        ));
+    }
+
+    @Override
+    public void overwritePayload(UUID pointId, Map<String, Object> payload) {
+        ensureCollection();
+        if (pointId == null) {
+            return;
+        }
+        await(qdrantClient.overwritePayloadAsync(
+            properties.getCollectionName(),
+            toPayload(payload),
+            id(pointId),
+            null,
+            null,
             properties.getTimeout()
         ));
     }

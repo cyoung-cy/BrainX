@@ -38,6 +38,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
     private final NoteSearchIndexPort noteSearchIndexPort;
     private final NoteSummaryPort noteSummaryPort;
     private final MarkdownNoteChunker noteChunker;
+    private final NoteChunkManifestStore noteChunkManifestStore;
+    private final NoteChunkIndexPlanner noteChunkIndexPlanner;
 
     public WorkspaceNoteEventHandler(
         ObjectMapper objectMapper,
@@ -45,7 +47,9 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         WorkspaceNotePort workspaceNotePort,
         NoteSearchIndexPort noteSearchIndexPort,
         NoteSummaryPort noteSummaryPort,
-        MarkdownNoteChunker noteChunker
+        MarkdownNoteChunker noteChunker,
+        NoteChunkManifestStore noteChunkManifestStore,
+        NoteChunkIndexPlanner noteChunkIndexPlanner
     ) {
         this.objectMapper = objectMapper;
         this.noteProjectionStore = noteProjectionStore;
@@ -53,6 +57,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         this.noteSearchIndexPort = noteSearchIndexPort;
         this.noteSummaryPort = noteSummaryPort;
         this.noteChunker = noteChunker;
+        this.noteChunkManifestStore = noteChunkManifestStore;
+        this.noteChunkIndexPlanner = noteChunkIndexPlanner;
     }
 
     @Override
@@ -105,7 +111,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             context.eventId(),
             context.envelope().occurredAt()
         );
-        boolean snapshotAvailable = tryIndexFromSnapshot(projection, version, null, context.eventId(), false);
+        boolean snapshotAvailable = tryIndexFromSnapshot(projection, version, null, context.eventId(), false, false);
         if (!snapshotAvailable) {
             noteProjectionStore.save(projection);
             replaceProvisionalIndex(
@@ -164,7 +170,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             context.eventId(),
             context.envelope().occurredAt()
         ));
-        tryIndexFromSnapshot(base, version, payload.markdownHash(), context.eventId(), true);
+        tryIndexFromSnapshot(base, version, payload.markdownHash(), context.eventId(), true, false);
     }
 
     private void handleNoteMetadataChanged(EventProcessingContext context) {
@@ -199,6 +205,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         String folderId = payload.has("folderId") ? text(payload, "folderId") : base.folderId();
         List<String> tags = payload.has("tags") ? stringList(payload.get("tags")) : base.tags();
         Boolean archived = payload.hasNonNull("archived") ? payload.get("archived").asBoolean() : base.archived();
+        boolean titleChanged = title != null && !title.equals(base.title());
         NoteProjection updated = base.withMetadata(
             title,
             folderId,
@@ -214,7 +221,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             removeIndex(updated, context.eventId());
             return;
         }
-        tryIndexFromSnapshot(updated, version, updated.markdownHash(), context.eventId(), true);
+        tryIndexFromSnapshot(updated, version, updated.markdownHash(), context.eventId(), true, titleChanged);
     }
 
     private void handleNoteTagsChanged(EventProcessingContext context) {
@@ -247,7 +254,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         NoteProjection updated = base.withTags(payload.tags(), context.eventId(), context.envelope().occurredAt());
         noteProjectionStore.save(updated);
         if (updated.searchable()) {
-            tryIndexFromSnapshot(updated, updated.version(), updated.markdownHash(), context.eventId(), true);
+            tryIndexFromSnapshot(updated, updated.version(), updated.markdownHash(), context.eventId(), true, false);
         }
     }
 
@@ -307,7 +314,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         int minimumVersion,
         String markdownHash,
         String eventId,
-        boolean failOnSnapshotError
+        boolean failOnSnapshotError,
+        boolean forceFullReplace
     ) {
         NoteSnapshot snapshot;
         try {
@@ -328,6 +336,11 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             throw EventProcessingException.retryable("SNAPSHOT_STALE", "Workspace note snapshot is older than the event.");
         }
 
+        boolean titleChanged = base.searchIndexStatus() == NoteSearchIndexStatus.INDEXED
+            && !sameValue(base.title(), snapshot.title());
+        boolean requiresFullReplace = forceFullReplace
+            || titleChanged
+            || requiresIndexRecovery(base.searchIndexStatus());
         NoteProjection indexed = base.withDocumentGroupId(snapshotDocumentGroupId(base, snapshot)).withSnapshot(
             snapshot.title(),
             snapshot.folderId(),
@@ -354,7 +367,8 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                 ),
                 indexed.version(),
                 indexed.markdownHash(),
-                eventId
+                eventId,
+                requiresFullReplace
             );
         }
         return true;
@@ -362,6 +376,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
 
     private void replaceProvisionalIndex(NoteProjection projection, List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks, String eventId) {
         try {
+            Instant indexedAt = Instant.now();
             boolean indexed = noteSearchIndexPort.replaceNoteChunks(
                 projection.userId(),
                 projection.documentGroupId(),
@@ -369,7 +384,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                 chunks
             );
             if (indexed) {
-                noteProjectionStore.save(projection.provisionallyIndexed(projection.version(), Instant.now()));
+                noteChunkManifestStore.replaceForNote(
+                    projection.userId(),
+                    projection.documentGroupId(),
+                    projection.noteId(),
+                    manifestsFor(chunks, projection.version(), null, indexedAt)
+                );
+                noteProjectionStore.save(projection.provisionallyIndexed(projection.version(), indexedAt));
             }
         } catch (RuntimeException exception) {
             noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
@@ -382,17 +403,33 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks,
         int indexedVersion,
         String indexedMarkdownHash,
-        String eventId
+        String eventId,
+        boolean forceFullReplace
     ) {
         try {
-            boolean indexed = noteSearchIndexPort.replaceNoteChunks(
-                projection.userId(),
-                projection.documentGroupId(),
-                projection.noteId(),
-                chunks
+            Instant indexedAt = Instant.now();
+            NoteChunkIndexPlan plan = noteChunkIndexPlanner.plan(
+                noteChunkManifestStore.findByUserIdAndDocumentGroupIdAndNoteId(
+                    projection.userId(),
+                    projection.documentGroupId(),
+                    projection.noteId()
+                ),
+                chunks,
+                MarkdownNoteChunker.CHUNKER_VERSION,
+                indexedVersion,
+                indexedMarkdownHash,
+                indexedAt,
+                forceFullReplace
             );
+            boolean indexed = applyIndexPlan(projection, chunks, plan);
             if (indexed) {
-                noteProjectionStore.save(projection.indexed(indexedVersion, indexedMarkdownHash, Instant.now()));
+                noteChunkManifestStore.replaceForNote(
+                    projection.userId(),
+                    projection.documentGroupId(),
+                    projection.noteId(),
+                    plan.manifests()
+                );
+                noteProjectionStore.save(projection.indexed(indexedVersion, indexedMarkdownHash, indexedAt));
             }
         } catch (RuntimeException exception) {
             noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
@@ -408,12 +445,64 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
                 projection.noteId()
             );
             if (removed) {
+                noteChunkManifestStore.deleteByUserIdAndDocumentGroupIdAndNoteId(
+                    projection.userId(),
+                    projection.documentGroupId(),
+                    projection.noteId()
+                );
                 noteProjectionStore.save(projection.indexRemoved(eventId, Instant.now()));
             }
         } catch (RuntimeException exception) {
             noteProjectionStore.save(projection.indexFailed(eventId, Instant.now()));
             throw exception;
         }
+    }
+
+    private boolean applyIndexPlan(
+        NoteProjection projection,
+        List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks,
+        NoteChunkIndexPlan plan
+    ) {
+        if (plan.fullReplace()) {
+            return noteSearchIndexPort.replaceNoteChunks(
+                projection.userId(),
+                projection.documentGroupId(),
+                projection.noteId(),
+                chunks
+            );
+        }
+        if (plan.delta().empty()) {
+            return true;
+        }
+        return noteSearchIndexPort.applyNoteChunkDelta(
+            projection.userId(),
+            projection.documentGroupId(),
+            projection.noteId(),
+            plan.delta()
+        );
+    }
+
+    private static List<NoteIndexChunkManifest> manifestsFor(
+        List<com.brainx.intelligence.exploration.domain.NoteSearchDocument> chunks,
+        Integer indexedVersion,
+        String indexedMarkdownHash,
+        Instant indexedAt
+    ) {
+        return chunks.stream()
+            .map(chunk -> NoteIndexChunkManifest.fromDocument(
+                chunk,
+                MarkdownNoteChunker.CHUNKER_VERSION,
+                indexedVersion,
+                indexedMarkdownHash,
+                indexedAt
+            ))
+            .toList();
+    }
+
+    private static boolean requiresIndexRecovery(NoteSearchIndexStatus status) {
+        return status == NoteSearchIndexStatus.NOT_INDEXED
+            || status == NoteSearchIndexStatus.PROVISIONAL
+            || status == NoteSearchIndexStatus.FAILED;
     }
 
     private <T> T readPayload(EventProcessingContext context, Class<T> payloadType) {
@@ -453,6 +542,13 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             return base.documentGroupId();
         }
         return snapshot.documentGroupId();
+    }
+
+    private static boolean sameValue(String left, String right) {
+        if (left == null) {
+            return right == null;
+        }
+        return left.equals(right);
     }
 
     private static String requireText(String value, String name) {

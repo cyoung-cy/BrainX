@@ -38,6 +38,14 @@ import reactor.core.publisher.Flux;
 
 class AssistServiceTest {
 
+    private static final String LONG_SELECTED_TEXT = "선택된 문장을 충분히 길게 작성해서 인라인 AI가 실제로 다시쓰기 작업을 수행할 수 있는 입력입니다.";
+    private static final String LONG_CONTEXT_BEFORE =
+        "앞 문맥은 이어쓰기가 자연스럽게 동작할 수 있도록 최소 기준보다 길게 준비한다. "
+            + "사용자가 이미 작성한 노트의 흐름과 핵심 용어, 다음 문장으로 이어질 단서를 포함한다.";
+    private static final String LONG_CONTEXT_AFTER =
+        "뒤 문맥도 요약 테스트에서 사용할 수 있도록 충분한 길이를 둔다. "
+            + "이 내용은 선택 영역 주변에 있는 참고 문맥이며 모델이 작업 범위를 오해하지 않도록 한다.";
+
     private final AssistProperties properties = new AssistProperties();
     private final FakeAiModelSettingsPort settingsPort = new FakeAiModelSettingsPort();
     private final FakeEntitlementPort entitlementPort = new FakeEntitlementPort();
@@ -79,7 +87,7 @@ class AssistServiceTest {
         var result = service.createInlineAssist(new InlineAssistCommand(
             "user-1",
             "note-1",
-            " selected ",
+            LONG_SELECTED_TEXT,
             "before",
             "after",
             InlineAssistAction.REWRITE,
@@ -101,7 +109,7 @@ class AssistServiceTest {
             .contains("Action: REWRITE")
             .contains("Language: en")
             .contains("Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\nbefore")
-            .contains("Selected (only this section may be replaced for REWRITE/TRANSLATE):\n selected ")
+            .contains("Selected (only this section may be replaced for REWRITE/TRANSLATE):\n" + LONG_SELECTED_TEXT)
             .contains("Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\nafter")
             .contains("If Action is REWRITE, return only the replacement for Selected");
 
@@ -133,9 +141,9 @@ class AssistServiceTest {
         service.createInlineAssist(new InlineAssistCommand(
             "user-1",
             "note-1",
-            "selected",
-            "",
-            "",
+            null,
+            LONG_CONTEXT_BEFORE,
+            LONG_CONTEXT_AFTER,
             InlineAssistAction.SUMMARIZE,
             null
         ));
@@ -156,7 +164,26 @@ class AssistServiceTest {
             null
         )))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("requires selectedText");
+            .hasMessageContaining("선택 영역이 너무 짧습니다");
+
+        assertThat(chatPort.calls).isZero();
+        assertThat(assistEventPort.createdEvents).isEmpty();
+        assertThat(tokenUsagePort.records).isEmpty();
+    }
+
+    @Test
+    void selectedTextActionsRequireEnoughSelectedText() {
+        assertThatThrownBy(() -> service.createInlineAssist(new InlineAssistCommand(
+            "user-1",
+            "note-1",
+            "짧음",
+            LONG_CONTEXT_BEFORE,
+            LONG_CONTEXT_AFTER,
+            InlineAssistAction.REWRITE,
+            null
+        )))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("선택 영역이 너무 짧습니다");
 
         assertThat(chatPort.calls).isZero();
         assertThat(assistEventPort.createdEvents).isEmpty();
@@ -175,7 +202,30 @@ class AssistServiceTest {
             null
         )))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("CONTINUE requires contextBefore");
+            .hasMessageContaining("이어쓰기에 필요한 앞 문맥이 부족합니다");
+
+        assertThat(chatPort.calls).isZero();
+        assertThat(assistEventPort.createdEvents).isEmpty();
+        assertThat(tokenUsagePort.records).isEmpty();
+    }
+
+    @Test
+    void continueRequiresEnoughContextBefore() {
+        assertThatThrownBy(() -> service.createInlineAssist(new InlineAssistCommand(
+            "user-1",
+            "note-1",
+            null,
+            "한 문장뿐인 앞 문맥",
+            "after",
+            InlineAssistAction.CONTINUE,
+            null
+        )))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("이어쓰기에 필요한 앞 문맥이 부족합니다");
+
+        assertThat(chatPort.calls).isZero();
+        assertThat(assistEventPort.createdEvents).isEmpty();
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test
@@ -184,8 +234,8 @@ class AssistServiceTest {
             "user-1",
             "note-1",
             null,
-            "context before",
-            "context after",
+            LONG_CONTEXT_BEFORE,
+            LONG_CONTEXT_AFTER,
             InlineAssistAction.SUMMARIZE,
             null
         ));
@@ -193,10 +243,29 @@ class AssistServiceTest {
         assertThat(chatPort.lastRequest.messages().get(1).content())
             .contains("Action: SUMMARIZE")
             .contains("Language: ko")
-            .contains("Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\ncontext before")
+            .contains("Context Before (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\n" + LONG_CONTEXT_BEFORE)
             .contains("Selected (only this section may be replaced for REWRITE/TRANSLATE):\n(empty)")
-            .contains("Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\ncontext after")
+            .contains("Context After (reference only; do not rewrite or include in REWRITE/TRANSLATE output):\n" + LONG_CONTEXT_AFTER)
             .contains("If Action is SUMMARIZE, return only the summary");
+    }
+
+    @Test
+    void summarizeRequiresEnoughCombinedContext() {
+        assertThatThrownBy(() -> service.createInlineAssist(new InlineAssistCommand(
+            "user-1",
+            "note-1",
+            "짧음",
+            "앞도 짧음",
+            "뒤도 짧음",
+            InlineAssistAction.SUMMARIZE,
+            null
+        )))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("요약에 필요한 노트 내용이 너무 짧습니다");
+
+        assertThat(chatPort.calls).isZero();
+        assertThat(assistEventPort.createdEvents).isEmpty();
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test
@@ -207,7 +276,7 @@ class AssistServiceTest {
         assertThatThrownBy(() -> service.createInlineAssist(new InlineAssistCommand(
             "user-1",
             "note-1",
-            "selected",
+            LONG_SELECTED_TEXT,
             null,
             null,
             InlineAssistAction.REWRITE,

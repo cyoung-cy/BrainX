@@ -16,7 +16,32 @@ public interface NoteSearchIndexPort {
 
     boolean replaceNoteChunks(String userId, String documentGroupId, String noteId, List<NoteSearchDocument> chunks);
 
+    default boolean applyNoteChunkDelta(String userId, String documentGroupId, String noteId, NoteChunkDelta delta) {
+        return false;
+    }
+
     boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId);
+
+    record NoteChunkDelta(
+        List<NoteSearchDocument> upsertChunks,
+        List<String> deleteChunkIds,
+        List<NoteSearchDocument> payloadOnlyChunks
+    ) {
+        public NoteChunkDelta {
+            upsertChunks = upsertChunks == null ? List.of() : List.copyOf(upsertChunks);
+            deleteChunkIds = deleteChunkIds == null
+                ? List.of()
+                : deleteChunkIds.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .distinct()
+                    .toList();
+            payloadOnlyChunks = payloadOnlyChunks == null ? List.of() : List.copyOf(payloadOnlyChunks);
+        }
+
+        public boolean empty() {
+            return upsertChunks.isEmpty() && deleteChunkIds.isEmpty() && payloadOnlyChunks.isEmpty();
+        }
+    }
 
     record NoteSearchQuery(
         String userId,

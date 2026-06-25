@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort.NoteChunkSearchQuery;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteChunkDelta;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
@@ -193,6 +194,49 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     }
 
     @Override
+    public boolean applyNoteChunkDelta(String userId, String documentGroupId, String noteId, NoteChunkDelta delta) {
+        QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
+        if (vectorIndexClient == null) {
+            return false;
+        }
+        if (delta == null || delta.empty()) {
+            return true;
+        }
+        String normalizedDocumentGroupId = DocumentGroups.normalize(documentGroupId);
+        ensureDeltaChunksMatchScope(userId, normalizedDocumentGroupId, noteId, delta);
+        AiEmbeddingPort aiEmbeddingPort = aiEmbeddingPortProvider.getIfAvailable();
+        if (!delta.upsertChunks().isEmpty() && aiEmbeddingPort == null) {
+            return false;
+        }
+
+        if (!delta.deleteChunkIds().isEmpty()) {
+            vectorIndexClient.deleteByPointIds(delta.deleteChunkIds().stream()
+                .map(chunkId -> documentId(userId, normalizedDocumentGroupId, chunkId))
+                .toList());
+        }
+        if (!delta.upsertChunks().isEmpty()) {
+            AiEmbeddingResponse embedding = aiEmbeddingPort.embed(new AiEmbeddingRequest(
+                null,
+                delta.upsertChunks().stream().map(NoteSearchDocument::chunkText).toList(),
+                InputType.DOCUMENT
+            ));
+            recordEmbeddingUsage(userId, INDEX_EMBEDDING_FEATURE_ID, embedding);
+            List<QdrantVectorPoint> points = toVectorPoints(delta.upsertChunks(), embedding);
+            if (points.isEmpty()) {
+                return false;
+            }
+            vectorIndexClient.upsert(points);
+        }
+        for (NoteSearchDocument chunk : delta.payloadOnlyChunks()) {
+            vectorIndexClient.overwritePayload(
+                documentId(chunk.userId(), chunk.documentGroupId(), chunk.chunkId()),
+                toPayload(chunk)
+            );
+        }
+        return true;
+    }
+
+    @Override
     public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
         QdrantVectorIndexClient vectorIndexClient = vectorIndexClientProvider.getIfAvailable();
         if (vectorIndexClient == null) {
@@ -249,7 +293,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
 
     private static QdrantVectorPoint toVectorPoint(NoteSearchDocument document, List<Double> vector) {
         return new QdrantVectorPoint(
-            documentId(document.userId(), document.documentGroupId(), document.noteId(), document.chunkIndex()),
+            documentId(document.userId(), document.documentGroupId(), document.chunkId()),
             vector,
             toPayload(document)
         );
@@ -281,9 +325,35 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
         return values == null ? List.of() : values;
     }
 
-    private static UUID documentId(String userId, String documentGroupId, String noteId, int chunkIndex) {
-        return UUID.nameUUIDFromBytes((userId + "::" + documentGroupId + "::" + noteId + "::" + chunkIndex)
+    private static UUID documentId(String userId, String documentGroupId, String chunkId) {
+        return UUID.nameUUIDFromBytes((userId + "::" + documentGroupId + "::" + chunkId)
             .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void ensureDeltaChunksMatchScope(
+        String userId,
+        String documentGroupId,
+        String noteId,
+        NoteChunkDelta delta
+    ) {
+        boolean mismatch = delta.upsertChunks().stream()
+            .anyMatch(chunk -> !chunkMatchesScope(chunk, userId, documentGroupId, noteId))
+            || delta.payloadOnlyChunks().stream()
+                .anyMatch(chunk -> !chunkMatchesScope(chunk, userId, documentGroupId, noteId));
+        if (mismatch) {
+            throw new IllegalArgumentException("chunk scope must match delta scope.");
+        }
+    }
+
+    private static boolean chunkMatchesScope(
+        NoteSearchDocument chunk,
+        String userId,
+        String documentGroupId,
+        String noteId
+    ) {
+        return userId.equals(chunk.userId())
+            && documentGroupId.equals(chunk.documentGroupId())
+            && noteId.equals(chunk.noteId());
     }
 
     private static int searchTopK(int limit) {
