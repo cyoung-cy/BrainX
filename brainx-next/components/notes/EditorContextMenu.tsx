@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import {
   ClipboardPaste,
+  Columns2,
   Columns3,
   ImagePlus,
   Link2,
@@ -15,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { activeTableDisplayAttrs, updateActiveTableAttrs, type TableColorPreset } from "./tableUtils";
+import { activeTableDisplayAttrs, updateActiveTableAttrs } from "./tableUtils";
 
 export interface EditorContextTarget {
   x: number;
@@ -59,14 +60,6 @@ function MenuItem({
   );
 }
 
-const TABLE_COLORS: { value: TableColorPreset; label: string; color: string }[] = [
-  { value: "default", label: "기본", color: "rgb(var(--surface2))" },
-  { value: "blue", label: "파랑", color: "#3b82f6" },
-  { value: "emerald", label: "초록", color: "#10b981" },
-  { value: "amber", label: "노랑", color: "#f59e0b" },
-  { value: "rose", label: "분홍", color: "#f43f5e" },
-];
-
 export default function EditorContextMenu({
   target,
   editor,
@@ -74,6 +67,7 @@ export default function EditorContextMenu({
   onChooseImage,
   onInsertImageUrl,
   onInsertTable,
+  onSplitColumns,
 }: {
   target: EditorContextTarget;
   editor: Editor;
@@ -81,12 +75,15 @@ export default function EditorContextMenu({
   onChooseImage: () => void;
   onInsertImageUrl: () => void;
   onInsertTable: (rows: number, cols: number) => void;
+  onSplitColumns: (count: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: target.x, top: target.y, visibility: "hidden" as "hidden" | "visible" });
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [rows, setRows] = useState(3);
   const [cols, setCols] = useState(3);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [columnCount, setColumnCount] = useState(2);
 
   useEffect(() => {
     const el = ref.current;
@@ -98,7 +95,7 @@ export default function EditorContextMenu({
       top: Math.max(margin, Math.min(target.y, window.innerHeight - rect.height - margin)),
       visibility: "visible",
     });
-  }, [target.x, target.y, showTablePicker, target.inTable]);
+  }, [target.x, target.y, showTablePicker, showColumnPicker, target.inTable]);
 
   useEffect(() => {
     const handlePointer = (event: MouseEvent) => {
@@ -125,6 +122,9 @@ export default function EditorContextMenu({
   const tableAttrs = target.inTable ? activeTableDisplayAttrs(editor) : null;
   const canMerge = target.inTable && editor.can().mergeCells();
   const canSplit = target.inTable && editor.can().splitCell();
+  // 컬럼 분할은 커서가 최상위 블록(리스트 항목/인용 안처럼 더 깊이 중첩되지 않은 위치)에
+  // 있을 때만 의미가 명확하다 — splitBlockIntoColumns의 depth 제약과 동일한 기준.
+  const canSplitColumns = !target.inTable && editor.state.selection.$from.depth === 1;
 
   return createPortal(
     <div
@@ -189,6 +189,38 @@ export default function EditorContextMenu({
         </div>
       )}
 
+      <MenuItem
+        icon={<Columns2 size={13} />}
+        label="N단으로 나누기"
+        disabled={!canSplitColumns}
+        title={canSplitColumns ? undefined : "리스트 항목/인용 안쪽처럼 중첩된 위치에서는 사용할 수 없습니다"}
+        onClick={() => setShowColumnPicker((current) => !current)}
+      />
+      {showColumnPicker && canSplitColumns && (
+        <div className="mx-2 mb-1 rounded-md border border-line/40 bg-surface2/35 p-2">
+          <div className="mb-2 flex items-center gap-2 text-[11px] text-txt3">
+            <label className="flex items-center gap-1">단 개수
+              <input
+                aria-label="컬럼 개수"
+                type="number"
+                min={2}
+                max={6}
+                value={columnCount}
+                onChange={(event) => setColumnCount(Math.min(6, Math.max(2, Number(event.target.value) || 2)))}
+                className="h-6 w-12 rounded border border-line/50 bg-transparent px-1 text-txt outline-none"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={run(() => onSplitColumns(columnCount))}
+            className="w-full rounded bg-primary py-1 text-[11px] font-medium text-white hover:opacity-90"
+          >
+            {columnCount}단으로 나누기
+          </button>
+        </div>
+      )}
+
       {target.inTable && (
         <>
           <div className="my-1 border-t border-line/30" />
@@ -204,45 +236,34 @@ export default function EditorContextMenu({
           <MenuItem icon={<Merge size={13} />} label="셀 병합" disabled={!canMerge} onClick={run(() => editor.chain().focus().mergeCells().run())} />
           <MenuItem icon={<Split size={13} />} label="셀 병합 해제" disabled={!canSplit} onClick={run(() => editor.chain().focus().splitCell().run())} />
 
-          <div className="px-3 pb-1 pt-1.5">
-            <p className="mb-1.5 text-[10px] font-medium text-txt3">표 색상</p>
-            <div className="flex items-center gap-1.5">
-              {TABLE_COLORS.map((preset) => (
-                <button
-                  key={preset.value}
-                  type="button"
-                  title={preset.label}
-                  aria-label={`표 색상 ${preset.label}`}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => updateActiveTableAttrs(editor, { tableColor: preset.value })}
-                  className={cx(
-                    "h-5 w-5 rounded-full border transition-transform hover:scale-110",
-                    tableAttrs?.tableColor === preset.value ? "border-primary ring-1 ring-primary" : "border-line/70"
-                  )}
-                  style={{ background: preset.color }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="px-3 pb-2 pt-1">
+          {/* 표 전체 색 기능은 제거됨(요구사항) — 셀 배경색만 유지하며, 셀 배경색은
+              TableToolbar(표 안에 커서가 있을 때 뜨는 플로팅 툴바)에서 지정한다. */}
+          <div className="px-3 pb-2 pt-1.5">
             <p className="mb-1 text-[10px] font-medium text-txt3">테두리 굵기</p>
             <div className="flex gap-1">
-              {[1, 2, 3].map((width) => (
-                <button
-                  key={width}
-                  type="button"
-                  aria-label={`표 테두리 ${width}px`}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => updateActiveTableAttrs(editor, { borderWidth: width })}
-                  className={cx(
-                    "rounded px-2 py-0.5 text-[10px] transition-colors",
-                    tableAttrs?.borderWidth === width ? "bg-primary/15 text-primary" : "text-txt3 hover:bg-surface2 hover:text-txt"
-                  )}
-                >
-                  {width}px
-                </button>
-              ))}
+              {[1, 2, 3].map((width) => {
+                const active = tableAttrs?.borderWidth === width;
+                return (
+                  <button
+                    key={width}
+                    type="button"
+                    aria-label={`표 테두리 ${width}px`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => updateActiveTableAttrs(editor, { borderWidth: width })}
+                    className={cx(
+                      "flex flex-1 flex-col items-center gap-1 rounded py-1 transition-colors",
+                      active ? "bg-primary/15 text-primary ring-1 ring-primary/50" : "text-txt3 hover:bg-surface2 hover:text-txt"
+                    )}
+                  >
+                    <span
+                      className="block w-7 rounded-full"
+                      style={{ height: width, background: active ? "rgb(var(--primary))" : "rgb(var(--txt3))" }}
+                      aria-hidden
+                    />
+                    <span className="text-[9.5px] leading-none">{width}px</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </>
