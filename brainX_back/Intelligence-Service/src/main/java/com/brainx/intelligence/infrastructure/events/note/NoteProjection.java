@@ -14,6 +14,7 @@ public record NoteProjection(
     List<String> tags,
     int version,
     String markdownHash,
+    String markdown,
     boolean contentPending,
     boolean archived,
     boolean trashed,
@@ -41,6 +42,10 @@ public record NoteProjection(
             : searchIndexStatus;
         if (indexedVersion != null && indexedVersion < 0) {
             throw new IllegalArgumentException("indexedVersion must not be negative.");
+        }
+        markdown = normalizeMarkdown(markdown);
+        if (archived || trashed || deleted || searchIndexStatus == NoteSearchIndexStatus.REMOVED) {
+            markdown = null;
         }
         if (searchIndexStatus == NoteSearchIndexStatus.NOT_INDEXED
             || searchIndexStatus == NoteSearchIndexStatus.REMOVED) {
@@ -74,6 +79,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            null,
             contentPending,
             archived,
             trashed,
@@ -108,6 +114,47 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            null,
+            contentPending,
+            archived,
+            trashed,
+            deleted,
+            lastEventId,
+            updatedAt,
+            defaultSearchIndexStatus(archived, trashed, deleted),
+            null,
+            null,
+            null
+        );
+    }
+
+    public NoteProjection(
+        String userId,
+        String documentGroupId,
+        String noteId,
+        String title,
+        String folderId,
+        List<String> tags,
+        int version,
+        String markdownHash,
+        String markdown,
+        boolean contentPending,
+        boolean archived,
+        boolean trashed,
+        boolean deleted,
+        String lastEventId,
+        Instant updatedAt
+    ) {
+        this(
+            userId,
+            documentGroupId,
+            noteId,
+            title,
+            folderId,
+            tags,
+            version,
+            markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -164,6 +211,7 @@ public record NoteProjection(
             tags,
             version,
             null,
+            null,
             true,
             false,
             false,
@@ -204,6 +252,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -223,6 +272,7 @@ public record NoteProjection(
         List<String> tags,
         int version,
         String markdownHash,
+        String markdown,
         String eventId,
         Instant updatedAt
     ) {
@@ -235,6 +285,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            markdown,
             false,
             archived,
             trashed,
@@ -267,6 +318,7 @@ public record NoteProjection(
             tags == null ? this.tags : tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             nextArchived,
             trashed,
@@ -290,6 +342,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -313,6 +366,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -336,6 +390,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            null,
             contentPending,
             archived,
             true,
@@ -359,6 +414,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            null,
             contentPending,
             archived,
             trashed,
@@ -382,6 +438,7 @@ public record NoteProjection(
             tags,
             this.version,
             this.markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -405,6 +462,7 @@ public record NoteProjection(
             tags,
             this.version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -428,6 +486,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,
@@ -451,6 +510,7 @@ public record NoteProjection(
             tags,
             version,
             markdownHash,
+            null,
             contentPending,
             archived,
             trashed,
@@ -486,6 +546,13 @@ public record NoteProjection(
             return right == null;
         }
         return left.equals(right);
+    }
+
+    private static String normalizeMarkdown(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value;
     }
 
     private static String requireText(String value, String name) {

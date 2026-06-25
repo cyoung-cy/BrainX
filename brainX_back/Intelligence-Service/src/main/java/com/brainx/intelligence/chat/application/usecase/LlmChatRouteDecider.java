@@ -133,6 +133,13 @@ public class LlmChatRouteDecider implements ChatRouteDecider {
             - COMPOSE: asks to write, draft, rewrite, outline, or create content.
             - NOTE_ACTION: asks to save, insert, append, apply, or add generated content to a note. This only produces a draft; no mutation is performed.
             - OUT_OF_SCOPE: weather, news, general web knowledge, coding help, app navigation, account, billing, settings, or anything unrelated to notes/search/writing/note draft application.
+            Routing priority:
+            - If the message refers to the current note, this note, selected note/text, current document group, current thread, or current document-group notes, choose NOTE_QA unless it asks to save/insert/apply content.
+            - Choose WORKSPACE_SEARCH only when the user explicitly asks across all notes, the whole workspace, every note, my entire notes, or user-wide/global note search.
+            Examples:
+            - "현재 문서 그룹 노트 기준으로 RAG 흐름을 설명해줘" -> NOTE_QA
+            - "이 노트에서 토큰 사용량 기록 과정을 설명해줘" -> NOTE_QA
+            - "내 전체 노트에서 인증과 토큰 사용량 관련 내용을 찾아 비교해줘" -> WORKSPACE_SEARCH
             Do not answer the user. Classify only.
             """;
     }

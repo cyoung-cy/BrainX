@@ -55,6 +55,7 @@ class SampleRagServiceTest {
         assertThat(projectionStore.saved).hasSize(1);
         assertThat(projectionStore.saved.getFirst().documentGroupId()).isEqualTo("group-1");
         assertThat(projectionStore.saved.getFirst().markdownHash()).hasSize(64);
+        assertThat(projectionStore.saved.getFirst().markdown()).contains("RAG 품질");
         assertThat(projectionStore.saved.getFirst().searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
         assertThat(projectionStore.saved.getFirst().indexedVersion()).isEqualTo(1);
         assertThat(projectionStore.saved.getFirst().indexedMarkdownHash()).hasSize(64);
@@ -375,6 +376,23 @@ class SampleRagServiceTest {
                 .filter(projection -> projection.userId().equals(userId)
                     && projection.documentGroupId().equals(documentGroupId)
                     && noteIds.contains(projection.noteId()))
+                .toList();
+        }
+
+        @Override
+        public List<NoteProjection> findSearchableByUserIdAndDocumentGroupId(
+            String userId,
+            String documentGroupId,
+            int limit
+        ) {
+            return saved.stream()
+                .filter(projection -> projection.userId().equals(userId)
+                    && projection.documentGroupId().equals(documentGroupId)
+                    && projection.searchable()
+                    && !projection.contentPending()
+                    && projection.markdown() != null
+                    && projection.searchIndexStatus() == NoteSearchIndexStatus.INDEXED)
+                .limit(limit)
                 .toList();
         }
 

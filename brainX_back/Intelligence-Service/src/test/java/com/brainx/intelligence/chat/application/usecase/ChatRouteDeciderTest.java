@@ -58,6 +58,10 @@ class ChatRouteDeciderTest {
         assertThat(decision.routerModel()).isEqualTo("gpt-5.4-nano");
         assertThat(chatPort.lastRequest.modelId()).isEqualTo("gpt-5.4-nano");
         assertThat(chatPort.lastRequest.messages().getFirst().content()).contains("Return only strict JSON");
+        assertThat(chatPort.lastRequest.messages().getFirst().content())
+            .contains("current document group")
+            .contains("내 전체 노트")
+            .contains("WORKSPACE_SEARCH");
         assertThat(chatPort.lastRequest.messages().getLast().content()).contains("내 노트에서 인증 관련 내용");
         assertThat(tokenUsagePort.records).hasSize(1);
         assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("chat-router-classifier");

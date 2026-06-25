@@ -26,12 +26,14 @@ class NoteProjectionJpaAdapterTest {
     void saveAndFindProjectionPreservesTagsAndState() {
         adapter.save(new NoteProjection(
             "user-1",
+            "default",
             "note-1",
             "Title",
             "folder-1",
             List.of("tag-1", "tag-2"),
             2,
             "hash-2",
+            "# Title\n\nmarkdown body",
             false,
             false,
             false,
@@ -46,11 +48,71 @@ class NoteProjectionJpaAdapterTest {
         assertThat(projection.documentGroupId()).isEqualTo("default");
         assertThat(projection.tags()).containsExactly("tag-1", "tag-2");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
+        assertThat(projection.markdown()).contains("markdown body");
         assertThat(projection.contentPending()).isFalse();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
         assertThat(projection.indexedVersion()).isEqualTo(2);
         assertThat(projection.indexedMarkdownHash()).isEqualTo("hash-2");
         assertThat(projection.indexedAt()).isEqualTo(Instant.parse("2026-06-19T00:00:01Z"));
+    }
+
+    @Test
+    void findSearchableByUserIdAndDocumentGroupIdReturnsIndexedMarkdownOnly() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Indexed",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            "indexed markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-2",
+            "Pending",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-3",
+            "No markdown",
+            null,
+            List.of(),
+            1,
+            "hash-3",
+            false,
+            false,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-3", Instant.parse("2026-06-19T00:00:01Z")));
+
+        var projections = adapter.findSearchableByUserIdAndDocumentGroupId("user-1", "group-1", 10);
+
+        assertThat(projections).extracting(NoteProjection::noteId).containsExactly("note-1");
+        assertThat(projections.getFirst().markdown()).isEqualTo("indexed markdown");
     }
 
     @Test

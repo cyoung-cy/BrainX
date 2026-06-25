@@ -4,7 +4,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
 
 interface NoteProjectionJpaRepository extends JpaRepository<NoteProjectionJpaEntity, String> {
 
@@ -18,5 +23,25 @@ interface NoteProjectionJpaRepository extends JpaRepository<NoteProjectionJpaEnt
         String userId,
         String documentGroupId,
         Collection<String> noteIds
+    );
+
+    @Query("""
+        select projection
+        from NoteProjectionJpaEntity projection
+        where projection.userId = :userId
+          and projection.documentGroupId = :documentGroupId
+          and projection.archived = false
+          and projection.trashed = false
+          and projection.deleted = false
+          and projection.contentPending = false
+          and projection.markdown is not null
+          and projection.searchIndexStatus = :status
+        order by projection.updatedAt desc, projection.noteId asc
+        """)
+    List<NoteProjectionJpaEntity> findSearchable(
+        @Param("userId") String userId,
+        @Param("documentGroupId") String documentGroupId,
+        @Param("status") NoteSearchIndexStatus status,
+        Pageable pageable
     );
 }

@@ -80,6 +80,7 @@ class WorkspaceNoteEventHandlerTest {
         assertThat(projection.title()).isEqualTo("Created note");
         assertThat(projection.contentPending()).isTrue();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.PROVISIONAL);
+        assertThat(projection.markdown()).isNull();
         assertThat(projection.indexedVersion()).isEqualTo(1);
         assertThat(projection.indexedMarkdownHash()).isNull();
         assertThat(searchIndex.savedDocuments).hasSize(1);
@@ -149,6 +150,7 @@ class WorkspaceNoteEventHandlerTest {
         assertThat(projection.documentGroupId()).isEqualTo("group-1");
         assertThat(projection.title()).isEqualTo("Snapshot title");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
+        assertThat(projection.markdown()).contains("Workspace markdown summary source");
         assertThat(projection.contentPending()).isFalse();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
         assertThat(projection.indexedVersion()).isEqualTo(2);
@@ -327,6 +329,23 @@ class WorkspaceNoteEventHandlerTest {
             return noteIds.stream()
                 .map(noteId -> projections.get(key(userId, documentGroupId, noteId)))
                 .filter(java.util.Objects::nonNull)
+                .toList();
+        }
+
+        @Override
+        public List<NoteProjection> findSearchableByUserIdAndDocumentGroupId(
+            String userId,
+            String documentGroupId,
+            int limit
+        ) {
+            return projections.values().stream()
+                .filter(projection -> projection.userId().equals(userId))
+                .filter(projection -> projection.documentGroupId().equals(documentGroupId))
+                .filter(projection -> projection.searchable())
+                .filter(projection -> !projection.contentPending())
+                .filter(projection -> projection.markdown() != null)
+                .filter(projection -> projection.searchIndexStatus() == NoteSearchIndexStatus.INDEXED)
+                .limit(limit)
                 .toList();
         }
 

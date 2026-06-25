@@ -147,6 +147,7 @@ Qdrant 검색은 chunk 단위로 수행한다. 하지만 공개 `POST /api/v1/in
 - `maxChunks=80`을 넘는 매우 긴 note의 뒤쪽 내용은 색인되지 않는다.
 - `NotesMoved`는 projection folderId만 갱신하고 Qdrant chunk metadata의 folder field는 아직 없다.
 - public semantic search는 note 단위 dedupe만 제공하므로, chunk 단위 결과 디버깅 API는 없다.
+- 검색용 Qdrant chunk는 정규화된 `doc_content`를 저장하므로 raw markdown offset을 보존하지 않는다. 유사 노트 자동 연결의 anchor 위치는 `intelligence_note_projections.markdown` read model에서 계산한다.
 
 ## 관련 코드
 

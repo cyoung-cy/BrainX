@@ -334,6 +334,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             snapshot.tags(),
             snapshot.version(),
             markdownHash,
+            snapshot.markdown(),
             eventId,
             snapshot.updatedAt() == null ? Instant.now() : snapshot.updatedAt()
         );

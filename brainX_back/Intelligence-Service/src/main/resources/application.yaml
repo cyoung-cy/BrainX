@@ -45,6 +45,13 @@ brainx:
       group-id: ${BRAINX_EVENTS_CONSUMER_GROUP_ID:intelligence-service}
   assist:
     default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+  note-auto-link:
+    model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+    max-notes: ${BRAINX_NOTE_AUTO_LINK_MAX_NOTES:50}
+    vector-top-k: ${BRAINX_NOTE_AUTO_LINK_VECTOR_TOP_K:20}
+    min-vector-score: ${BRAINX_NOTE_AUTO_LINK_MIN_VECTOR_SCORE:0.35}
+    max-source-windows-per-note: ${BRAINX_NOTE_AUTO_LINK_MAX_SOURCE_WINDOWS_PER_NOTE:12}
+    max-suggestions-per-note: ${BRAINX_NOTE_AUTO_LINK_MAX_SUGGESTIONS_PER_NOTE:5}
   chat:
     router:
       enabled: ${BRAINX_CHAT_ROUTER_ENABLED:true}
@@ -119,3 +126,11 @@ brainx:
       tags: ${BRAINX_DEV_CHAT_ROUTER_TAGS:sample_notes}
       query: ${BRAINX_DEV_CHAT_ROUTER_QUERY:}
       model-id: ${BRAINX_DEV_CHAT_ROUTER_MODEL_ID:${OPENAI_CHAT_MODEL:gpt-5.4-mini}}
+    note-auto-link:
+      enabled: ${BRAINX_DEV_NOTE_AUTO_LINK_ENABLED:false}
+      command: ${BRAINX_DEV_NOTE_AUTO_LINK_COMMAND:analyze}
+      strategy: ${BRAINX_DEV_NOTE_AUTO_LINK_STRATEGY:COMPARE}
+      user-id: ${BRAINX_DEV_NOTE_AUTO_LINK_USER_ID:sample-user}
+      document-group-id: ${BRAINX_DEV_NOTE_AUTO_LINK_DOCUMENT_GROUP_ID:default}
+      max-notes: ${BRAINX_DEV_NOTE_AUTO_LINK_MAX_NOTES:0}
+      model-id: ${BRAINX_DEV_NOTE_AUTO_LINK_MODEL_ID:${OPENAI_CHAT_MODEL:gpt-5.4-mini}}

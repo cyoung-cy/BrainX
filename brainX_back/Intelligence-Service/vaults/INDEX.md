@@ -18,6 +18,7 @@
 - `docs/technical/external-search.md`: OpenAI Responses `web_search` 기반 외부 자료 검색 port, CLI 실행 방법, RAG chat router 연결 방향을 확인할 때 참고합니다.
 - `docs/technical/frontend-ai-context-management.md`: `brainx-next`의 프론트 주도 AI context 관리, `clientContext`/`noteScope` 분리, RightSidebar chat과 editor inline assist context 조립 정책을 확인할 때 참고합니다.
 - `docs/technical/inline-assist-frontend-stream-lifecycle.md`: `brainx-next` inline assist 요약/다시쓰기 SSE 소비 중 요청 state cleanup과 stream abort가 coupling될 때 생기는 문제, 원인 분석, 재발 방지 기준을 확인할 때 참고합니다.
+- `docs/technical/note-auto-linking.md`: 유사 노트 자동 연결 v1의 `VECTOR_LLM`/`LLM_ONLY` 비교, anchor 위치 계산, CLI 실행, usage/cost 기록 정책을 확인할 때 참고합니다.
 - `docs/technical/note-chunking.md`: Workspace note markdown을 chunk 단위 vector index로 변환하는 규칙과 semantic search dedupe 정책을 확인할 때 참고합니다.
 - `docs/technical/sample-notes-rag-cli.md`: `sample_notes` 기반 로컬 RAG CLI 색인/질의 흐름과 retrieval/chat 질의별 출력 capture script 정보를 확인할 때 참고합니다.
 - `docs/technical/vectorstore-embedding-model.md`: Qdrant Java client 직접 연동, Voyage embedding, RAG vector usage/cost 기록 정책을 확인할 때 참고합니다.
@@ -48,6 +49,7 @@
 - 외부 자료 검색 port, OpenAI `web_search` provider, 검색 CLI 실행 방법, RAG chat router 연결 방향은 `docs/technical/external-search.md`를 기준으로 답합니다.
 - `brainx-next`의 AI context 관리, `clientContext` payload, `noteScope` 검증 역할, RightSidebar/NoteEditor context 조립 방식은 `docs/technical/frontend-ai-context-management.md`를 기준으로 답합니다.
 - 프론트 inline assist SSE 요청이 사용자 메시지만 표시되고 응답이 비는 문제는 `docs/technical/inline-assist-frontend-stream-lifecycle.md`를 기준으로 답합니다.
+- 유사 노트 자동 연결의 전략 비교, anchor 위치 계산, note auto-link CLI 실행 방법은 `docs/technical/note-auto-linking.md`를 기준으로 답합니다.
 - 노트 markdown chunking, Qdrant chunk metadata, semantic search note-level dedupe는 `docs/technical/note-chunking.md`를 기준으로 답합니다.
 - `sample_notes` 기반 RAG CLI 실행 방법과 retrieval/chat 질의별 출력 capture 결과 위치는 `docs/technical/sample-notes-rag-cli.md`를 기준으로 답합니다.
 - Qdrant 직접 연동과 Voyage embedding model 지정 방식은 `docs/technical/vectorstore-embedding-model.md`를 기준으로 답합니다.
