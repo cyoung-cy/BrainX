@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { allConsents, EMPTY_CONSENTS, LEGAL_DOCUMENTS, type ConsentKey, type ConsentState } from "@/lib/legal";
@@ -12,6 +12,8 @@ import { Field } from "@/components/public/auth-shared";
 
 type VerificationStatus = "idle" | "sent" | "checking" | "verified" | "invalid";
 type EmailAvailabilityStatus = "idle" | "checking" | "available" | "unavailable";
+const EMAIL_FORMAT_ERROR = "올바른 이메일 형식이 아닙니다";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // brainx_signup_final.html 좌측 패널의 애니메이션 그래프를 그대로 포팅
 const GRAPH_COLORS = ["#9B8FEE", "#4BC3AC", "#5BA8F0", "#F0855A", "#C4BFF5", "#7B6FD8"];
@@ -103,21 +105,6 @@ function SignupGraphCanvas() {
   return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />;
 }
 
-// 우측 흰색 폼은 전역 테마와 무관하게 라이트 토큰으로 렌더링 (레퍼런스 화이트 배경 유지)
-const LIGHT_THEME_VARS = {
-  "--bg": "244 247 253",
-  "--bg2": "255 255 255",
-  "--surface": "255 255 255",
-  "--surface2": "241 245 249",
-  "--primary": "37 99 235",
-  "--accent": "124 58 237",
-  "--cyan": "6 182 212",
-  "--txt": "15 23 42",
-  "--txt2": "71 85 105",
-  "--txt3": "148 163 184",
-  "--border": "226 232 240"
-} as CSSProperties;
-
 function getPasswordStrength(password: string) {
   const checks = [
     password.length >= 8,
@@ -159,6 +146,10 @@ function getPasswordStrength(password: string) {
   };
 }
 
+function isValidEmailFormat(value: string) {
+  return EMAIL_PATTERN.test(value.trim());
+}
+
 export function SignupScreen() {
   const router = useRouter();
   const { pushToast } = useBrainX();
@@ -167,6 +158,7 @@ export function SignupScreen() {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [emailAvailabilityStatus, setEmailAvailabilityStatus] = useState<EmailAvailabilityStatus>("idle");
+  const [emailFormatError, setEmailFormatError] = useState("");
   const [checkedEmail, setCheckedEmail] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -214,6 +206,7 @@ export function SignupScreen() {
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
+    setEmailFormatError(value.trim() && !isValidEmailFormat(value) ? EMAIL_FORMAT_ERROR : "");
     setCheckedEmail("");
     setEmailAvailabilityStatus("idle");
     setVerificationCode("");
@@ -228,6 +221,13 @@ export function SignupScreen() {
   const handleCheckEmail = async () => {
     if (!canCheckEmail) return;
     const normalizedEmail = email.trim();
+    if (!isValidEmailFormat(normalizedEmail)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      setCheckedEmail("");
+      setEmailAvailabilityStatus("idle");
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setEmailAvailabilityStatus("checking");
     try {
       const data = await checkEmailAvailability(normalizedEmail);
@@ -249,6 +249,11 @@ export function SignupScreen() {
 
   const handleSendCode = async () => {
     if (!canSendCode) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setSendingCode(true);
     try {
       await requestEmailVerification(email.trim(), "SIGNUP");
@@ -264,6 +269,11 @@ export function SignupScreen() {
 
   const handleCheckCode = async () => {
     if (!canCheckCode) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setVerificationStatus("checking");
     try {
       await verifyEmailCode(email.trim(), verificationCode.trim(), "SIGNUP");
@@ -277,6 +287,11 @@ export function SignupScreen() {
 
   const handleSignup = async () => {
     if (!canProceed) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     if (password !== passwordConfirm) {
       pushToast("비밀번호 확인이 일치하지 않습니다.", "err");
       return;
@@ -306,36 +321,36 @@ export function SignupScreen() {
   };
 
   return (
-    <div style={LIGHT_THEME_VARS} className="grid h-screen overflow-hidden lg:grid-cols-[4fr_6fr]">
+    <div className="grid h-screen overflow-hidden bg-bg lg:grid-cols-[4fr_6fr]">
       {/* LEFT — 애니메이션 그래프 패널 (brainx_signup_final.html 그대로). 높이 고정으로 크기·텍스트 위치 불변 */}
       <div
         className="relative hidden flex-col justify-between overflow-hidden p-8 lg:flex lg:h-screen"
-        style={{ background: "linear-gradient(145deg, #d8d4f7 0%, #e8f5f0 50%, #dcd8f5 100%)" }}
+        style={{ background: "linear-gradient(145deg, rgb(var(--surface2)) 0%, rgb(var(--bg2)) 52%, rgb(var(--surface)) 100%)" }}
       >
         <SignupGraphCanvas />
         <button type="button" onClick={() => router.push("/")} className="relative z-10 flex w-fit items-center gap-2.5">
           <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-gradient-to-br from-[#7B6FD8] to-[#4ECFB3]">
             <Icon name="brain" size={17} className="text-white" />
           </span>
-          <span className="text-[15px] font-semibold text-[#1E1A3C]">BrainX</span>
+          <span className="text-[15px] font-semibold text-txt">BrainX</span>
         </button>
         <div className="relative z-10 mb-10 max-w-[320px]">
-          <h2 className="mb-3.5 text-[32px] font-bold leading-[1.25] text-[#1E1A3C]">
+          <h2 className="mb-3.5 text-[32px] font-bold leading-[1.25] text-txt">
             내 지식의 우주를 
             <br />
             탐험하는 AI 두뇌
           </h2>
-          <p className="text-[14px] leading-[1.75] text-[#5C5880]">
+          <p className="text-[14px] leading-[1.75] text-txt2">
             적기만 하세요. 연결과 정리는 AI가 합니다.
             <br />
             흩어진 노트가 하나의 살아있는 그래프가 됩니다.
           </p>
         </div>
-        <div className="relative z-10 text-[11px] text-[#504682]/50">© 2026 BrainX 개발팀</div>
+        <div className="relative z-10 text-[11px] text-txt3">© 2026 BrainX 개발팀</div>
       </div>
 
-      {/* RIGHT — 흰색 폼 패널 (brainx_signup_final.html 그대로) */}
-      <div className="relative flex h-screen items-center justify-center overflow-hidden border-l border-line/70 bg-white px-6 py-6">
+      {/* RIGHT — form panel */}
+      <div className="relative flex h-screen items-center justify-center overflow-hidden border-l border-line/70 bg-bg px-6 py-6">
         <div className="w-full max-w-[500px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
           <h1 className="mb-1 text-[24px] font-bold tracking-tight text-txt">두뇌를 깨우는 1분</h1>
           <p className="mb-4 text-[14px] text-txt2">무료로 BrainX를 시작하세요.</p>
@@ -349,6 +364,7 @@ export function SignupScreen() {
             onChange={(event) => handleEmailChange(event.target.value)}
             autoComplete="email"
             disabled={submitting}
+            error={emailFormatError}
           />
         </div>
         <Btn variant={emailChecked ? "outline" : "soft"} size="sm" className="mt-[25px] h-9 shrink-0 px-3 text-[13px]" disabled={!canCheckEmail} onClick={handleCheckEmail}>

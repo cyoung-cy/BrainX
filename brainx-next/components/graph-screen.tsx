@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "rea
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
-import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH } from "@/lib/graph-api";
+import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
@@ -766,6 +766,7 @@ function GraphScreenInner() {
   const controls = useRef<GraphControls | null>(null);
   const notes = liveNotes ?? mockNotes;
   const edges = useMemo(() => liveEdges ?? deriveGraphEdges(notes), [liveEdges, notes]);
+  const clusterListNotes = USE_MOCK_GRAPH_CLUSTERS ? mockNotes : notes;
   const selected = selectedId ? notes.find((note) => note.id === selectedId) ?? null : null;
 
   useEffect(() => {
@@ -836,7 +837,7 @@ function GraphScreenInner() {
             </div>
             {["ml", "read", "proj", "work", "life"].map((clusterId) => {
               const cluster = clusterById(clusterId as ClusterId);
-              const count = notes.filter((note) => note.cluster === cluster.id).length;
+              const count = clusterListNotes.filter((note) => note.cluster === cluster.id).length;
               const hidden = hiddenClusters[cluster.id];
               return (
                 <button

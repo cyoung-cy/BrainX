@@ -7,7 +7,7 @@ import { INTERESTS } from "@/lib/brainx-data";
 import { EMPTY_CONSENTS, requiredConsentsAccepted, type ConsentState } from "@/lib/legal";
 import { cx } from "@/lib/utils";
 import { completeOnboarding, readAuthSession } from "@/lib/auth-api";
-import { updateMyConsents, updateMyProfile } from "@/lib/user-api";
+import { updateMyProfile } from "@/lib/user-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { Field } from "@/components/public/auth-shared";
@@ -25,6 +25,8 @@ export function OnboardingScreen() {
   const [consents, setConsents] = useState<ConsentState>(EMPTY_CONSENTS);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const requiresConsentStep = Boolean(onboardingToken);
+  const stepSequence = requiresConsentStep ? [0, 1, 2, 3] : [0, 1, 3];
 
   useEffect(() => {
     const session = readAuthSession();
@@ -67,7 +69,7 @@ export function OnboardingScreen() {
       setStep(0);
       return;
     }
-    if (!requiredConsentsAccepted(consents)) {
+    if (requiresConsentStep && !requiredConsentsAccepted(consents)) {
       pushToast("필수 약관에 동의해 주세요.", "err");
       setStep(2);
       return;
@@ -88,7 +90,6 @@ export function OnboardingScreen() {
           nickname: nick.trim(),
           profileImageAssetId: profileImageUrl.trim() || null
         });
-        await updateMyConsents(consents);
       } else {
         pushToast("로그인이 필요합니다.", "err");
         router.push("/login");
@@ -111,8 +112,8 @@ export function OnboardingScreen() {
       </div>
       <Card glow className="relative w-full max-w-lg p-8">
         <div className="mb-7 flex items-center gap-2">
-          {[0, 1, 2, 3].map((index) => (
-            <div key={index} className={cx("h-1.5 flex-1 rounded-full transition-colors", index <= step ? "bg-primary" : "bg-surface2")} />
+          {stepSequence.map((index, sequenceIndex) => (
+            <div key={index} className={cx("h-1.5 flex-1 rounded-full transition-colors", sequenceIndex <= stepSequence.indexOf(step) ? "bg-primary" : "bg-surface2")} />
           ))}
         </div>
 
@@ -171,7 +172,7 @@ export function OnboardingScreen() {
               <Btn variant="soft" onClick={() => setStep(0)}>
                 이전
               </Btn>
-              <Btn variant="primary" size="lg" className="flex-1" onClick={() => setStep(2)}>
+              <Btn variant="primary" size="lg" className="flex-1" onClick={() => setStep(requiresConsentStep ? 2 : 3)}>
                 다음 ({selected.length})
               </Btn>
             </div>
@@ -217,7 +218,7 @@ export function OnboardingScreen() {
               ))}
             </div>
             <div className="flex gap-2">
-              <Btn variant="soft" onClick={() => setStep(2)} disabled={submitting}>
+              <Btn variant="soft" onClick={() => setStep(requiresConsentStep ? 2 : 1)} disabled={submitting}>
                 이전
               </Btn>
               <Btn variant="primary" size="lg" className="flex-1" icon="bolt" disabled={submitting} onClick={handleComplete}>
