@@ -10,12 +10,18 @@ import { MOCK_NOTES, MOCK_FOLDERS } from "@/lib/notes/mockNotes";
 import {
   USE_MOCK_NOTES,
   createWorkspaceNote,
+  getWorkspaceNoteDraft,
+  issueWorkspaceNoteDraftId,
+  listWorkspaceNoteDrafts,
   listFolders,
   listNotes,
+  saveWorkspaceNoteDraft,
   updateWorkspaceNoteContent,
   updateWorkspaceNoteMetadata,
+  workspaceDraftToMock,
   workspaceFolderToMock,
   workspaceNoteToMock,
+  type NoteDraftData,
 } from "@/lib/workspace-api";
 import {
   uid,
@@ -39,6 +45,11 @@ import { useBrainX } from "@/components/brainx-provider";
 export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+type PendingDraftRestore = {
+  noteId: string;
+  draft: NoteDraftData;
+};
 
 const CONTEXT_PANEL_SIZE_KEY = "brainx_notes_context_panel_size_v1";
 
@@ -217,8 +228,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     window.addEventListener("mouseup", onUp);
   }, [contextPanelSize]);
   // MOCK_NOTES를 가변 상태로 복사 → 제목 수정/새 노트 생성 시 사이드바/헤더/컨텍스트 패널 즉시 반영
-  const [notes, setNotes] = useState<MockNote[]>(() => [...MOCK_NOTES]);
-  const [folders, setFolders] = useState<MockFolder[]>(() => [...MOCK_FOLDERS]);
+  const [notes, setNotes] = useState<MockNote[]>(() => (USE_MOCK_NOTES ? [...MOCK_NOTES] : []));
+  const [folders, setFolders] = useState<MockFolder[]>(() => (USE_MOCK_NOTES ? [...MOCK_FOLDERS] : []));
   // 탭(노트 인스턴스)별 읽기/편집 모드 — tabId 기준. 패널이 아니라 탭 단위라서 같은 패널 안에서
   // 탭마다 다른 모드를 가질 수 있고, 같은 노트를 여러 패널에 열어도 각 탭이 독립적으로 유지된다.
   // 기록이 없는 tabId는 항상 "edit"로 취급한다(새 노트/새로 연 노트는 기본 편집 모드).
@@ -229,11 +240,15 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveSignal, setSaveSignal] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingDraftRestore, setPendingDraftRestore] = useState<PendingDraftRestore | null>(null);
   const aiNonceRef = useRef(0);
   const hydratedRef = useRef(false);
+  const checkedDraftNoteIdsRef = useRef<Set<string>>(new Set());
   const prevActiveNoteIdRef = useRef<string | null>(null);
   const prevInitialKeyRef = useRef<string>(initialTab.kind === "note" ? initialTab.noteId : "start");
   const saveStatusTimerRef = useRef<number | null>(null);
+  const draftAutosaveTimerRef = useRef<number | null>(null);
+  const draftDirtyNoteIdsRef = useRef<Set<string>>(new Set());
   const effectivePersistKey = USE_MOCK_NOTES ? persistKey : undefined;
   // Ctrl+S 발생 시점의 최신 세션 스냅샷 — 디바운스/렌더 타이밍과 무관하게 항상 최신값을 읽기 위한 ref
   const latestSessionRef = useRef<NotesWorkspaceSession>({
@@ -455,6 +470,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 노트 제목 변경 → notes 상태 갱신 (사이드바/탭/헤더/컨텍스트 즉시 반영) */
   const handleTitleChange = useCallback((noteId: string, newTitle: string) => {
+    draftDirtyNoteIdsRef.current.add(noteId);
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, title: newTitle, updatedAt: Date.now() } : n))
     );
@@ -462,6 +478,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 노트 본문 변경(에디터 onUpdate 디바운스) → notes 상태 갱신, 탭 전환 후에도 내용 유지 */
   const handleContentChange = useCallback((noteId: string, newContentHtml: string) => {
+    draftDirtyNoteIdsRef.current.add(noteId);
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, content: newContentHtml, updatedAt: Date.now() } : n))
     );
@@ -580,6 +597,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   const createNote = useCallback((folderId: string | undefined, paneId: string, title?: string) => {
     const newNote = makeBlankNote(folderId);
     if (title) newNote.title = title;
+    const localNoteId = newNote.id;
     const newTabId = uid();
     setNotes((prev) => [newNote, ...prev]);
     setPaneTabs((prev) => {
@@ -589,8 +607,28 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTabId } };
     });
     setState((prev) => ({ ...prev, activeId: paneId }));
+    if (!USE_MOCK_NOTES) {
+      void issueWorkspaceNoteDraftId()
+        .then((draft) => {
+          setNotes((prev) =>
+            prev.map((item) => {
+              if (item.id !== localNoteId) return item;
+              draftDirtyNoteIdsRef.current.delete(localNoteId);
+              draftDirtyNoteIdsRef.current.add(draft.noteId);
+              return { ...item, id: draft.noteId };
+            })
+          );
+          setState((prev) => ({ ...prev, root: replaceNoteIdInNode(prev.root, localNoteId, draft.noteId) }));
+          setPaneTabs((prev) => replaceNoteIdInTabs(prev, localNoteId, draft.noteId));
+          if (prevActiveNoteIdRef.current === localNoteId) prevActiveNoteIdRef.current = draft.noteId;
+          onActiveNoteChange?.(draft.noteId);
+        })
+        .catch(() => {
+          setLoadError("새 노트 임시 저장 ID를 발급하지 못했습니다.");
+        });
+    }
     return newNote.id;
-  }, []);
+  }, [onActiveNoteChange]);
 
   /* 사이드바 "+ 새 노트" 버튼 → 현재 선택된 폴더 안에, 활성 패널의 새 탭으로 생성 */
   const handleNewNote = useCallback((folderId?: string) => {
@@ -884,20 +922,33 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
     function loadFromServer(openNoteId?: string) {
       setLoadError(null);
-      return Promise.all([listNotes(), listFolders()])
-        .then(([noteData, folderData]) => {
+      const targetNoteId = openNoteId ?? (initialTab.kind === "note" ? initialTab.noteId : null);
+      return Promise.all([
+        listNotes(),
+        listFolders(),
+        listWorkspaceNoteDrafts(),
+        targetNoteId ? getWorkspaceNoteDraft(targetNoteId).catch(() => null) : Promise.resolve(null)
+      ])
+        .then(([noteData, folderData, draftData, targetDraft]) => {
           if (!active) return;
-          const nextNotes = noteData.notes.map(workspaceNoteToMock);
+          const persistedNotes = noteData.notes.map(workspaceNoteToMock);
+          const persistedNoteIds = new Set(persistedNotes.map((note) => note.id));
+          const drafts = targetDraft && !draftData.drafts.some((draft) => draft.noteId === targetDraft.noteId)
+            ? [targetDraft, ...draftData.drafts]
+            : draftData.drafts;
+          const draftOnlyNotes = drafts
+            .filter((draft) => !persistedNoteIds.has(draft.noteId))
+            .map(workspaceDraftToMock);
+          const nextNotes = [...draftOnlyNotes, ...persistedNotes];
           const nextFolders = folderData.folders.map(workspaceFolderToMock);
           setNotes(nextNotes);
           setFolders(nextFolders);
 
-          const targetNoteId = openNoteId ?? (initialTab.kind === "note" ? initialTab.noteId : null);
           if (targetNoteId && nextNotes.some((note) => note.id === targetNoteId)) {
             handleReplaceActiveTab(state.activeId, targetNoteId);
             return;
           }
-          if (!openNoteId && initialTab.kind === "note" && nextNotes.length > 0) {
+          if (!targetNoteId && nextNotes.length > 0) {
             handleReplaceActiveTab(state.activeId, nextNotes[0].id);
           }
         })
@@ -932,7 +983,23 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     const key = initialTab.kind === "note" ? initialTab.noteId : "start";
     if (prevInitialKeyRef.current === key) return;
     prevInitialKeyRef.current = key;
-    if (initialTab.kind === "note") handleNoteClick(initialTab.noteId);
+    if (initialTab.kind === "note") {
+      const noteId = initialTab.noteId;
+      if (notes.some((note) => note.id === noteId)) {
+        handleNoteClick(noteId);
+        return;
+      }
+
+      void getWorkspaceNoteDraft(noteId)
+        .then((draft) => {
+          if (!draft) return;
+          setNotes((prev) => (prev.some((note) => note.id === draft.noteId) ? prev : [workspaceDraftToMock(draft), ...prev]));
+          handleReplaceActiveTab(state.activeId, draft.noteId);
+        })
+        .catch(() => {
+          // URL로 들어온 draft가 없으면 현재 화면을 유지한다.
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab.kind === "note" ? initialTab.noteId : "start"]);
 
@@ -953,6 +1020,74 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   useEffect(() => {
     latestSessionRef.current = { root: state.root, activeId: state.activeId, paneTabs, notes, folders };
   }, [state, paneTabs, notes, folders]);
+
+  useEffect(() => {
+    if (USE_MOCK_NOTES || !hydratedRef.current || !activeNote) return;
+    if (!activeNote.id.startsWith("note_")) return;
+    if (draftDirtyNoteIdsRef.current.has(activeNote.id)) return;
+    if (checkedDraftNoteIdsRef.current.has(activeNote.id)) return;
+
+    checkedDraftNoteIdsRef.current.add(activeNote.id);
+    let cancelled = false;
+    void getWorkspaceNoteDraft(activeNote.id)
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        if (draft.markdown === activeNote.content) return;
+        setPendingDraftRestore({ noteId: activeNote.id, draft });
+      })
+      .catch(() => {
+        checkedDraftNoteIdsRef.current.delete(activeNote.id);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeNote]);
+
+  // 서버가 발급한 note_ ID가 있는 노트만 Redis draft API로 조용히 자동저장한다.
+  useEffect(() => {
+    if (USE_MOCK_NOTES || !hydratedRef.current || !activeNote) return;
+    if (!activeNote.id.startsWith("note_")) return;
+    if (!draftDirtyNoteIdsRef.current.has(activeNote.id)) return;
+
+    if (draftAutosaveTimerRef.current) {
+      window.clearTimeout(draftAutosaveTimerRef.current);
+    }
+    draftAutosaveTimerRef.current = window.setTimeout(() => {
+      void saveWorkspaceNoteDraft(activeNote)
+        .then(() => {
+          draftDirtyNoteIdsRef.current.delete(activeNote.id);
+        })
+        .catch(() => {
+          // 백그라운드 draft 저장 실패는 수동 저장 흐름을 방해하지 않는다.
+        });
+    }, 1500);
+
+    return () => {
+      if (draftAutosaveTimerRef.current) {
+        window.clearTimeout(draftAutosaveTimerRef.current);
+        draftAutosaveTimerRef.current = null;
+      }
+    };
+  }, [activeNote]);
+
+  const handleRestoreDraft = useCallback(() => {
+    if (!pendingDraftRestore) return;
+    const { noteId, draft } = pendingDraftRestore;
+    draftDirtyNoteIdsRef.current.delete(noteId);
+    setNotes((prev) =>
+      prev.map((item) =>
+        item.id === noteId
+          ? { ...item, title: draft.title || item.title, content: draft.markdown, version: draft.baseVersion, updatedAt: Date.parse(draft.savedAt) || Date.now() }
+          : item
+      )
+    );
+    setPendingDraftRestore(null);
+  }, [pendingDraftRestore]);
+
+  const handleDismissDraft = useCallback(() => {
+    setPendingDraftRestore(null);
+  }, []);
 
   // 대표 활성 노트가 바뀌면 URL 갱신 콜백 호출
   useEffect(() => {
@@ -977,7 +1112,13 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       return;
     }
 
-    if (!note.persisted && !note.id.startsWith("note_")) {
+    if (!note.persisted) {
+      if (note.id.startsWith("note_")) {
+        await saveWorkspaceNoteDraft(note);
+        draftDirtyNoteIdsRef.current.delete(note.id);
+        return;
+      }
+
       const created = await createWorkspaceNote(note);
       let nextVersion = created.version;
       const savedId = created.noteId;
@@ -1205,6 +1346,25 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
             </span>
             <div className="flex-1" />
             {loadError ? <span className="text-[11px] font-medium text-red-400">{loadError}</span> : null}
+            {pendingDraftRestore && pendingDraftRestore.noteId === activeNoteId ? (
+              <div className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary">
+                <span>임시저장본 있음</span>
+                <button
+                  type="button"
+                  onClick={handleRestoreDraft}
+                  className="rounded border border-primary/30 px-1.5 py-0.5 font-medium hover:bg-primary/15"
+                >
+                  복구
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissDraft}
+                  className="rounded px-1.5 py-0.5 text-txt3 hover:bg-surface2/70 hover:text-txt"
+                >
+                  무시
+                </button>
+              </div>
+            ) : null}
             <SaveStatusBadge status={saveStatus} />
             <button
               type="button"
