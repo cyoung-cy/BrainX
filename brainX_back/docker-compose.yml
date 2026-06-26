@@ -15,6 +15,7 @@ services:
       WORKSPACE_SERVICE_URL: http://workspace-service:8082
       INGESTION_SERVICE_URL: http://ingestion-service:8083
       COMMERCE_SERVICE_URL: http://commerce-service:8084
+      ADMIN_SERVICE_URL: http://admin-service:8085
     ports:
       - "8088:8088"
     depends_on:
@@ -25,6 +26,8 @@ services:
       ingestion-service:
         condition: service_started
       commerce-service:
+        condition: service_started
+      admin-service:
         condition: service_started
 
   user-service:
@@ -59,11 +62,14 @@ services:
     environment:
       SERVER_PORT: "8082"
       POSTGRES_HOST: postgres
+      REDIS_HOST: redis
       NEO4J_URI: bolt://neo4j:7687
     ports:
       - "8082:8082"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       neo4j:
         condition: service_healthy
@@ -109,6 +115,32 @@ services:
       postgres:
         condition: service_healthy
 
+  admin-service:
+    profiles:
+      - apps
+    build:
+      context: ./Admin-Service
+    container_name: brainx-admin-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+      - ./env/admin-service.env
+    environment:
+      SERVER_PORT: "8085"
+      POSTGRES_HOST: postgres
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   postgres:
     image: postgres:16-alpine
     container_name: brainx-postgres
@@ -121,6 +153,7 @@ services:
       WORKSPACE_DB_NAME: ${WORKSPACE_DB_NAME:-brainx_workspace}
       INGESTION_DB_NAME: ${INGESTION_DB_NAME:-brainx_ingestion}
       COMMERCE_DB_NAME: ${COMMERCE_DB_NAME:-brainx_commerce}
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
     ports:
       - "5432:5432"
     volumes:
@@ -128,6 +161,18 @@ services:
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: brainx-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -148,7 +193,11 @@ services:
       - brainx_neo4j_data:/data
       - brainx_neo4j_logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USERNAME:-neo4j} -p ${NEO4J_PASSWORD:-brainx_neo4j_local_password} 'RETURN 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "cypher-shell -u ${NEO4J_USERNAME:-neo4j} -p ${NEO4J_PASSWORD:-brainx_neo4j_local_password} 'RETURN 1'",
+        ]
       interval: 10s
       timeout: 10s
       retries: 10

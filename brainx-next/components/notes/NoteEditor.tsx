@@ -2698,6 +2698,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   const continueRequestIdRef = useRef(0);
   const suppressInlineContinueAutoRejectRef = useRef(false);
   const lastInlineContinueDraftRef = useRef<ContinueSuggestionState | null>(null);
+  const syncedNoteIdRef = useRef(note.id);
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
   const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
@@ -3108,9 +3109,20 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     // 마이크로태스크는 cancelled 플래그로 무시).
     let cancelled = false;
     const content = note.content;
+    const noteId = note.id;
     queueMicrotask(() => {
       if (cancelled) return;
-      editor.commands.setContent(resolveEditorHtml(content));
+      const isSameNote = syncedNoteIdRef.current === noteId;
+      const editorHasFocus = editor.view.dom.contains(document.activeElement);
+      if (isSameNote && editorHasFocus) {
+        setIsEmpty(editor.isEmpty);
+        return;
+      }
+      const nextContent = resolveEditorHtml(content);
+      if (editor.getHTML() !== nextContent) {
+        editor.commands.setContent(nextContent);
+      }
+      syncedNoteIdRef.current = noteId;
       setIsEmpty(content.trim() === "");
       setFocused(false);
     });
@@ -3119,7 +3131,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     // note.id만 의존하면 editor가 준비된 뒤에도 재실행되지 않는다.
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.id, editor]);
+  }, [note.id, note.content, editor]);
 
   /* mode prop(탭별 읽기/편집 상태) → editable 토글. 탭 전환으로 note.id와 mode가 같은 렌더에서
      함께 바뀌어도 두 effect가 각자 최신 값으로 정확히 적용된다. */

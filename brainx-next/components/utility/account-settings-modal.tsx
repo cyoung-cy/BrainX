@@ -823,7 +823,7 @@ function ProfilePanel({
               value={nickname}
               onChange={(event) => onNicknameChange(event.target.value)}
               onKeyDown={onNameKeyDown}
-              className="h-8 w-full max-w-[306px] rounded-[7px] border border-[#ded8cf] px-3 text-[12px] text-[#36332f] outline-none focus:border-[#6c55f6]"
+              className="h-8 w-full max-w-[306px] rounded-[7px] border border-[#ded8cf] bg-white px-3 text-[12px] text-[#36332f] outline-none focus:border-[#6c55f6]"
             />
             <div className="mt-3 flex items-center gap-3">
               <input ref={profileInputRef} type="file" accept="image/*" className="hidden" onChange={onProfileImageChange} />

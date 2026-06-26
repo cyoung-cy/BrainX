@@ -2142,6 +2142,305 @@ paths:
       security:
       - bearerAuth: []
       - guestSessionAuth: []
+  /api/v1/notes/drafts/list:
+    get:
+      operationId: listNoteDrafts
+      summary: 현재 actor의 Redis draft 목록 조회
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: 새로고침 후 PostgreSQL에 없는 Redis-only 새 노트 복구
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 현재 USER/GUEST actor의 dirty set에 남아 있는 Redis draft 목록을 조회한다. `/api/v1/notes/{noteId}`와의 경로 충돌을 피하면서 Gateway의 Workspace route(`/api/v1/notes/**`)를 통과하도록 `/api/v1/notes/drafts/list` 경로를 사용한다. PostgreSQL 원장과 Kafka 이벤트는 갱신하지 않는다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteDraftListData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      - guestSessionAuth: []
+  /api/v1/notes/drafts/claim:
+    post:
+      operationId: claimGuestNoteDrafts
+      summary: guest Redis draft를 회원 노트로 전환
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.signup
+        type: frontend
+        description: 회원가입/로그인 직후 guest Redis draft를 USER PostgreSQL 노트로 저장
+      x-produces-events:
+      - NoteCreated
+      - NoteContentSaved
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 로그인된 USER actor가 기존 guest cookie의 Redis draft를 자신의 PostgreSQL 노트로 claim한다. Gateway는 유효한 JWT 요청에서도 guest cookie가 있으면 X-Guest-Id를 Workspace-Service로 전달해야 한다. 성공적으로 저장된 guest draft는 Redis draft key와 dirty set에서 제거된다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteDraftClaimData'
+        '400':
+          description: X-Guest-Id 누락
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: USER actor가 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/notes/draft-ids:
+    post:
+      operationId: issueNoteDraftId
+      summary: 새 노트 자동저장용 draft noteId 발급
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: 새 노트 작성 전 Redis draft key 생성을 위한 noteId 발급
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 새 노트를 PostgreSQL에 생성하지 않고 Redis 자동저장에 사용할 noteId만 발급한다. 실제 노트 원장 저장과 Kafka 이벤트 발행은 발생하지 않는다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteDraftIdData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      - guestSessionAuth: []
+  /api/v1/notes/{noteId}/draft:
+    get:
+      operationId: getNoteDraft
+      summary: 노트 자동저장 draft 조회
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: 마크다운/WYSIWYG 노트 편집기 자동저장 복구
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 회원/비회원 actor별 Redis draft 저장소에서 노트 본문 임시 저장본을 조회한다. draft가 없으면 200 응답에 data null을 반환한다.
+      parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 성공. draft가 없으면 data는 null이다.
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      nullable: true
+                      allOf:
+                      - $ref: '#/components/schemas/NoteDraftData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      - guestSessionAuth: []
+    put:
+      operationId: saveNoteDraft
+      summary: 노트 자동저장 draft 저장
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.note-editor
+        type: frontend
+        description: 마크다운/WYSIWYG 노트 편집기 자동저장
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 회원/비회원 actor별 Redis draft 저장소에 노트 본문 임시 저장본을 저장한다. PostgreSQL 원장과 Kafka 이벤트는 갱신하지 않는다.
+      parameters:
+      - name: noteId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteDraftSaveRequest'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteDraftSaveData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+      - guestSessionAuth: []
   /api/v1/notes/{noteId}/metadata:
     patch:
       operationId: patchNoteMetadata
@@ -7723,6 +8022,82 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security: []
   /api/v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      summary: List users for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin user management list, filters and bulk actions
+      x-internal-sync-calls:
+      - operationId: getUserAccountSnapshotInternal
+        targetService: User-Service
+        reason: account, profile, status and login session source of truth
+      - operationId: getUserWorkspaceStatsInternal
+        targetService: Workspace-Service
+        reason: note count and storage usage source of truth
+      - operationId: getUserSubscriptionSnapshotInternal
+        targetService: Commerce-Service
+        reason: plan and subscription status source of truth
+      x-produces-events: []
+      x-async-boundary: false
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: planId
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AdminPlanId'
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AdminManagedUserStatus'
+      - name: joinedYear
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUsersData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
     post:
       operationId: createAdminUser
       summary: 관리자 계정 생성
@@ -7796,6 +8171,405 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/users/{userId}:
+    get:
+      operationId: getAdminUserDetail
+      summary: Get user detail for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin user detail drawer
+      x-internal-sync-calls:
+      - operationId: getUserAccountSnapshotInternal
+        targetService: User-Service
+        reason: account and latest login sessions
+      - operationId: getUserWorkspaceStatsInternal
+        targetService: Workspace-Service
+        reason: note count, storage usage and recent user activities
+      - operationId: getUserSubscriptionSnapshotInternal
+        targetService: Commerce-Service
+        reason: current plan and subscription status
+      x-produces-events: []
+      x-async-boundary: false
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserDetailData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/users/{userId}/plan:
+    patch:
+      operationId: changeAdminUserPlan
+      summary: Change a user's plan from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin plan change modal
+      x-internal-sync-calls:
+      - operationId: changeSubscriptionInternal
+        targetService: Commerce-Service
+        reason: Commerce owns plan, subscription and entitlement changes
+      x-produces-events:
+      - SubscriptionChanged
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserPlanChangeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserPlanChangeData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/users/{userId}/status:
+    patch:
+      operationId: changeAdminUserStatus
+      summary: Suspend or reactivate a user from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin account status actions
+      x-internal-sync-calls:
+      - operationId: changeUserStatusInternal
+        targetService: User-Service
+        reason: User-Service owns account status
+      x-produces-events:
+      - UserProfileUpdated
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserStatusChangeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserStatusChangeData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/users/{userId}/withdrawal:
+    post:
+      operationId: withdrawAdminUser
+      summary: Process user withdrawal from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin withdrawal action
+      x-internal-sync-calls:
+      - operationId: requestUserDeletionInternal
+        targetService: User-Service
+        reason: User-Service owns account deletion lifecycle
+      x-produces-events:
+      - UserDeletionRequested
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserWithdrawalRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserWithdrawalData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/users/bulk-actions:
+    post:
+      operationId: runAdminUserBulkAction
+      summary: Run bulk user action from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.users
+        type: frontend
+        description: BrainX-Admin selected user bulk action toolbar
+      x-internal-sync-calls:
+      - operationId: changeUserStatusInternal
+        targetService: User-Service
+        reason: suspend, reactivate and withdrawal actions
+      - operationId: changeSubscriptionInternal
+        targetService: Commerce-Service
+        reason: plan change actions
+      - operationId: createNotificationInternal
+        targetService: User-Service
+        reason: notice action delivery
+      x-produces-events:
+      - UserProfileUpdated
+      - SubscriptionChanged
+      - NotificationRequested
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserBulkActionRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserBulkActionData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/dashboard/overview:
+    get:
+      operationId: getAdminDashboardOverview
+      summary: Get admin dashboard overview
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.dashboard
+        type: frontend
+        description: BrainX-Admin monitoring dashboard
+      x-internal-sync-calls:
+      - operationId: getServiceHealthInternal
+        targetService: Gateway-Service
+        reason: service health and latency aggregation
+      - operationId: getBillingSummaryInternal
+        targetService: Commerce-Service
+        reason: revenue and subscription summary
+      - operationId: getUserGrowthSummaryInternal
+        targetService: User-Service
+        reason: signup and active user summary
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminDashboardOverviewData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/me:
+    get:
+      operationId: getAdminMe
+      summary: Get current admin profile
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.profile
+        type: frontend
+        description: BrainX-Admin profile drawer
+      x-internal-sync-calls:
+      - operationId: getAdminPrincipalInternal
+        targetService: User-Service
+        reason: User-Service owns authenticated principal profile and password
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminMeData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/me/profile:
+    patch:
+      operationId: updateAdminMeProfile
+      summary: Update current admin profile
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.profile
+        type: frontend
+        description: BrainX-Admin profile edit form
+      x-internal-sync-calls:
+      - operationId: updateAdminPrincipalInternal
+        targetService: User-Service
+        reason: User-Service owns authenticated principal profile
+      x-produces-events:
+      - UserProfileUpdated
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProfileUpdateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminMeData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/me/password:
+    patch:
+      operationId: changeAdminMePassword
+      summary: Change current admin password
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.profile
+        type: frontend
+        description: BrainX-Admin password change form
+      x-internal-sync-calls:
+      - operationId: changeAdminPasswordInternal
+        targetService: User-Service
+        reason: User-Service owns password credential
+      x-produces-events:
+      - PasswordChanged
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPasswordChangeRequest'
+      responses:
+        '204':
+          description: No Content
       security:
       - bearerAuth:
         - ROLE_ADMIN
@@ -7890,6 +8664,362 @@ paths:
       security:
       - bearerAuth:
         - ROLE_ADMIN
+  /api/v1/admin/billing/summary:
+    get:
+      operationId: getAdminBillingSummary
+      summary: Get admin billing summary
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin billing KPI cards
+      x-internal-sync-calls:
+      - operationId: getBillingSummaryInternal
+        targetService: Commerce-Service
+        reason: Commerce owns revenue, subscription and payment failure data
+      x-produces-events: []
+      x-async-boundary: false
+      parameters:
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminBillingSummaryData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/payments:
+    get:
+      operationId: listAdminPayments
+      summary: List payments for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin payment history table
+      x-internal-sync-calls:
+      - operationId: listPaymentsInternal
+        targetService: Commerce-Service
+        reason: Commerce owns payment ledger
+      x-produces-events: []
+      x-async-boundary: false
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AdminPaymentStatus'
+      - name: planId
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/AdminPlanId'
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPaymentsData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/payments/{paymentId}/refund:
+    post:
+      operationId: refundAdminPayment
+      summary: Refund a payment from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin payment refund action
+      x-internal-sync-calls:
+      - operationId: refundPaymentInternal
+        targetService: Commerce-Service
+        reason: Commerce owns provider refund and payment ledger mutation
+      x-produces-events:
+      - PaymentRefunded
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPaymentRefundRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPaymentActionData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/payments/{paymentId}/retry:
+    post:
+      operationId: retryAdminPayment
+      summary: Retry a failed payment from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin payment failure retry action
+      x-internal-sync-calls:
+      - operationId: retryPaymentInternal
+        targetService: Commerce-Service
+        reason: Commerce owns payment provider retry workflow
+      x-produces-events:
+      - PaymentSucceeded
+      - PaymentFailed
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPaymentActionData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/subscriptions:
+    get:
+      operationId: listAdminSubscriptions
+      summary: List subscriptions for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin subscription status tab
+      x-internal-sync-calls:
+      - operationId: listSubscriptionsInternal
+        targetService: Commerce-Service
+        reason: Commerce owns subscription ledger
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminSubscriptionsData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/payment-failures:
+    get:
+      operationId: listAdminPaymentFailures
+      summary: List failed payments for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin payment failure tracking tab
+      x-internal-sync-calls:
+      - operationId: listPaymentFailuresInternal
+        targetService: Commerce-Service
+        reason: Commerce owns payment failure ledger and retry counts
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPaymentFailuresData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/plans:
+    get:
+      operationId: listAdminPlans
+      summary: List plans for admin plan management tab
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin plan management tab
+      x-internal-sync-calls:
+      - operationId: listPlansInternal
+        targetService: Commerce-Service
+        reason: Commerce owns plan catalog and price history
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPlansData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/billing/plans/{planId}:
+    patch:
+      operationId: updateAdminPlanPrice
+      summary: Update plan price from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin plan price edit modal
+      x-internal-sync-calls:
+      - operationId: updatePlanPriceInternal
+        targetService: Commerce-Service
+        reason: Commerce owns plan catalog and billing price history
+      x-produces-events:
+      - PlanPriceChanged
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: planId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/AdminPlanId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlanPriceUpdateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPlanData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
   /api/v1/admin/support/tickets:
     get:
       operationId: listAdminSupportTickets
@@ -7966,6 +9096,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/support/tickets/{ticketId}:
+    get:
+      operationId: getAdminSupportTicket
+      summary: Get support ticket detail for admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.support
+        type: frontend
+        description: BrainX-Admin support ticket detail panel
+      x-internal-sync-calls:
+      - operationId: getSupportTicketInternal
+        targetService: User-Service
+        reason: support tickets are created by users and owned by User-Service until Admin-Service is implemented
+      x-produces-events: []
+      x-async-boundary: false
+      parameters:
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminSupportTicketData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+    patch:
+      operationId: updateAdminSupportTicket
+      summary: Assign or update support ticket status from admin console
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.support
+        type: frontend
+        description: BrainX-Admin support ticket assignee and status controls
+      x-internal-sync-calls:
+      - operationId: updateSupportTicketInternal
+        targetService: User-Service
+        reason: support ticket status and assignee source of truth
+      x-produces-events:
+      - SupportTicketUpdated
+      x-async-boundary: false
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: ticketId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportTicketUpdateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminSupportTicketData'
       security:
       - bearerAuth:
         - ROLE_ADMIN
@@ -9318,6 +10537,151 @@ components:
       - version
       - savedAt
       - status
+      additionalProperties: false
+    NoteDraftSaveRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Redis draft에 함께 저장할 노트 제목. 없으면 빈 문자열로 저장된다.
+        markdown:
+          type: string
+        baseVersion:
+          type: integer
+        clientSavedAt:
+          type: string
+          format: date-time
+      required:
+      - markdown
+      - baseVersion
+      - clientSavedAt
+      additionalProperties: false
+    NoteDraftSaveData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        actorType:
+          type: string
+          enum:
+          - USER
+          - GUEST
+        savedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - DRAFT_SAVED
+      required:
+      - noteId
+      - actorType
+      - savedAt
+      - expiresAt
+      - status
+      additionalProperties: false
+    NoteDraftData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        actorType:
+          type: string
+          enum:
+          - USER
+          - GUEST
+        title:
+          type: string
+        markdown:
+          type: string
+        baseVersion:
+          type: integer
+        clientSavedAt:
+          type: string
+          format: date-time
+        savedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+      - noteId
+      - actorType
+      - title
+      - markdown
+      - baseVersion
+      - clientSavedAt
+      - savedAt
+      - expiresAt
+      additionalProperties: false
+    NoteDraftListData:
+      type: object
+      properties:
+        drafts:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteDraftData'
+      required:
+      - drafts
+      additionalProperties: false
+    NoteDraftIdData:
+      type: object
+      properties:
+        noteId:
+          type: string
+        actorType:
+          type: string
+          enum:
+          - USER
+          - GUEST
+        issuedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - DRAFT_ID_ISSUED
+      required:
+      - noteId
+      - actorType
+      - issuedAt
+      - status
+      additionalProperties: false
+    ClaimedNoteDraft:
+      type: object
+      properties:
+        noteId:
+          type: string
+          description: PostgreSQL에 저장된 회원 노트 ID. sourceNoteId와 같을 수 있다.
+        sourceNoteId:
+          type: string
+          description: guest Redis draft의 원래 noteId.
+        title:
+          type: string
+        version:
+          type: integer
+      required:
+      - noteId
+      - sourceNoteId
+      - title
+      - version
+      additionalProperties: false
+    NoteDraftClaimData:
+      type: object
+      properties:
+        claimedCount:
+          type: integer
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimedNoteDraft'
+      required:
+      - claimedCount
+      - notes
       additionalProperties: false
     NoteMetadataPatchRequest:
       type: object
@@ -11299,6 +12663,621 @@ components:
             $ref: '#/components/schemas/SupportTicketData'
       required:
       - tickets
+      additionalProperties: false
+    AdminPlanId:
+      type: string
+      enum:
+      - free
+      - pro
+      - team
+    AdminManagedUserStatus:
+      type: string
+      enum:
+      - ACTIVE
+      - SUSPENDED
+      - WITHDRAWN
+    AdminPaymentStatus:
+      type: string
+      enum:
+      - SUCCESS
+      - FAILED
+      - REFUNDED
+      - CANCELED
+    AdminPaginationData:
+      type: object
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+      required:
+      - page
+      - size
+      - totalItems
+      - totalPages
+      additionalProperties: false
+    AdminUserRow:
+      type: object
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        status:
+          $ref: '#/components/schemas/AdminManagedUserStatus'
+        noteCount:
+          type: integer
+        storageBytes:
+          type: integer
+          format: int64
+        joinedAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastLogin:
+          $ref: '#/components/schemas/AdminUserLoginSession'
+      required:
+      - userId
+      - name
+      - email
+      - planId
+      - status
+      - noteCount
+      - joinedAt
+      additionalProperties: false
+    AdminUsersData:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserRow'
+        pagination:
+          $ref: '#/components/schemas/AdminPaginationData'
+        resultCount:
+          type: integer
+      required:
+      - users
+      - pagination
+      - resultCount
+      additionalProperties: false
+    AdminUserLoginSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        device:
+          type: string
+          description: Browser and OS label, for example "Chrome / macOS".
+        location:
+          type: string
+          nullable: true
+        ipAddress:
+          type: string
+          nullable: true
+        userAgentHash:
+          type: string
+          nullable: true
+        lastSeenAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      required:
+      - sessionId
+      - device
+      - lastSeenAt
+      - current
+      additionalProperties: false
+    AdminUserActivity:
+      type: object
+      properties:
+        activityId:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+      required:
+      - activityId
+      - type
+      - message
+      - occurredAt
+      additionalProperties: false
+    AdminUserDetailData:
+      allOf:
+      - $ref: '#/components/schemas/AdminUserRow'
+      - type: object
+        properties:
+          sessions:
+            type: array
+            items:
+              $ref: '#/components/schemas/AdminUserLoginSession'
+          activities:
+            type: array
+            items:
+              $ref: '#/components/schemas/AdminUserActivity'
+        required:
+        - sessions
+        - activities
+        additionalProperties: false
+    AdminUserPlanChangeRequest:
+      type: object
+      properties:
+        targetPlanId:
+          $ref: '#/components/schemas/AdminPlanId'
+        reason:
+          type: string
+          nullable: true
+      required:
+      - targetPlanId
+      additionalProperties: false
+    AdminUserPlanChangeData:
+      type: object
+      properties:
+        userId:
+          type: string
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        changedAt:
+          type: string
+          format: date-time
+      required:
+      - userId
+      - planId
+      - changedAt
+      additionalProperties: false
+    AdminUserStatusChangeRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/AdminManagedUserStatus'
+        reason:
+          type: string
+          nullable: true
+      required:
+      - status
+      additionalProperties: false
+    AdminUserStatusChangeData:
+      type: object
+      properties:
+        userId:
+          type: string
+        status:
+          $ref: '#/components/schemas/AdminManagedUserStatus'
+        changedAt:
+          type: string
+          format: date-time
+      required:
+      - userId
+      - status
+      - changedAt
+      additionalProperties: false
+    AdminUserWithdrawalRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+      additionalProperties: false
+    AdminUserWithdrawalData:
+      type: object
+      properties:
+        userId:
+          type: string
+        deletionRequestId:
+          type: string
+        status:
+          type: string
+          enum:
+          - REQUESTED
+          - SCHEDULED
+      required:
+      - userId
+      - deletionRequestId
+      - status
+      additionalProperties: false
+    AdminUserBulkActionRequest:
+      type: object
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        action:
+          type: string
+          enum:
+          - CHANGE_PLAN
+          - SUSPEND
+          - REACTIVATE
+          - WITHDRAW
+          - SEND_NOTICE
+        targetPlanId:
+          $ref: '#/components/schemas/AdminPlanId'
+        notice:
+          type: object
+          nullable: true
+          properties:
+            title:
+              type: string
+            body:
+              type: string
+          required:
+          - title
+          - body
+          additionalProperties: false
+        reason:
+          type: string
+          nullable: true
+      required:
+      - userIds
+      - action
+      additionalProperties: false
+    AdminUserBulkActionData:
+      type: object
+      properties:
+        accepted:
+          type: integer
+        failed:
+          type: integer
+        jobId:
+          type: string
+          nullable: true
+      required:
+      - accepted
+      - failed
+      additionalProperties: false
+    AdminDashboardOverviewData:
+      type: object
+      properties:
+        kpis:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        services:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        logs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        revenueTrend:
+          type: array
+          items:
+            type: number
+        activeUserTrend:
+          type: array
+          items:
+            type: number
+      required:
+      - kpis
+      - services
+      - logs
+      - revenueTrend
+      - activeUserTrend
+      additionalProperties: false
+    AdminMeData:
+      type: object
+      properties:
+        adminUserId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - adminUserId
+      - name
+      - email
+      - role
+      - permissions
+      - createdAt
+      additionalProperties: false
+    AdminProfileUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+      additionalProperties: false
+    AdminPasswordChangeRequest:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+      required:
+      - currentPassword
+      - newPassword
+      additionalProperties: false
+    AdminBillingSummaryData:
+      type: object
+      properties:
+        monthlyRevenue:
+          type: number
+        activeSubscriptions:
+          type: integer
+        mrr:
+          type: number
+        failedPaymentCount:
+          type: integer
+      required:
+      - monthlyRevenue
+      - activeSubscriptions
+      - mrr
+      - failedPaymentCount
+      additionalProperties: false
+    AdminPaymentRow:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        transactionId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        amount:
+          type: number
+        currency:
+          type: string
+        method:
+          type: string
+        status:
+          $ref: '#/components/schemas/AdminPaymentStatus'
+        paidAt:
+          type: string
+          format: date-time
+      required:
+      - paymentId
+      - userId
+      - userName
+      - planId
+      - amount
+      - currency
+      - method
+      - status
+      - paidAt
+      additionalProperties: false
+    AdminPaymentsData:
+      type: object
+      properties:
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPaymentRow'
+        pagination:
+          $ref: '#/components/schemas/AdminPaginationData'
+      required:
+      - payments
+      - pagination
+      additionalProperties: false
+    AdminPaymentRefundRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+      additionalProperties: false
+    AdminPaymentActionData:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        status:
+          type: string
+        acceptedAt:
+          type: string
+          format: date-time
+      required:
+      - paymentId
+      - status
+      - acceptedAt
+      additionalProperties: false
+    AdminSubscriptionRow:
+      type: object
+      properties:
+        subscriptionId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        initial:
+          type: string
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        startedAt:
+          type: string
+          format: date-time
+        nextBillingAt:
+          type: string
+          format: date-time
+          nullable: true
+        amount:
+          type: number
+        currency:
+          type: string
+      required:
+      - subscriptionId
+      - userId
+      - userName
+      - planId
+      - startedAt
+      - amount
+      - currency
+      additionalProperties: false
+    AdminSubscriptionsData:
+      type: object
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSubscriptionRow'
+      required:
+      - subscriptions
+      additionalProperties: false
+    AdminPaymentFailureRow:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        amount:
+          type: number
+        currency:
+          type: string
+        reason:
+          type: string
+        retryCount:
+          type: integer
+        failedAt:
+          type: string
+          format: date-time
+      required:
+      - paymentId
+      - userId
+      - userName
+      - planId
+      - amount
+      - currency
+      - reason
+      - retryCount
+      - failedAt
+      additionalProperties: false
+    AdminPaymentFailuresData:
+      type: object
+      properties:
+        failures:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPaymentFailureRow'
+      required:
+      - failures
+      additionalProperties: false
+    AdminPlanData:
+      type: object
+      properties:
+        planId:
+          $ref: '#/components/schemas/AdminPlanId'
+        name:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+        description:
+          type: string
+        effectiveAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - planId
+      - name
+      - price
+      - currency
+      additionalProperties: false
+    AdminPlansData:
+      type: object
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPlanData'
+      required:
+      - plans
+      additionalProperties: false
+    AdminPlanPriceUpdateRequest:
+      type: object
+      properties:
+        price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          default: KRW
+        applyTiming:
+          type: string
+          enum:
+          - IMMEDIATE
+          - NEXT_BILLING
+      required:
+      - price
+      - applyTiming
+      additionalProperties: false
+    AdminSupportTicketData:
+      type: object
+      properties:
+        ticket:
+          $ref: '#/components/schemas/SupportTicketData'
+      required:
+      - ticket
+      additionalProperties: false
+    AdminSupportTicketUpdateRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          - RESOLVED
+          - CLOSED
+        assigneeAdminUserId:
+          type: string
+          nullable: true
       additionalProperties: false
     EntitlementsCheckRequest:
       type: object

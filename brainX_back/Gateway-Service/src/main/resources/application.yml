@@ -65,6 +65,11 @@ spring:
               predicates:
                 - Path=/api/v1/plans,/api/v1/plans/**,/api/v1/subscriptions/**,/api/v1/billing/**
 
+            - id: admin-service
+              uri: ${ADMIN_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/admin/**
+
 management:
   endpoints:
     web:
