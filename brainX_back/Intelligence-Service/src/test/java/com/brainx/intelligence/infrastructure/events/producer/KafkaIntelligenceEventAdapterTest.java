@@ -16,10 +16,14 @@ import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort.
 import com.brainx.intelligence.assist.domain.AiSuggestionDecision;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatMessageCreatedEvent;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatThreadCreatedEvent;
+import com.brainx.intelligence.clustering.application.port.outbound.ClusteringEventPort.ClusterJobCompletedEvent;
+import com.brainx.intelligence.clustering.application.port.outbound.ClusteringEventPort.ClusterJobRequestedEvent;
 import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort.BridgeConceptCreatedEvent;
 import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort.LinkSuggestionCreatedEvent;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort.SemanticSearchPerformedEvent;
 import com.brainx.intelligence.exploration.domain.SearchScope;
+import com.brainx.intelligence.insight.application.port.outbound.InsightEventPort.InsightReportCompletedEvent;
+import com.brainx.intelligence.insight.application.port.outbound.InsightEventPort.InsightReportRequestedEvent;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -306,6 +310,103 @@ class KafkaIntelligenceEventAdapterTest {
         assertThat(root.get("payload").get("citationNoteIds")).hasSize(2);
     }
 
+    @Test
+    void clusterJobRequestedPublishesClusterJobRequestedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.clusterJobRequested(new ClusterJobRequestedEvent(
+            "user-1",
+            "job-1",
+            java.util.Map.of("documentGroupId", "group-1"),
+            java.util.Map.of("maxClusters", 3)
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("cluster-job-requested-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("ClusterJobRequested");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("job-1");
+        assertThat(root.get("payload").get("clusterJobId").asText()).isEqualTo("job-1");
+        assertThat(root.get("payload").get("scope").get("documentGroupId").asText()).isEqualTo("group-1");
+        assertThat(root.get("payload").get("algorithmOptions").get("maxClusters").asInt()).isEqualTo(3);
+    }
+
+    @Test
+    void clusterJobCompletedPublishesClusterJobCompletedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.clusterJobCompleted(new ClusterJobCompletedEvent("user-1", "job-1", 2));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("cluster-job-completed-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("ClusterJobCompleted");
+        assertThat(root.get("causationId").asText()).isEqualTo("job-1");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("job-1:completed");
+        assertThat(root.get("payload").get("clusterCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void insightReportRequestedPublishesInsightReportRequestedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.insightReportRequested(new InsightReportRequestedEvent(
+            "user-1",
+            "report-1",
+            java.util.Map.of("documentGroupId", "group-1"),
+            true
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("insight-report-requested-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("InsightReportRequested");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("report-1");
+        assertThat(root.get("payload").get("reportId").asText()).isEqualTo("report-1");
+        assertThat(root.get("payload").get("scope").get("documentGroupId").asText()).isEqualTo("group-1");
+        assertThat(root.get("payload").get("includeLearningRecommendations").asBoolean()).isTrue();
+    }
+
+    @Test
+    void insightReportCompletedPublishesInsightReportCompletedEnvelope() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.insightReportCompleted(new InsightReportCompletedEvent("user-1", "report-1", 3, 4));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("insight-report-completed-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("InsightReportCompleted");
+        assertThat(root.get("causationId").asText()).isEqualTo("report-1");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("report-1:completed");
+        assertThat(root.get("payload").get("knowledgeGapCount").asInt()).isEqualTo(3);
+        assertThat(root.get("payload").get("recommendationCount").asInt()).isEqualTo(4);
+    }
+
     private static BrainxEventProducerProperties properties() {
         BrainxEventProducerProperties properties = new BrainxEventProducerProperties();
         properties.setSemanticSearchPerformedTopic("semantic-search-topic");
@@ -314,6 +415,10 @@ class KafkaIntelligenceEventAdapterTest {
         properties.setAiSuggestionDecisionRecordedTopic("ai-suggestion-decision-topic");
         properties.setChatThreadCreatedTopic("chat-thread-topic");
         properties.setChatMessageCreatedTopic("chat-message-topic");
+        properties.setClusterJobRequestedTopic("cluster-job-requested-topic");
+        properties.setClusterJobCompletedTopic("cluster-job-completed-topic");
+        properties.setInsightReportRequestedTopic("insight-report-requested-topic");
+        properties.setInsightReportCompletedTopic("insight-report-completed-topic");
         return properties;
     }
 

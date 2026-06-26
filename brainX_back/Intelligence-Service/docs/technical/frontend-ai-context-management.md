@@ -119,6 +119,16 @@
 
 `inline-assists`는 chat thread를 만들지 않고, suggestion 수락/거절은 기존 `POST /api/intelligence/ai/suggestions/{suggestionId}/decision`로 기록한다.
 
+### Inline Assist Quality CLI
+
+작성 보조 LLM 품질은 public REST 계약을 바꾸지 않고 dev-only CLI로 확인한다.
+
+```powershell
+python scripts\capture_inline_assist_cli.py --run-name 20260626-inline-assist-quality
+```
+
+이 script는 `SUMMARIZE`, `REWRITE`, `CONTINUE`, `TRANSLATE` 기본 scenario를 `InlineAssistApplicationRunner`에 JSONL로 전달한다. 결과는 `build/inline-assist-captures/<run-id>/`에 저장되며, `text` nonblank, markdown fence 금지, 설명성 prefix 금지, action mismatch 여부를 검증한다. 실제 provider 품질 gate이므로 Gradle `check`에는 묶지 않는다.
+
 ## Backend Behavior
 
 `ChatController`는 `clientContext` request object를 `Map<String, Object>`로 변환해 use case command에 넘긴다. `ChatMessage`와 `ChatMessageJpaEntity`는 `clientContext`를 JSON map으로 저장한다.

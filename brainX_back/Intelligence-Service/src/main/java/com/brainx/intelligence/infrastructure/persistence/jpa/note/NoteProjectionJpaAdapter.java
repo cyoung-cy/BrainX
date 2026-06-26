@@ -2,6 +2,7 @@ package com.brainx.intelligence.infrastructure.persistence.jpa.note;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -18,10 +19,12 @@ import com.brainx.intelligence.connection.application.port.outbound.ConnectionNo
 import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
 import com.brainx.intelligence.infrastructure.events.note.NoteProjectionStore;
 import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
+import com.brainx.intelligence.shared.application.port.outbound.KnowledgeAnalysisNoteSourcePort;
+import com.brainx.intelligence.shared.application.port.outbound.KnowledgeAnalysisNoteSourcePort.KnowledgeAnalysisNote;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
 
 @Repository
-public class NoteProjectionJpaAdapter implements NoteProjectionStore, AutoLinkNoteSourcePort, ConnectionNoteSourcePort {
+public class NoteProjectionJpaAdapter implements NoteProjectionStore, AutoLinkNoteSourcePort, ConnectionNoteSourcePort, KnowledgeAnalysisNoteSourcePort {
 
     private final NoteProjectionJpaRepository repository;
 
@@ -153,6 +156,44 @@ public class NoteProjectionJpaAdapter implements NoteProjectionStore, AutoLinkNo
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<KnowledgeAnalysisNote> findAnalysisNotes(String userId, String documentGroupId, int limit) {
+        return findSearchableByUserIdAndDocumentGroupId(userId, documentGroupId, limit).stream()
+            .filter(NoteProjectionJpaAdapter::canAnalyze)
+            .map(NoteProjectionJpaAdapter::toAnalysisNote)
+            .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<KnowledgeAnalysisNote> findAnalysisNotesByIds(
+        String userId,
+        String documentGroupId,
+        List<String> noteIds
+    ) {
+        if (noteIds == null || noteIds.isEmpty()) {
+            return List.of();
+        }
+        Map<String, NoteProjection> projectionsById = findByUserIdAndDocumentGroupIdAndNoteIds(
+                userId,
+                documentGroupId,
+                noteIds
+            ).stream()
+            .filter(NoteProjectionJpaAdapter::canAnalyze)
+            .collect(Collectors.toMap(
+                NoteProjection::noteId,
+                Function.identity(),
+                (left, right) -> left
+            ));
+        return noteIds.stream()
+            .distinct()
+            .map(projectionsById::get)
+            .filter(Objects::nonNull)
+            .map(NoteProjectionJpaAdapter::toAnalysisNote)
+            .toList();
+    }
+
+    @Override
     @Transactional
     public NoteProjection save(NoteProjection projection) {
         NoteProjectionJpaEntity entity = NoteProjectionJpaEntity.fromDomain(projection);
@@ -171,5 +212,52 @@ public class NoteProjectionJpaAdapter implements NoteProjectionStore, AutoLinkNo
             && !projection.contentPending()
             && projection.markdown() != null
             && projection.searchIndexStatus() == NoteSearchIndexStatus.INDEXED;
+    }
+
+    private static boolean canAnalyze(NoteProjection projection) {
+        return canCreateLinkSuggestions(projection);
+    }
+
+    private static KnowledgeAnalysisNote toAnalysisNote(NoteProjection projection) {
+        String markdown = projection.markdown();
+        return new KnowledgeAnalysisNote(
+            projection.userId(),
+            projection.documentGroupId(),
+            projection.noteId(),
+            projection.title(),
+            projection.tags(),
+            headings(markdown),
+            excerpt(markdown),
+            projection.updatedAt()
+        );
+    }
+
+    private static List<String> headings(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return List.of();
+        }
+        return markdown.lines()
+            .map(String::trim)
+            .filter(line -> line.startsWith("#"))
+            .map(line -> line.replaceFirst("^#+\\s*", "").trim())
+            .filter(line -> !line.isBlank())
+            .distinct()
+            .limit(8)
+            .toList();
+    }
+
+    private static String excerpt(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return "";
+        }
+        String normalized = markdown
+            .replaceAll("(?s)```.*?```", " ")
+            .replaceAll("[#>`*_\\[\\]()]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
+        if (normalized.length() <= 700) {
+            return normalized;
+        }
+        return normalized.substring(0, 700).trim();
     }
 }

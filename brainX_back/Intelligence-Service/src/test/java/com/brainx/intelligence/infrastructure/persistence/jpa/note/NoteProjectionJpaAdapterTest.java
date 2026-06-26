@@ -347,4 +347,64 @@ class NoteProjectionJpaAdapterTest {
             .extracting(NoteProjection::title)
             .isEqualTo("Group 2 title");
     }
+
+    @Test
+    void findAnalysisNotesReturnsIndexedMarkdownNoteCardsWithHeadingsAndExcerpt() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Architecture",
+            null,
+            List.of("backend"),
+            1,
+            "hash-1",
+            """
+                # System Overview
+
+                BrainX intelligence service indexes notes.
+
+                ## Search
+
+                ```java
+                ignored code fence
+                ```
+
+                RAG queries are isolated by document group.
+                """,
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "pending-note",
+            "Pending",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+
+        var notes = adapter.findAnalysisNotes("user-1", "group-1", 10);
+        var byIds = adapter.findAnalysisNotesByIds("user-1", "group-1", List.of("note-1", "pending-note"));
+
+        assertThat(notes).hasSize(1);
+        assertThat(notes.getFirst().noteId()).isEqualTo("note-1");
+        assertThat(notes.getFirst().headings()).containsExactly("System Overview", "Search");
+        assertThat(notes.getFirst().excerpt()).contains("BrainX intelligence service indexes notes");
+        assertThat(notes.getFirst().excerpt()).doesNotContain("ignored code fence");
+        assertThat(byIds).extracting("noteId").containsExactly("note-1");
+    }
 }

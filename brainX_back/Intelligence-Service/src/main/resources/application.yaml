@@ -40,11 +40,23 @@ brainx:
       ai-suggestion-decision-recorded-topic: ${BRAINX_EVENTS_TOPIC_AI_SUGGESTION_DECISION_RECORDED:brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1}
       chat-thread-created-topic: ${BRAINX_EVENTS_TOPIC_CHAT_THREAD_CREATED:brainx.knowledge.intelligence.chat-thread-created.v1}
       chat-message-created-topic: ${BRAINX_EVENTS_TOPIC_CHAT_MESSAGE_CREATED:brainx.knowledge.intelligence.chat-message-created.v1}
+      cluster-job-requested-topic: ${BRAINX_EVENTS_TOPIC_CLUSTER_JOB_REQUESTED:brainx.knowledge.intelligence.cluster-job-requested.v1}
+      cluster-job-completed-topic: ${BRAINX_EVENTS_TOPIC_CLUSTER_JOB_COMPLETED:brainx.knowledge.intelligence.cluster-job-completed.v1}
+      insight-report-requested-topic: ${BRAINX_EVENTS_TOPIC_INSIGHT_REPORT_REQUESTED:brainx.knowledge.intelligence.insight-report-requested.v1}
+      insight-report-completed-topic: ${BRAINX_EVENTS_TOPIC_INSIGHT_REPORT_COMPLETED:brainx.knowledge.intelligence.insight-report-completed.v1}
     consumer:
       enabled: ${BRAINX_EVENTS_CONSUMER_ENABLED:false}
       group-id: ${BRAINX_EVENTS_CONSUMER_GROUP_ID:intelligence-service}
   assist:
     default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+  clustering:
+    default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+    max-notes: ${BRAINX_CLUSTERING_MAX_NOTES:50}
+    max-clusters: ${BRAINX_CLUSTERING_MAX_CLUSTERS:6}
+  insight:
+    default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+    max-notes: ${BRAINX_INSIGHT_MAX_NOTES:50}
+    max-recommendations: ${BRAINX_INSIGHT_MAX_RECOMMENDATIONS:8}
   connection:
     bridge:
       default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
@@ -137,6 +149,29 @@ brainx:
       tags: ${BRAINX_DEV_CHAT_ROUTER_TAGS:sample_notes}
       query: ${BRAINX_DEV_CHAT_ROUTER_QUERY:}
       model-id: ${BRAINX_DEV_CHAT_ROUTER_MODEL_ID:${OPENAI_CHAT_MODEL:gpt-5.4-mini}}
+    inline-assist:
+      enabled: ${BRAINX_DEV_INLINE_ASSIST_ENABLED:false}
+      command: ${BRAINX_DEV_INLINE_ASSIST_COMMAND:run}
+      user-id: ${BRAINX_DEV_INLINE_ASSIST_USER_ID:sample-user}
+      note-id: ${BRAINX_DEV_INLINE_ASSIST_NOTE_ID:sample-inline-assist}
+      action: ${BRAINX_DEV_INLINE_ASSIST_ACTION:}
+      selected-text: ${BRAINX_DEV_INLINE_ASSIST_SELECTED_TEXT:}
+      context-before: ${BRAINX_DEV_INLINE_ASSIST_CONTEXT_BEFORE:}
+      context-after: ${BRAINX_DEV_INLINE_ASSIST_CONTEXT_AFTER:}
+      language: ${BRAINX_DEV_INLINE_ASSIST_LANGUAGE:ko}
+    connection-quality:
+      enabled: ${BRAINX_DEV_CONNECTION_QUALITY_ENABLED:false}
+      command: ${BRAINX_DEV_CONNECTION_QUALITY_COMMAND:run}
+      directory: ${BRAINX_DEV_CONNECTION_QUALITY_DIRECTORY:sample_notes}
+      user-id: ${BRAINX_DEV_CONNECTION_QUALITY_USER_ID:sample-user}
+      document-group-id: ${BRAINX_DEV_CONNECTION_QUALITY_DOCUMENT_GROUP_ID:default}
+      folder-id: ${BRAINX_DEV_CONNECTION_QUALITY_FOLDER_ID:sample_notes}
+      tags: ${BRAINX_DEV_CONNECTION_QUALITY_TAGS:sample_notes}
+      type: ${BRAINX_DEV_CONNECTION_QUALITY_TYPE:}
+      source-path: ${BRAINX_DEV_CONNECTION_QUALITY_SOURCE_PATH:}
+      source-note-id: ${BRAINX_DEV_CONNECTION_QUALITY_SOURCE_NOTE_ID:}
+      note-paths: ${BRAINX_DEV_CONNECTION_QUALITY_NOTE_PATHS:}
+      note-ids: ${BRAINX_DEV_CONNECTION_QUALITY_NOTE_IDS:}
     note-auto-link:
       enabled: ${BRAINX_DEV_NOTE_AUTO_LINK_ENABLED:false}
       command: ${BRAINX_DEV_NOTE_AUTO_LINK_COMMAND:analyze}

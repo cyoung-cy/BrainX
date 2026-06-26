@@ -9,11 +9,19 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.brainx.intelligence.chat.domain.ChatDomainException;
+import com.brainx.intelligence.clustering.domain.ClusteringConflictException;
+import com.brainx.intelligence.clustering.domain.ClusteringDomainException;
+import com.brainx.intelligence.clustering.domain.ClusteringForbiddenException;
+import com.brainx.intelligence.clustering.domain.ClusteringNotFoundException;
 import com.brainx.intelligence.connection.domain.ConnectionConflictException;
 import com.brainx.intelligence.connection.domain.ConnectionForbiddenException;
 import com.brainx.intelligence.connection.domain.ConnectionNotFoundException;
 import com.brainx.intelligence.connection.domain.ConnectionProviderUnavailableException;
 import com.brainx.intelligence.exploration.domain.ExplorationDomainException;
+import com.brainx.intelligence.insight.domain.InsightConflictException;
+import com.brainx.intelligence.insight.domain.InsightDomainException;
+import com.brainx.intelligence.insight.domain.InsightForbiddenException;
+import com.brainx.intelligence.insight.domain.InsightNotFoundException;
 import com.brainx.intelligence.settings.domain.SettingsDomainException;
 
 /**
@@ -27,7 +35,9 @@ public class GlobalApiExceptionHandler {
         BindException.class,
         HttpMessageNotReadableException.class,
         ChatDomainException.class,
+        ClusteringDomainException.class,
         ExplorationDomainException.class,
+        InsightDomainException.class,
         SettingsDomainException.class,
         IllegalArgumentException.class
     })
@@ -36,20 +46,32 @@ public class GlobalApiExceptionHandler {
             .body(ApiErrorResponse.of("BAD_REQUEST", safeMessage(exception)));
     }
 
-    @ExceptionHandler(ConnectionForbiddenException.class)
-    public ResponseEntity<ApiErrorResponse> handleForbidden(ConnectionForbiddenException exception) {
+    @ExceptionHandler({
+        ClusteringForbiddenException.class,
+        ConnectionForbiddenException.class,
+        InsightForbiddenException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleForbidden(Exception exception) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body(ApiErrorResponse.of("FORBIDDEN", safeMessage(exception)));
     }
 
-    @ExceptionHandler(ConnectionNotFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleNotFound(ConnectionNotFoundException exception) {
+    @ExceptionHandler({
+        ClusteringNotFoundException.class,
+        ConnectionNotFoundException.class,
+        InsightNotFoundException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleNotFound(Exception exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(ApiErrorResponse.of("NOT_FOUND", safeMessage(exception)));
     }
 
-    @ExceptionHandler(ConnectionConflictException.class)
-    public ResponseEntity<ApiErrorResponse> handleConflict(ConnectionConflictException exception) {
+    @ExceptionHandler({
+        ClusteringConflictException.class,
+        ConnectionConflictException.class,
+        InsightConflictException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleConflict(Exception exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
             .body(ApiErrorResponse.of("CONFLICT", safeMessage(exception)));
     }

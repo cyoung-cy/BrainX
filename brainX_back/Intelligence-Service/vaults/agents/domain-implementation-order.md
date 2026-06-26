@@ -33,13 +33,15 @@
    - AI 폴더 정리 제안을 생성한다.
    - 제안된 폴더 구조와 노트 이동안을 확인할 수 있게 한다.
 
-7. [ ] 지식 구조 분석
+7. [x] 지식 구조 분석
    - AI 클러스터링 작업을 요청할 수 있게 한다.
    - 클러스터링 결과를 조회할 수 있게 한다.
+   - v1은 sync-complete job으로 처리하고, 실제 background worker는 후속 범위다.
 
-8. [ ] 고급 인사이트
+8. [x] 고급 인사이트
    - AI 인사이트 리포트를 요청할 수 있게 한다.
    - 지식 공백, 추천사항, 학습 제안을 조회할 수 있게 한다.
+   - v1은 note card 기반 sync-complete report로 처리하고, long-running worker와 report 세분화는 후속 범위다.
 
 ## Domain Flow
 

@@ -31,22 +31,33 @@ DEFAULT_SCENARIOS = [
     {
         "expectedRoute": "NOTE_QA",
         "query": "현재 문서 그룹 노트 기준으로 RAG 채팅 메시지 전송 흐름을 설명해줘",
+        "minCitationCount": 1,
+        "requiredEventNames": ["route", "delta", "done"],
     },
     {
         "expectedRoute": "WORKSPACE_SEARCH",
         "query": "내 전체 노트에서 인증과 토큰 사용량 관련 내용을 찾아 비교해줘",
+        "minCitationCount": 1,
+        "requiredEventNames": ["route", "delta", "done"],
     },
     {
         "expectedRoute": "COMPOSE",
         "query": "BrainX의 AI 노트 검색 기능을 소개하는 짧은 블로그 초안을 써줘",
+        "minCitationCount": 0,
+        "requiredEventNames": ["route", "delta", "done"],
     },
     {
         "expectedRoute": "NOTE_ACTION",
         "query": "방금 답변을 노트에 추가할 수 있는 Markdown 초안으로 만들어줘",
+        "minCitationCount": 0,
+        "requiredEventNames": ["route", "delta", "done"],
     },
     {
         "expectedRoute": "OUT_OF_SCOPE",
         "query": "오늘 서울 날씨 알려줘",
+        "allowCitations": False,
+        "answerMustContain": ["BrainX 본 채팅"],
+        "requiredEventNames": ["route", "delta", "done"],
     },
 ]
 
@@ -149,7 +160,13 @@ def main() -> int:
         )
         ingest_record = save_command_output(raw_dir, "ingest-and-ask", ingest_result)
         summary["ingestAndAsk"] = compact_command_record(ingest_record)
-        records.append(scenario_record("query-001", first_scenario, ingest_record, ingest_result.parsed_json[-1] if ingest_result.parsed_json else None))
+        records.append(scenario_record(
+            "query-001",
+            first_scenario,
+            ingest_record,
+            ingest_result.parsed_json[-1] if ingest_result.parsed_json else None,
+            args.router_model
+        ))
         first_session_index = 1
         write_json(summary_path, summary)
         if ingest_result.returncode != 0:
@@ -180,7 +197,7 @@ def main() -> int:
         for offset, scenario in enumerate(remaining, start=first_session_index + 1):
             response_index = offset - first_session_index - 1
             response = ask_result.parsed_json[response_index] if response_index < len(ask_result.parsed_json) else None
-            records.append(scenario_record(f"query-{offset:03d}", scenario, ask_record, response))
+            records.append(scenario_record(f"query-{offset:03d}", scenario, ask_record, response, args.router_model))
 
     summary["runs"] = [compact_record(record) for record in records]
     write_records(records_path, records)
@@ -348,8 +365,9 @@ def scenario_record(
     scenario: dict[str, str],
     command_record: dict[str, Any],
     response: Any,
+    expected_router_model: str,
 ) -> dict[str, Any]:
-    validation = validate_response(scenario, response)
+    validation = validate_response(scenario, response, expected_router_model)
     return {
         "label": label,
         "query": scenario["query"],
@@ -367,7 +385,7 @@ def scenario_record(
     }
 
 
-def validate_response(scenario: dict[str, str], response: Any) -> dict[str, Any]:
+def validate_response(scenario: dict[str, Any], response: Any, expected_router_model: str) -> dict[str, Any]:
     failures: list[str] = []
     if not isinstance(response, dict):
         return {"status": "missing_response", "failures": ["response JSON is missing"]}
@@ -379,22 +397,85 @@ def validate_response(scenario: dict[str, str], response: Any) -> dict[str, Any]
         failures.append("events is empty")
     elif not isinstance(events[0], dict) or events[0].get("event") != "route":
         failures.append("events[0].event is not route")
-    if response.get("routerModel") != "gpt-5.4-nano":
-        failures.append("routerModel is not gpt-5.4-nano")
+    if response.get("routerModel") != expected_router_model:
+        failures.append(f"routerModel is not {expected_router_model}")
     expected = scenario.get("expectedRoute", "UNKNOWN")
     if expected != "UNKNOWN" and response.get("route") != expected:
         failures.append(f"route mismatch: expected {expected}, actual {response.get('route')}")
     citations = response.get("citations")
+    citation_count = len(citations) if isinstance(citations, list) else 0
+    answer = str(response.get("answer") or "")
     if response.get("route") == "OUT_OF_SCOPE":
-        if isinstance(citations, list) and citations:
+        if citation_count:
             failures.append("OUT_OF_SCOPE returned citations")
-        if "BrainX 본 채팅" not in str(response.get("answer") or ""):
+        if "BrainX 본 채팅" not in answer:
             failures.append("OUT_OF_SCOPE answer does not contain fixed guard text")
     if response.get("route") in {"NOTE_QA", "WORKSPACE_SEARCH"}:
-        if not isinstance(citations, list) or not citations:
+        if citation_count == 0:
             failures.append(f"{response.get('route')} returned no citations")
+    if response.get("route") in {"COMPOSE", "NOTE_ACTION"} and not answer.strip():
+        failures.append(f"{response.get('route')} returned blank answer")
+    if response.get("route") == "NOTE_ACTION" and not looks_like_markdown_draft(answer):
+        failures.append("NOTE_ACTION answer does not look like a Markdown draft")
+    min_citation_count = optional_int(scenario.get("minCitationCount"))
+    if min_citation_count is not None and citation_count < min_citation_count:
+        failures.append(f"citation count {citation_count} is below {min_citation_count}")
+    allow_citations = scenario.get("allowCitations")
+    if allow_citations is False and citation_count:
+        failures.append("citations are not allowed for this scenario")
+    event_names = [
+        str(event.get("event") or "")
+        for event in events
+        if isinstance(event, dict)
+    ] if isinstance(events, list) else []
+    for required in string_list(scenario.get("requiredEventNames")):
+        if required not in event_names:
+            failures.append(f"required event is missing: {required}")
+    citation_titles = [
+        str(citation.get("title") or "")
+        for citation in citations
+        if isinstance(citation, dict)
+    ] if isinstance(citations, list) else []
+    for required in string_list(scenario.get("requireCitationTitles")):
+        if not contains_text(citation_titles, required):
+            failures.append(f"required citation title not found: {required}")
+    for forbidden in string_list(scenario.get("forbiddenCitationTitles")):
+        if contains_text(citation_titles, forbidden):
+            failures.append(f"forbidden citation title found: {forbidden}")
+    for required in string_list(scenario.get("answerMustContain")):
+        if required not in answer:
+            failures.append(f"answer missing text: {required}")
+    for forbidden in string_list(scenario.get("answerMustNotContain")):
+        if forbidden in answer:
+            failures.append(f"answer contains forbidden text: {forbidden}")
     status = "passed" if not failures else ("route_mismatch" if any("route mismatch" in item for item in failures) else "failed")
     return {"status": status, "failures": failures}
+
+
+def looks_like_markdown_draft(answer: str) -> bool:
+    stripped = answer.strip()
+    return stripped.startswith("#") or "\n-" in stripped or "\n1." in stripped or "```" not in stripped
+
+
+def optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    return [str(value)]
+
+
+def contains_text(values: list[str], expected: str) -> bool:
+    lowered = expected.lower()
+    return any(lowered in value.lower() for value in values)
 
 
 def route_from_response(response: Any) -> str | None:
@@ -431,6 +512,11 @@ def compact_record(record: dict[str, Any]) -> dict[str, Any]:
         "answerPreview": answer[:300],
         "citationCount": len(citations) if isinstance(citations, list) else None,
         "eventCount": len(events) if isinstance(events, list) else None,
+        "eventNames": [
+            event.get("event")
+            for event in events
+            if isinstance(event, dict)
+        ] if isinstance(events, list) else [],
         "stdoutPath": record["stdoutPath"],
         "stderrPath": record["stderrPath"],
     }
@@ -482,6 +568,7 @@ def write_report(path: Path, summary: dict[str, Any], records: list[dict[str, An
             f"- actualRoute: `{record['actualRoute']}`",
             f"- citationCount: `{len(citations) if isinstance(citations, list) else 0}`",
             f"- eventCount: `{len(events) if isinstance(events, list) else 0}`",
+            f"- eventNames: `{', '.join(str(event.get('event')) for event in events if isinstance(event, dict)) if isinstance(events, list) else ''}`",
             f"- stderrPath: `{record['stderrPath']}`",
             "",
             "Query:",

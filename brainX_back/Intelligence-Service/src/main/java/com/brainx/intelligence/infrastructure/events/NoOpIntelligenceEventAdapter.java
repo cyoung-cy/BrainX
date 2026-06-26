@@ -5,14 +5,16 @@ import org.springframework.stereotype.Component;
 
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
+import com.brainx.intelligence.clustering.application.port.outbound.ClusteringEventPort;
 import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
 import com.brainx.intelligence.infrastructure.events.producer.KafkaIntelligenceEventAdapter;
+import com.brainx.intelligence.insight.application.port.outbound.InsightEventPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 
 @Component
 @ConditionalOnMissingBean(KafkaIntelligenceEventAdapter.class)
-public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort, ConnectionEventPort {
+public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort, ConnectionEventPort, ClusteringEventPort, InsightEventPort {
 
     @Override
     public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
@@ -51,6 +53,26 @@ public class NoOpIntelligenceEventAdapter implements ExplorationEventPort, Token
 
     @Override
     public void chatMessageCreated(ChatMessageCreatedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void clusterJobRequested(ClusterJobRequestedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void clusterJobCompleted(ClusterJobCompletedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void insightReportRequested(InsightReportRequestedEvent event) {
+        // Keeps local/test runs runnable when event producer is disabled.
+    }
+
+    @Override
+    public void insightReportCompleted(InsightReportCompletedEvent event) {
         // Keeps local/test runs runnable when event producer is disabled.
     }
 }

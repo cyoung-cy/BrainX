@@ -7,7 +7,7 @@
 - 분석 범위는 `userId + documentGroupId` 안의 searchable note다.
 - 기본 cap은 50개 note다. cap을 넘으면 provider 호출 없이 `LIMIT_EXCEEDED` 결과를 반환한다.
 - 결과는 source note의 anchor 위치와 target note를 가진 제안이다. 실제 링크 삽입은 frontend 또는 Workspace 저장 흐름에서 처리한다.
-- 공개 `/api/v1/ai/link-suggestions` 계약은 v1에서 변경하지 않는다.
+- public `/api/v1/ai/link-suggestions`는 `connection` feature에서 이 내부 use case의 `VECTOR_LLM` 전략을 재사용한다. public API의 자세한 계약과 제한은 `docs/technical/connection-api.md`를 기준으로 확인한다.
 
 ## Markdown Read Model
 
@@ -38,6 +38,15 @@
 - v1에서는 offline 비교와 fallback 진단 용도이며 기본 운영 전략으로 보지 않는다.
 
 두 전략 모두 LLM이 반환한 `anchorText`를 source raw markdown에서 다시 찾는다. 이미 markdown link, wiki link, inline code, fenced code block 안에 있는 anchor는 제외한다.
+
+## Public Connection API와의 관계
+
+`autolink`는 내부 분석/CLI/품질 평가 기능이고, `connection`은 public REST API surface다.
+
+- `POST /api/v1/ai/link-suggestions`는 `NoteAutoLinkUseCase`를 호출하되 `VECTOR_LLM` 결과 중 요청 source note의 suggestion만 반환한다.
+- public response는 현재 `targetNoteId`, `targetTitle`, `score`, `reason` 중심이며 raw markdown anchor offset은 노출하지 않는다.
+- public request에는 아직 `documentGroupId`가 없어서 `ConnectionService`가 `default` group을 사용한다.
+- anchor offset을 프론트 적용에 직접 사용하려면 OpenAPI 계약 확장과 response schema 변경이 필요하다.
 
 ## 품질 필터와 Ranking
 
