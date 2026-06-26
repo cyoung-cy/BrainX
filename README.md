@@ -155,7 +155,7 @@ BrainX/
 | Service | 담당 | 책임 | 상태 |
 | --- | --- | --- | --- |
 | User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계 | 구현 중 (포트 8080) |
-| Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | 미구현 |
+| Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | API shell 구현 중 (포트 8085) |
 | AI-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 미구현 |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
@@ -286,13 +286,23 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build
 ```
 
-`apps` 프로필은 `Gateway-Service`(8088), `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084)를 모두 실행합니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
+`apps` 프로필은 `Gateway-Service`(8088), `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084), `Admin-Service`(8085)를 모두 실행합니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
+
+Admin-Service만 Docker로 실행하려면 아래 명령을 사용합니다.
+
+```powershell
+cd C:\Edu\Final\BrainX\brainX_back
+docker compose --profile apps up -d --build admin-service
+```
+
+관리자 프론트(`BrainX-Admin/brainx-admin-next`)에서 실제 Admin-Service를 사용하려면 `.env.local`에 `ADMIN_MOCK_ENABLED=false`, `ADMIN_SERVICE_URL=http://localhost:8085`를 설정한 뒤 Next 개발 서버를 재시작합니다.
 
 각 서비스는 자기 폴더 기준으로 실행하면 아래 파일을 자동으로 읽습니다.
 
 | Service | 자동 import |
 | --- | --- |
 | Gateway-Service | `../.env`, `../env/gateway-service.env` |
+| Admin-Service | `../.env`, `../env/admin-service.env` |
 | User-Service | `../.env`, `../env/user-service.env` |
 | Workspace-Service | Docker 실행 시 `env/workspace-service.env`; 로컬 IDE 실행 시 동일한 값을 Run Configuration에 지정 |
 | Ingestion-Service | `../.env`, `../env/ingestion-service.env` |
@@ -464,6 +474,7 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 결제 재시도 | POST | `/api/v1/admin/billing/payments/{paymentId}/retry` | Commerce 결제 재시도, `PaymentSucceeded`/`PaymentFailed` |
 | 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장 |
 | 결제 실패 추적 | GET | `/api/v1/admin/billing/payment-failures` | Commerce 실패 사유/재시도 횟수 |
+| 요금제 목록 | GET | `/api/v1/admin/billing/plans` | Commerce 플랜 카탈로그 |
 | 요금제 가격 | PATCH | `/api/v1/admin/billing/plans/{planId}` | Commerce 플랜 가격 변경, `PlanPriceChanged` |
 | 관리자 프로필 | GET/PATCH | `/api/v1/admin/me`, `/api/v1/admin/me/profile` | 관리자 본인 정보 |
 | 관리자 비밀번호 | PATCH | `/api/v1/admin/me/password` | User-Service credential 변경, `PasswordChanged` |
@@ -515,6 +526,7 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
   - OpenAPI: `/api/v1/admin/**` 아래에 관리자 대시보드, 사용자 목록/상세/플랜 변경/상태 변경/탈퇴/일괄 처리, 문의 상세/배정, 결제 KPI/내역/환불/재시도/구독/실패 추적/요금제 가격 수정, 관리자 프로필/비밀번호 변경 API를 추가했습니다.
   - AsyncAPI: `PaymentRefunded`, `PlanPriceChanged`, `SupportTicketUpdated` 이벤트를 추가했습니다. 기존 `SubscriptionChanged`, `PaymentSucceeded`, `PaymentFailed`, `SupportTicketReplied`, `NotificationRequested`, `PasswordChanged`, `UserDeletionRequested`는 그대로 재사용합니다.
   - 서비스 경계: Admin-Service는 관리자 화면용 read model/orchestration layer로 두고, 사용자 원장은 User-Service, 노트/저장소 통계는 Workspace-Service, 결제/구독/요금제 원장은 Commerce-Service가 유지합니다. Admin-Service는 Gateway 보호 경로 `/api/v1/admin/**` 뒤에서 내부 API/이벤트로 각 서비스와 동기화합니다.
+  - 추가 확정: 요금제 관리 탭은 `GET /api/v1/admin/billing/plans`로 플랜 목록을 조회합니다. 결제 실패 안내 메일은 별도 결제 API를 만들지 않고 `POST /api/v1/admin/users/bulk-actions`의 `SEND_NOTICE` 액션으로 처리합니다.
 - `brainx-next`의 일부 한글 UI 문자열은 현재 소스 파일에서 인코딩이 깨진 상태입니다. 기능 구조 분석은 가능하지만, 제품화 전에 UTF-8 기준으로 문구를 복구해야 합니다.
 - `brainX_front`는 이전 Vite/React 구현으로 보이며, 신규 개발 기준은 `brainx-next`를 우선합니다.
 - `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 문서와 개발 계획에서는 제외합니다.
