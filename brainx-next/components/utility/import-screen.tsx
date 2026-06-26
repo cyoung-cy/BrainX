@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { cx, createId } from "@/lib/utils";
+import { cx } from "@/lib/utils";
 
 import { useBrainX } from "@/components/brainx-provider";
 
-import { Badge, Icon } from "@/components/brainx-ui";
+import { Icon } from "@/components/brainx-ui";
 
 import {
   clearNotionIntegration,
@@ -29,14 +29,6 @@ type ImportedNote = {
   title: string;
 };
 
-type ImportJob = {
-  id: string;
-  source: string;
-  files: string;
-  status: string;
-  when: string;
-};
-
 const FILE_TYPES = [
   { id: "csv", label: "CSV", desc: "스프레드시트에서 구조화된 데이터 가져오기", icon: "csv" as const, accept: ".csv" },
   { id: "pdf", label: "PDF", desc: "PDF 문서에서 콘텐츠 추출하기", icon: "pdf" as const, accept: ".pdf" },
@@ -45,20 +37,12 @@ const FILE_TYPES = [
   { id: "word", label: "Word", desc: "Word 문서를 BrainX로 가져오기", icon: "doc" as const, accept: ".docx" }
 ] as const;
 
-const IMPORT_HISTORY: ImportJob[] = [
-  { id: "job-1", source: "Notion", files: "24개 항목", status: "완료", when: "오늘 10:12" },
-  { id: "job-2", source: "Obsidian", files: "51개 항목", status: "완료", when: "어제" },
-  { id: "job-3", source: "PDF", files: "8개 파일", status: "검토 중", when: "2일 전" }
-];
-
 export function ImportScreen() {
   const { pushToast } = useBrainX();
   const router = useRouter();
-  const [tab, setTab] = useState<"browse" | "done">("browse");
   const [dragOver, setDragOver] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [history, setHistory] = useState<ImportJob[]>(IMPORT_HISTORY);
 
   const [notionIntegration, setNotionIntegration] = useState<NotionIntegration | null>(() => readNotionIntegration());
   const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
@@ -119,7 +103,6 @@ export function ImportScreen() {
     setProgress(4);
     setImporting(true);
     window.setTimeout(() => {
-      setHistory((current) => [{ id: createId("job"), source: name, files: "1개 파일", status: "완료", when: "방금" }, ...current.slice(0, 4)]);
       pushToast(`${name} 가져오기를 완료했어요`, "ok");
     }, 1700);
   };
@@ -138,10 +121,6 @@ export function ImportScreen() {
       }
 
       const noteIds = job.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
-      setHistory((current) => [
-        { id: createId("job"), source: file.name, files: `${Math.max(noteIds.length, 1)}개 항목`, status: "완료", when: "방금" },
-        ...current.slice(0, 4)
-      ]);
       pushToast(`${file.name} 가져오기를 완료했어요`, "ok");
 
       if (noteIds.length > 0) {
@@ -235,10 +214,6 @@ export function ImportScreen() {
         pushToast(`${page.title} 가져오기에 실패했습니다.`, "err");
         return;
       }
-      setHistory((current) => [
-        { id: createId("job"), source: `Notion · ${page.title}`, files: "1개 페이지", status: "완료", when: "방금" },
-        ...current.slice(0, 4)
-      ]);
       pushToast(`${page.title} 가져오기를 완료했어요`, "ok");
 
       try {
@@ -272,28 +247,7 @@ export function ImportScreen() {
         <p className="mt-1.5 text-[14px] text-txt3">다른 앱과 파일에서 BrainX로 데이터를 가져오세요.</p>
       </div>
 
-      <div className="mb-7 flex gap-1 border-b border-line/60">
-        {[
-          { id: "browse" as const, label: "둘러보기" },
-          { id: "done" as const, label: "완료됨" }
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cx(
-              "-mb-px border-b-2 px-4 py-2 text-[14px] font-medium transition-colors",
-              tab === t.id ? "border-txt text-txt" : "border-transparent text-txt3 hover:text-txt2"
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "browse" ? (
-        <>
-          <div className="mb-9">
+      <div className="mb-9">
             <h2 className="mb-1 text-[15px] font-semibold text-txt">콘텐츠 가져오기</h2>
             <p className="mb-3.5 text-[13px] text-txt3">ZIP 파일을 가져오면 내부의 각 파일이 자체 페이지로 변환됩니다.</p>
             <div
@@ -466,32 +420,6 @@ export function ImportScreen() {
               </div>
             </div>
           )}
-        </>
-      ) : (
-        <div>
-          {history.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <Icon name="check" size={36} className="mb-3.5 text-txt3 opacity-40" />
-              <p className="text-[14px] text-txt3">완료된 가져오기가 없습니다.</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {history.map((job) => (
-                <div key={job.id} className="flex items-center gap-3 rounded-xl border border-line/50 bg-surface2/40 px-3 py-2.5">
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan/15 text-cyan">
-                    <Icon name="import" size={17} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-medium text-txt">{job.source}</div>
-                    <div className="text-[13.5px] text-txt3">{job.files} · {job.when}</div>
-                  </div>
-                  <Badge className="!h-5">{job.status}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
