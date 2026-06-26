@@ -38,6 +38,8 @@ function GraphEmptyState({
   onOpenChat: () => void;
   onOpenGraph: () => void;
 }) {
+  const { effectiveTheme } = useBrainX();
+  const isLight = effectiveTheme === "light";
   const steps = [
     {
       step: "1",
@@ -68,7 +70,14 @@ function GraphEmptyState({
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6 py-10">
       <div className="pointer-events-auto flex w-full max-w-[860px] flex-col items-center text-center">
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] border border-primary/15 bg-white/75 shadow-[0_10px_30px_rgba(108,99,216,0.12)] backdrop-blur">
+        <div
+          className={cx(
+            "mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] border backdrop-blur",
+            isLight
+              ? "border-primary/15 bg-white/75 shadow-[0_10px_30px_rgba(108,99,216,0.12)]"
+              : "border-white/10 bg-transparent shadow-none"
+          )}
+        >
           <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-primary/15 to-accent/10 text-primary">
             <Icon name="graph" size={24} />
           </div>
@@ -92,7 +101,12 @@ function GraphEmptyState({
           <button
             type="button"
             onClick={onOpenNotes}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line/70 bg-white/80 px-5 text-[14px] font-semibold text-txt2 shadow-sm transition-colors hover:border-primary/30 hover:text-txt"
+            className={cx(
+              "inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-5 text-[14px] font-semibold shadow-sm transition-colors",
+              isLight
+                ? "border-line/70 bg-white/80 text-txt2 hover:border-primary/30 hover:text-txt"
+                : "border-white/10 bg-transparent text-txt2 hover:border-primary/30 hover:text-txt"
+            )}
           >
             <FileUp size={16} />
             가져오기
@@ -105,7 +119,12 @@ function GraphEmptyState({
               key={item.step}
               type="button"
               onClick={item.step === "1" ? onCreateNote : item.step === "2" ? onOpenChat : onOpenGraph}
-              className="group relative overflow-hidden rounded-2xl border border-line/60 bg-white/85 p-5 text-left shadow-[0_12px_30px_rgba(15,23,42,0.05)] transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(108,99,216,0.12)]"
+              className={cx(
+                "group relative overflow-hidden rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5",
+                isLight
+                  ? "border-line/60 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.05)] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(108,99,216,0.12)]"
+                  : "border-white/10 bg-transparent shadow-none hover:border-primary/30"
+              )}
             >
               <span className={`absolute -right-1 top-1 text-[56px] font-extrabold leading-none ${item.accent} opacity-[0.08]`}>
                 {item.step}
