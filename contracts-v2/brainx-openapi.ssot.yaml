@@ -8637,6 +8637,41 @@ paths:
       security:
       - bearerAuth:
         - ROLE_ADMIN
+  /api/v1/admin/billing/plans:
+    get:
+      operationId: listAdminPlans
+      summary: List plans for admin plan management tab
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.billing
+        type: frontend
+        description: BrainX-Admin plan management tab
+      x-internal-sync-calls:
+      - operationId: listPlansInternal
+        targetService: Commerce-Service
+        reason: Commerce owns plan catalog and price history
+      x-produces-events: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminPlansData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
   /api/v1/admin/billing/plans/{planId}:
     patch:
       operationId: updateAdminPlanPrice
@@ -12685,6 +12720,16 @@ components:
       - name
       - price
       - currency
+      additionalProperties: false
+    AdminPlansData:
+      type: object
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPlanData'
+      required:
+      - plans
       additionalProperties: false
     AdminPlanPriceUpdateRequest:
       type: object
