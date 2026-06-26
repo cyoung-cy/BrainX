@@ -15,6 +15,7 @@ services:
       WORKSPACE_SERVICE_URL: http://workspace-service:8082
       INGESTION_SERVICE_URL: http://ingestion-service:8083
       COMMERCE_SERVICE_URL: http://commerce-service:8084
+      ADMIN_SERVICE_URL: http://admin-service:8085
     ports:
       - "8088:8088"
     depends_on:
@@ -25,6 +26,8 @@ services:
       ingestion-service:
         condition: service_started
       commerce-service:
+        condition: service_started
+      admin-service:
         condition: service_started
 
   user-service:
@@ -112,6 +115,32 @@ services:
       postgres:
         condition: service_healthy
 
+  admin-service:
+    profiles:
+      - apps
+    build:
+      context: ./Admin-Service
+    container_name: brainx-admin-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+      - ./env/admin-service.env
+    environment:
+      SERVER_PORT: "8085"
+      POSTGRES_HOST: postgres
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   postgres:
     image: postgres:16-alpine
     container_name: brainx-postgres
@@ -124,6 +153,7 @@ services:
       WORKSPACE_DB_NAME: ${WORKSPACE_DB_NAME:-brainx_workspace}
       INGESTION_DB_NAME: ${INGESTION_DB_NAME:-brainx_ingestion}
       COMMERCE_DB_NAME: ${COMMERCE_DB_NAME:-brainx_commerce}
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
     ports:
       - "5432:5432"
     volumes:
