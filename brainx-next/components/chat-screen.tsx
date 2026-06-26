@@ -18,7 +18,8 @@ function renderText(text: string) {
 
 export function ChatScreen() {
   const router = useRouter();
-  const { pushToast, notes } = useBrainX();
+  const { pushToast, notes, effectiveTheme } = useBrainX();
+  const isLight = effectiveTheme === "light";
   const [sessions] = useState(CHAT_SESSIONS);
   const [active, setActive] = useState("new");
   const [model, setModel] = useState(MODELS[0]);
@@ -149,7 +150,7 @@ export function ChatScreen() {
         <div ref={scrollRef} className="scroll flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="mx-auto flex h-full max-w-[860px] flex-col items-center justify-center px-6 py-10 text-center">
-              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] border border-primary/15 bg-white/75 shadow-[0_10px_30px_rgba(108,99,216,0.12)]">
+              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] border border-primary/15 bg-white/75 shadow-[0_10px_30px_rgba(108,99,216,0.12)] backdrop-blur dark:border-white/10 dark:bg-transparent dark:shadow-none">
                 <Icon name="brain" size={24} className="text-primary" />
               </div>
               <h2 className="text-[28px] font-bold tracking-tight text-txt">내 노트를 기반으로 질문해보세요</h2>
@@ -166,7 +167,12 @@ export function ChatScreen() {
                     key={item.step}
                     type="button"
                     onClick={() => ask(suggestions[0] ?? "내 노트의 핵심 흐름을 정리해줘")}
-                    className="group relative overflow-hidden rounded-2xl border border-line/60 bg-white/85 p-5 text-left shadow-[0_12px_30px_rgba(15,23,42,0.05)] transition-all hover:-translate-y-0.5 hover:border-primary/25"
+                    className={cx(
+                      "group relative overflow-hidden rounded-2xl border p-5 text-left transition-all hover:-translate-y-0.5",
+                      isLight
+                        ? "border-line/60 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.05)] hover:border-primary/25 hover:shadow-[0_16px_34px_rgba(108,99,216,0.12)]"
+                        : "border-white/10 bg-transparent shadow-none hover:border-primary/30"
+                    )}
                   >
                     <span className={`absolute -right-1 top-1 text-[56px] font-extrabold leading-none ${item.accent} opacity-[0.08]`}>
                       {item.step}
