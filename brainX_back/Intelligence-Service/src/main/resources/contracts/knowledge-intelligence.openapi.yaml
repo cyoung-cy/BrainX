@@ -2,35 +2,34 @@ openapi: 3.0.3
 info:
   title: BrainX API SSOT - Knowledge Intelligence
   version: 1.0.0-revised
-  description: 'BrainX public and internal REST contract.
+  description: 'BrainX 공개 및 내부 REST 계약 문서.
 
 
-    Revision policy:
+    개정 정책:
 
-    - Public/client API remains under /api/v1, except the currently implemented Ingestion publish helper which is exposed
-    at /v1/publish-jobs.
+    - Public/client API는 현재 구현된 Ingestion 발행 헬퍼(/v1/publish-jobs)를 제외하고 /api/v1 아래에 둔다.
 
-    - Service-to-service synchronous APIs are explicitly isolated under /internal/v1.
+    - 서비스 간 동기 API는 /internal/v1 아래에 명시적으로 격리한다.
 
-    - Duplicate member-deletion cancel endpoint was removed.
+    - 중복된 회원 탈퇴 취소 엔드포인트는 제거했다.
 
-    - /support/inquiries was consolidated into /support/tickets.
+    - /support/inquiries는 /support/tickets로 통합했다.
 
-    - Token usage recording is event-first via AsyncAPI; no public REST command is exposed.
+    - 토큰 사용량 기록은 AsyncAPI 이벤트 우선으로 처리하며 공개 REST command는 제공하지 않는다.
 
-    - Publish jobs currently return 200 OK with clipboard-ready content.
+    - 발행 작업은 현재 클립보드용 콘텐츠를 포함해 200 OK를 반환한다.
 
-    - Operation-level consumer metadata is expressed through x-consumers.
+    - operation 단위 소비자 메타데이터는 x-consumers로 표현한다.
 
-    - Operation-level event coupling is expressed through x-produces-events and references the AsyncAPI SSOT.'
+    - operation 단위 이벤트 결합은 x-produces-events로 표현하고 AsyncAPI SSOT를 참조한다.'
 servers:
 - url: http://localhost:8080
-  description: Local API Gateway
+  description: 로컬 API 게이트웨이
 - url: https://api.brainx.com
-  description: Production API Gateway
+  description: 운영 API 게이트웨이
 tags:
 - name: Knowledge Intelligence
-  description: Semantic search, RAG, AI suggestions, reports and model settings
+  description: 시맨틱 검색, RAG, AI 제안, 리포트 및 모델 설정
 paths:
   /api/v1/intelligence/semantic-search:
     post:
@@ -43,7 +42,7 @@ paths:
       x-consumers:
       - id: web.home
         type: frontend
-        description: Home, workspace sync, recent activity and search UI
+        description: 홈, 워크스페이스 동기화, 최근 활동 및 검색 UI
       x-produces-events:
       - SemanticSearchPerformed
       - TokenUsageRecordedRequested
@@ -62,7 +61,7 @@ paths:
               $ref: '#/components/schemas/SemanticSearchRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -75,37 +74,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/SemanticSearchData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -123,7 +122,7 @@ paths:
       x-consumers:
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: 마크다운/WYSIWYG 노트 편집기
       x-produces-events:
       - AiSuggestionCreated
       - TokenUsageRecordedRequested
@@ -141,18 +140,18 @@ paths:
               $ref: '#/components/schemas/InlineAssistRequest'
       responses:
         '200':
-          description: AI inline assist SSE stream
+          description: AI 인라인 어시스트 SSE 스트림
           content:
             text/event-stream:
               schema:
                 type: string
-                description: Server-Sent Events stream. Events are line-delimited text/event-stream frames.
+                description: Server-Sent Events 스트림. 이벤트는 줄 단위 text/event-stream 프레임으로 전달된다.
               examples:
                 delta_done:
-                  summary: Delta stream with terminal event
+                  summary: 종료 이벤트가 포함된 델타 스트림
                   value: 'event: delta
 
-                    data: {"text":"JWT는 "}
+                    data: {"text":"JWT는"}
 
 
                     event: done
@@ -162,25 +161,25 @@ paths:
 
                     '
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -199,10 +198,10 @@ paths:
       x-consumers:
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: 마크다운/WYSIWYG 노트 편집기
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events:
       - AiSuggestionDecisionRecorded
       x-internal-sync-calls: []
@@ -222,7 +221,7 @@ paths:
               $ref: '#/components/schemas/AiSuggestionDecisionRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -235,37 +234,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/AiSuggestionDecisionData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -283,7 +282,7 @@ paths:
       x-consumers:
       - id: web.chat
         type: frontend
-        description: RAG chatbot UI
+        description: RAG 챗봇 UI
       x-produces-events:
       - ChatThreadCreated
       x-internal-sync-calls: []
@@ -296,7 +295,7 @@ paths:
               $ref: '#/components/schemas/ChatThreadCreateRequest'
       responses:
         '201':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -309,37 +308,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/ChatThreadData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -357,7 +356,7 @@ paths:
       x-consumers:
       - id: web.chat
         type: frontend
-        description: RAG chatbot UI
+        description: RAG 챗봇 UI
       x-produces-events:
       - ChatMessageCreated
       - TokenUsageRecordedRequested
@@ -381,18 +380,18 @@ paths:
               $ref: '#/components/schemas/ChatMessageCreateRequest'
       responses:
         '200':
-          description: RAG chat SSE stream
+          description: RAG 채팅 SSE 스트림
           content:
             text/event-stream:
               schema:
                 type: string
-                description: Server-Sent Events stream. Events are line-delimited text/event-stream frames.
+                description: Server-Sent Events 스트림. 이벤트는 줄 단위 text/event-stream 프레임으로 전달된다.
               examples:
                 delta_done:
-                  summary: Delta stream with terminal event
+                  summary: 종료 이벤트가 포함된 델타 스트림
                   value: 'event: delta
 
-                    data: {"text":"JWT는 "}
+                    data: {"text":"JWT는"}
 
 
                     event: done
@@ -402,25 +401,25 @@ paths:
 
                     '
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -439,7 +438,7 @@ paths:
       x-consumers:
       - id: web.chat
         type: frontend
-        description: RAG chatbot UI
+        description: RAG 챗봇 UI
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
@@ -451,7 +450,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -464,37 +463,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/ChatThreadDetailData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -512,16 +511,16 @@ paths:
       x-consumers:
       - id: web.chat
         type: frontend
-        description: RAG chatbot UI
+        description: RAG 챗봇 UI
       - id: web.settings
         type: frontend
-        description: Account, profile, security and AI settings
+        description: 계정, 프로필, 보안 및 AI 설정 화면
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -534,37 +533,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/AiModelsData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -582,7 +581,7 @@ paths:
       x-consumers:
       - id: web.settings
         type: frontend
-        description: Account, profile, security and AI settings
+        description: 계정, 프로필, 보안 및 AI 설정 화면
       x-produces-events:
       - AiModelSettingsChanged
       x-internal-sync-calls: []
@@ -595,7 +594,7 @@ paths:
               $ref: '#/components/schemas/AiModelSettingsPutRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -608,37 +607,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/AiModelSettingsData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -656,14 +655,14 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: 마크다운/WYSIWYG 노트 편집기
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 캐시 미스 시에는 동기 LLM 호출 대신 SummaryGenerationRequested 이벤트/잡으로 처리할 수 있다.
+      description: 캐시 미스 시에는 동기 LLM 호출 없이 SummaryGenerationRequested 이벤트를 쌓으므로 처리 중일 수 있다.
       parameters:
       - name: noteId
         in: path
@@ -672,7 +671,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -685,37 +684,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/NoteSummaryData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -733,7 +732,7 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events:
       - AiSuggestionCreated
       - TokenUsageRecordedRequested
@@ -743,7 +742,7 @@ paths:
         reason: capability/quota must be decided synchronously before model call or job acceptance
         required: true
       x-async-boundary: false
-      description: AI 비용이 발생하므로 토큰 사용량 이벤트를 추가했다.
+      description: AI 비용이 발생하면 토큰 사용량 이벤트를 추가한다.
       requestBody:
         required: true
         content:
@@ -752,7 +751,7 @@ paths:
               $ref: '#/components/schemas/FolderOrganizationProposalRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -765,37 +764,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/FolderOrganizationProposalData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -813,10 +812,10 @@ paths:
       x-consumers:
       - id: web.note-editor
         type: frontend
-        description: Markdown/WYSIWYG note editor
+        description: 마크다운/WYSIWYG 노트 편집기
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events:
       - AiSuggestionCreated
       - TokenUsageRecordedRequested
@@ -834,7 +833,7 @@ paths:
               $ref: '#/components/schemas/LinkSuggestionsRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -847,37 +846,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/LinkSuggestionsData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -895,7 +894,7 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events:
       - ClusterJobRequested
       - TokenUsageRecordedRequested
@@ -915,7 +914,7 @@ paths:
               $ref: '#/components/schemas/ClusterJobCreateRequest'
       responses:
         '202':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -928,37 +927,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/ClusterJobData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -976,7 +975,7 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
@@ -988,7 +987,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1001,37 +1000,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/ClusterJobData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1049,7 +1048,7 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       x-produces-events:
       - AiSuggestionCreated
       - TokenUsageRecordedRequested
@@ -1067,7 +1066,7 @@ paths:
               $ref: '#/components/schemas/BridgeConceptsRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1080,37 +1079,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/BridgeConceptsData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1128,10 +1127,10 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       - id: web.billing
         type: frontend
-        description: Subscription, token usage, billing pages
+        description: 구독, 토큰 사용량 및 결제 페이지
       x-produces-events:
       - InsightReportRequested
       - TokenUsageRecordedRequested
@@ -1151,7 +1150,7 @@ paths:
               $ref: '#/components/schemas/InsightReportCreateRequest'
       responses:
         '202':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1164,37 +1163,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/InsightReportData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1212,10 +1211,10 @@ paths:
       x-consumers:
       - id: web.graph
         type: frontend
-        description: 2D/3D graph and mind map UI
+        description: 2D/3D 그래프 및 마인드맵 UI
       - id: web.billing
         type: frontend
-        description: Subscription, token usage, billing pages
+        description: 구독, 토큰 사용량 및 결제 페이지
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
@@ -1227,7 +1226,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1240,37 +1239,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/InsightReportData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1288,13 +1287,13 @@ paths:
       x-consumers:
       - id: web.settings
         type: frontend
-        description: Account, profile, security and AI settings
+        description: 계정, 프로필, 보안 및 AI 설정 화면
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1307,37 +1306,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/StyleProfileData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1354,7 +1353,7 @@ paths:
       x-consumers:
       - id: web.settings
         type: frontend
-        description: Account, profile, security and AI settings
+        description: 계정, 프로필, 보안 및 AI 설정 화면
       x-produces-events:
       - UserStyleProfileChanged
       x-internal-sync-calls: []
@@ -1367,7 +1366,7 @@ paths:
               $ref: '#/components/schemas/StyleProfilePutRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -1380,37 +1379,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/StyleProfileData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -1430,7 +1429,7 @@ components:
       required: false
       schema:
         type: string
-      description: Recommended for commands and job requests. Same key must return the same result for retries.
+      description: 명령 및 작업 요청에 권장한다. 같은 키로 재시도하면 같은 결과를 반환해야 한다.
   schemas:
     ApiSuccessBase:
       type: object
@@ -1468,7 +1467,7 @@ components:
             details:
               type: object
               additionalProperties: true
-              description: Machine-readable error details
+              description: 기계가 읽을 수 있는 오류 상세 정보
           required:
           - code
           - message
@@ -1488,10 +1487,17 @@ components:
     SemanticSearchRequest:
       type: object
       properties:
+        scope:
+          type: string
+          enum:
+          - DOCUMENT_GROUP
+          - USER
+          default: DOCUMENT_GROUP
+          description: Search scope. DOCUMENT_GROUP searches within documentGroupId (default group if omitted). USER searches
+            all note chunks owned by the user and must not include documentGroupId.
         documentGroupId:
           type: string
-          description: Logical document group boundary for RAG/search isolation. If omitted, Knowledge Intelligence treats
-            it as default.
+          description: RAG/검색 격리를 위한 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다.
         query:
           type: string
         filters:
@@ -1602,8 +1608,7 @@ components:
       properties:
         documentGroupId:
           type: string
-          description: Logical document group boundary for this chat thread. If omitted, Knowledge Intelligence treats it
-            as default.
+          description: 이 채팅 스레드의 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다.
         title:
           type: string
         modelId:
@@ -1640,14 +1645,70 @@ components:
           type: string
         noteScope:
           type: object
-          description: Optional narrowing scope inside the chat thread documentGroupId. noteScope.documentGroupId must match
-            the thread documentGroupId when supplied.
+          description: 채팅 스레드 documentGroupId 안에서 선택적으로 범위를 좁히는 값. 제공할 경우 noteScope.documentGroupId는 스레드 documentGroupId와
+            일치해야 한다.
           additionalProperties: true
+        clientContext:
+          $ref: '#/components/schemas/AiClientContext'
         modelId:
           type: string
       required:
       - message
       - modelId
+      additionalProperties: false
+    AiClientContext:
+      type: object
+      description: Frontend-selected AI context for the current task. The user message and client context are separate so
+        the model can distinguish instructions from source material.
+      properties:
+        mode:
+          type: string
+          enum:
+          - SELECTION
+          - AROUND_CURSOR
+          - FULL_NOTE
+          - NOTE_EXCERPT
+          - NONE
+        source:
+          type: string
+          enum:
+          - RIGHT_SIDEBAR
+          - EDITOR_INLINE
+          - WORKSPACE_CHAT
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiContextItem'
+      required:
+      - mode
+      - source
+      - items
+      additionalProperties: false
+    AiContextItem:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - NOTE_TITLE
+          - NOTE_TEXT
+          - SELECTION
+          - CONTEXT_BEFORE
+          - CONTEXT_AFTER
+        noteId:
+          type: string
+        documentGroupId:
+          type: string
+        text:
+          type: string
+        truncated:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+      - type
+      - text
       additionalProperties: false
     ChatThreadDetailData:
       type: object
@@ -1689,10 +1750,10 @@ components:
               costCurrency:
                 type: string
                 nullable: true
-                description: ISO 4217 currency code for vendor token costs.
+                description: 벤더 토큰 비용에 사용하는 ISO 4217 통화 코드.
               enabled:
                 type: boolean
-                description: Whether the requesting user can select/use this model.
+                description: 요청 사용자가 이 모델을 선택하거나 사용할 수 있는지 여부.
             required:
             - modelId
             - name
@@ -1843,13 +1904,15 @@ components:
     BridgeConceptsRequest:
       type: object
       properties:
-        fromNoteId:
-          type: string
-        toNoteId:
-          type: string
+        noteIds:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
       required:
-      - fromNoteId
-      - toNoteId
+      - noteIds
       additionalProperties: false
     BridgeConceptsData:
       type: object

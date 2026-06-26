@@ -79,4 +79,72 @@ class MarkdownNoteChunkerTest {
 
         assertThat(chunks).hasSize(2);
     }
+
+    @Test
+    void stableChunkTextKeepsChunkIdWhenEarlierContentIsInserted() {
+        MarkdownNoteChunker chunker = new MarkdownNoteChunker(30, 5, 10);
+
+        var original = chunker.chunk(
+            "user-1",
+            "note-1",
+            "Title",
+            "Stable paragraph.",
+            List.of(),
+            "hash-1",
+            1
+        );
+        var changed = chunker.chunk(
+            "user-1",
+            "note-1",
+            "Title",
+            "Inserted paragraph.\n\nStable paragraph.",
+            List.of(),
+            "hash-2",
+            2
+        );
+
+        String stableOriginalId = original.stream()
+            .filter(chunk -> chunk.chunkText().contains("Stable paragraph"))
+            .findFirst()
+            .orElseThrow()
+            .chunkId();
+        String stableChangedId = changed.stream()
+            .filter(chunk -> chunk.chunkText().contains("Stable paragraph"))
+            .findFirst()
+            .orElseThrow()
+            .chunkId();
+
+        assertThat(stableChangedId).isEqualTo(stableOriginalId);
+    }
+
+    @Test
+    void duplicateChunkTextUsesOrdinalSuffix() {
+        MarkdownNoteChunker chunker = new MarkdownNoteChunker(20, 5, 10);
+
+        var chunks = chunker.chunk(
+            "user-1",
+            "note-1",
+            "Title",
+            "same block\n\nsame block",
+            List.of(),
+            "hash-1",
+            1
+        );
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(0).chunkId()).endsWith("::0");
+        assertThat(chunks.get(1).chunkId()).endsWith("::1");
+        assertThat(chunks.get(0).chunkId().replace("::0", ""))
+            .isEqualTo(chunks.get(1).chunkId().replace("::1", ""));
+    }
+
+    @Test
+    void titleChangeChangesChunkIdBecauseTitleIsEmbedded() {
+        MarkdownNoteChunker chunker = new MarkdownNoteChunker(80, 10, 10);
+
+        var original = chunker.chunk("user-1", "note-1", "Old title", "same body", List.of(), "hash-1", 1);
+        var changed = chunker.chunk("user-1", "note-1", "New title", "same body", List.of(), "hash-2", 2);
+
+        assertThat(changed.getFirst().chunkId()).isNotEqualTo(original.getFirst().chunkId());
+    }
 }

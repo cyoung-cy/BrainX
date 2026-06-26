@@ -11763,6 +11763,13 @@ components:
     SemanticSearchRequest:
       type: object
       properties:
+        scope:
+          type: string
+          enum:
+          - DOCUMENT_GROUP
+          - USER
+          default: DOCUMENT_GROUP
+          description: Search scope. DOCUMENT_GROUP searches within documentGroupId (default group if omitted). USER searches all note chunks owned by the user and must not include documentGroupId.
         documentGroupId:
           type: string
           description: RAG/검색 격리를 위한 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다.
@@ -11915,11 +11922,66 @@ components:
           type: object
           description: 채팅 스레드 documentGroupId 안에서 선택적으로 범위를 좁히는 값. 제공할 경우 noteScope.documentGroupId는 스레드 documentGroupId와 일치해야 한다.
           additionalProperties: true
+        clientContext:
+          $ref: '#/components/schemas/AiClientContext'
         modelId:
           type: string
       required:
       - message
       - modelId
+      additionalProperties: false
+    AiClientContext:
+      type: object
+      description: Frontend-selected AI context for the current task. The user message and client context are separate so the model can distinguish instructions from source material.
+      properties:
+        mode:
+          type: string
+          enum:
+          - SELECTION
+          - AROUND_CURSOR
+          - FULL_NOTE
+          - NOTE_EXCERPT
+          - NONE
+        source:
+          type: string
+          enum:
+          - RIGHT_SIDEBAR
+          - EDITOR_INLINE
+          - WORKSPACE_CHAT
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiContextItem'
+      required:
+      - mode
+      - source
+      - items
+      additionalProperties: false
+    AiContextItem:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - NOTE_TITLE
+          - NOTE_TEXT
+          - SELECTION
+          - CONTEXT_BEFORE
+          - CONTEXT_AFTER
+        noteId:
+          type: string
+        documentGroupId:
+          type: string
+        text:
+          type: string
+        truncated:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+      - type
+      - text
       additionalProperties: false
     ChatThreadDetailData:
       type: object
@@ -12115,13 +12177,15 @@ components:
     BridgeConceptsRequest:
       type: object
       properties:
-        fromNoteId:
-          type: string
-        toNoteId:
-          type: string
+        noteIds:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
       required:
-      - fromNoteId
-      - toNoteId
+      - noteIds
       additionalProperties: false
     BridgeConceptsData:
       type: object

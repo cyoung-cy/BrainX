@@ -22,6 +22,7 @@ class LocalAiModelSeedDataTest {
             .extracting(AiModelJpaEntity::getModelId)
             .containsExactlyInAnyOrder(
                 "gpt-5.4-mini",
+                "gpt-5.4-nano",
                 "voyage-4-large",
                 "voyage-4",
                 "voyage-4-lite",
@@ -35,6 +36,13 @@ class LocalAiModelSeedDataTest {
         assertThat(gptMini.vendorTokenCost().cachedInputCostPer1kTokens()).isEqualByComparingTo("0.000075");
         assertThat(gptMini.vendorTokenCost().outputCostPer1kTokens()).isEqualByComparingTo("0.004500");
         assertThat(gptMini.vendorTokenCost().currencyCode()).isEqualTo("USD");
+
+        var gptNano = aiModelJpaRepository.findById("gpt-5.4-nano").orElseThrow().toDomain();
+        assertThat(gptNano.name()).isEqualTo("GPT-5.4 nano");
+        assertThat(gptNano.provider()).isEqualTo("openai");
+        assertThat(gptNano.vendorTokenCost().inputCostPer1kTokens()).isEqualByComparingTo("0.000750");
+        assertThat(gptNano.vendorTokenCost().cachedInputCostPer1kTokens()).isEqualByComparingTo("0.000075");
+        assertThat(gptNano.vendorTokenCost().outputCostPer1kTokens()).isEqualByComparingTo("0.004500");
 
         var lite = aiModelJpaRepository.findById("voyage-4-lite").orElseThrow().toDomain();
         assertThat(lite.name()).isEqualTo("Voyage 4 Lite");

@@ -33,6 +33,7 @@ class LocalAiModelSeedData implements ApplicationRunner {
     private static List<AiModelJpaEntity> seedModels() {
         return List.of(
             openAi("gpt-5.4-mini", "GPT-5.4 mini", "0.000750", "0.000075", "0.004500"),
+            openAi("gpt-5.4-nano", "GPT-5.4 nano", "0.000750", "0.000075", "0.004500"),
             voyage("voyage-4-large", "Voyage 4 Large", "0.000120"),
             voyage("voyage-4", "Voyage 4", "0.000060"),
             voyage("voyage-4-lite", "Voyage 4 Lite", "0.000020"),

@@ -13,6 +13,7 @@ public interface SendChatMessageUseCase {
         String threadId,
         String message,
         Map<String, Object> noteScope,
+        Map<String, Object> clientContext,
         String modelId
     ) {
     }
@@ -28,6 +29,14 @@ public interface SendChatMessageUseCase {
 
         public static ChatStreamEvent done(String messageId) {
             return new ChatStreamEvent("done", Map.of("messageId", messageId));
+        }
+
+        public static ChatStreamEvent route(String route, String reason, String routerModel) {
+            return new ChatStreamEvent("route", Map.of(
+                "route", route == null || route.isBlank() ? "OUT_OF_SCOPE" : route,
+                "reason", reason == null ? "" : reason,
+                "routerModel", routerModel == null ? "" : routerModel
+            ));
         }
 
         public static ChatStreamEvent error(String code, String message) {

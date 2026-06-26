@@ -26,12 +26,14 @@ class NoteProjectionJpaAdapterTest {
     void saveAndFindProjectionPreservesTagsAndState() {
         adapter.save(new NoteProjection(
             "user-1",
+            "default",
             "note-1",
             "Title",
             "folder-1",
             List.of("tag-1", "tag-2"),
             2,
             "hash-2",
+            "# Title\n\nmarkdown body",
             false,
             false,
             false,
@@ -46,11 +48,134 @@ class NoteProjectionJpaAdapterTest {
         assertThat(projection.documentGroupId()).isEqualTo("default");
         assertThat(projection.tags()).containsExactly("tag-1", "tag-2");
         assertThat(projection.markdownHash()).isEqualTo("hash-2");
+        assertThat(projection.markdown()).contains("markdown body");
         assertThat(projection.contentPending()).isFalse();
         assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.INDEXED);
         assertThat(projection.indexedVersion()).isEqualTo(2);
         assertThat(projection.indexedMarkdownHash()).isEqualTo("hash-2");
         assertThat(projection.indexedAt()).isEqualTo(Instant.parse("2026-06-19T00:00:01Z"));
+    }
+
+    @Test
+    void findSearchableByUserIdAndDocumentGroupIdReturnsIndexedMarkdownOnly() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Indexed",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            "indexed markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-2",
+            "Pending",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-3",
+            "No markdown",
+            null,
+            List.of(),
+            1,
+            "hash-3",
+            false,
+            false,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-3", Instant.parse("2026-06-19T00:00:01Z")));
+
+        var projections = adapter.findSearchableByUserIdAndDocumentGroupId("user-1", "group-1", 10);
+
+        assertThat(projections).extracting(NoteProjection::noteId).containsExactly("note-1");
+        assertThat(projections.getFirst().markdown()).isEqualTo("indexed markdown");
+    }
+
+    @Test
+    void findLinkSuggestionSourceNoteUsesDefaultIndexedSearchableProjection() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-1",
+            "Default note",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            "default markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Other group note",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "other markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-2", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "pending-note",
+            "Pending note",
+            null,
+            List.of(),
+            1,
+            "hash-3",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+
+        var source = adapter.findLinkSuggestionSourceNote("user-1", "default", "note-1");
+        var pending = adapter.findLinkSuggestionSourceNote("user-1", "default", "pending-note");
+
+        assertThat(source).get()
+            .extracting("documentGroupId", "noteId", "title")
+            .containsExactly("default", "note-1", "Default note");
+        assertThat(pending).isEmpty();
     }
 
     @Test
@@ -78,6 +203,104 @@ class NoteProjectionJpaAdapterTest {
         );
 
         assertThat(projections).extracting(NoteProjection::noteId).containsExactly("note-1");
+    }
+
+    @Test
+    void findBridgeSourceNotesReturnsActiveDefaultGroupTitlesAndTagsWithoutMarkdownRequirement() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-1",
+            "Java",
+            null,
+            List.of("backend"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-2",
+            "Database",
+            null,
+            List.of("sql"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "archived-note",
+            "Archived",
+            null,
+            List.of("old"),
+            1,
+            null,
+            null,
+            true,
+            true,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.REMOVED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Other group",
+            null,
+            List.of("ignored"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-4",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+
+        var sources = adapter.findBridgeSourceNotes(
+            "user-1",
+            "default",
+            List.of("note-2", "archived-note", "note-1")
+        );
+
+        assertThat(sources).extracting("noteId").containsExactly("note-2", "note-1");
+        assertThat(sources.getFirst().title()).isEqualTo("Database");
+        assertThat(sources.getFirst().tags()).containsExactly("sql");
     }
 
     @Test
@@ -123,5 +346,65 @@ class NoteProjectionJpaAdapterTest {
             .get()
             .extracting(NoteProjection::title)
             .isEqualTo("Group 2 title");
+    }
+
+    @Test
+    void findAnalysisNotesReturnsIndexedMarkdownNoteCardsWithHeadingsAndExcerpt() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Architecture",
+            null,
+            List.of("backend"),
+            1,
+            "hash-1",
+            """
+                # System Overview
+
+                BrainX intelligence service indexes notes.
+
+                ## Search
+
+                ```java
+                ignored code fence
+                ```
+
+                RAG queries are isolated by document group.
+                """,
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "pending-note",
+            "Pending",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+
+        var notes = adapter.findAnalysisNotes("user-1", "group-1", 10);
+        var byIds = adapter.findAnalysisNotesByIds("user-1", "group-1", List.of("note-1", "pending-note"));
+
+        assertThat(notes).hasSize(1);
+        assertThat(notes.getFirst().noteId()).isEqualTo("note-1");
+        assertThat(notes.getFirst().headings()).containsExactly("System Overview", "Search");
+        assertThat(notes.getFirst().excerpt()).contains("BrainX intelligence service indexes notes");
+        assertThat(notes.getFirst().excerpt()).doesNotContain("ignored code fence");
+        assertThat(byIds).extracting("noteId").containsExactly("note-1");
     }
 }

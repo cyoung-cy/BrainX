@@ -12,7 +12,11 @@ import org.springframework.util.StringUtils;
 
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
+import com.brainx.intelligence.clustering.application.port.outbound.ClusteringEventPort;
+import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
+import com.brainx.intelligence.insight.application.port.outbound.InsightEventPort;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -20,7 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 @ConditionalOnProperty(prefix = "brainx.events.producer", name = "enabled", havingValue = "true")
-public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort {
+public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort, ConnectionEventPort, ClusteringEventPort, InsightEventPort {
 
     private static final String PRODUCER = "AI-Service";
     private static final int EVENT_VERSION = 1;
@@ -30,6 +34,10 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     private static final String AI_SUGGESTION_DECISION_RECORDED = "AiSuggestionDecisionRecorded";
     private static final String CHAT_THREAD_CREATED = "ChatThreadCreated";
     private static final String CHAT_MESSAGE_CREATED = "ChatMessageCreated";
+    private static final String CLUSTER_JOB_REQUESTED = "ClusterJobRequested";
+    private static final String CLUSTER_JOB_COMPLETED = "ClusterJobCompleted";
+    private static final String INSIGHT_REPORT_REQUESTED = "InsightReportRequested";
+    private static final String INSIGHT_REPORT_COMPLETED = "InsightReportCompleted";
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
@@ -49,7 +57,10 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     public void semanticSearchPerformed(SemanticSearchPerformedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
-        payload.put("documentGroupId", DocumentGroups.normalize(event.documentGroupId()));
+        payload.put("scope", event.scope().name());
+        payload.put("documentGroupId", event.scope() == SearchScope.USER
+            ? null
+            : DocumentGroups.normalize(event.documentGroupId()));
         payload.put("queryHash", event.queryHash());
         payload.put("resultCount", event.resultCount());
         payload.put("charged", event.charged());
@@ -97,6 +108,44 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
 
     @Override
     public void aiSuggestionCreated(AiSuggestionCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("featureId", event.featureId());
+        payload.put("noteId", event.noteId());
+        payload.put("modelId", event.modelId());
+        publish(
+            properties.getAiSuggestionCreatedTopic(),
+            event.userId(),
+            AI_SUGGESTION_CREATED,
+            event.userId(),
+            null,
+            event.suggestionId(),
+            payload
+        );
+    }
+
+    @Override
+    public void linkSuggestionCreated(LinkSuggestionCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("featureId", event.featureId());
+        payload.put("noteId", event.noteId());
+        payload.put("modelId", event.modelId());
+        publish(
+            properties.getAiSuggestionCreatedTopic(),
+            event.userId(),
+            AI_SUGGESTION_CREATED,
+            event.userId(),
+            null,
+            event.suggestionId(),
+            payload
+        );
+    }
+
+    @Override
+    public void bridgeConceptCreated(BridgeConceptCreatedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
         payload.put("suggestionId", event.suggestionId());
@@ -169,6 +218,77 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
             event.userId(),
             event.threadId(),
             event.messageId(),
+            payload
+        );
+    }
+
+    @Override
+    public void clusterJobRequested(ClusterJobRequestedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("clusterJobId", event.clusterJobId());
+        payload.put("scope", event.scope());
+        payload.put("algorithmOptions", event.algorithmOptions());
+        publish(
+            properties.getClusterJobRequestedTopic(),
+            event.userId(),
+            CLUSTER_JOB_REQUESTED,
+            event.userId(),
+            null,
+            event.clusterJobId(),
+            payload
+        );
+    }
+
+    @Override
+    public void clusterJobCompleted(ClusterJobCompletedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("clusterJobId", event.clusterJobId());
+        payload.put("clusterCount", event.clusterCount());
+        publish(
+            properties.getClusterJobCompletedTopic(),
+            event.userId(),
+            CLUSTER_JOB_COMPLETED,
+            event.userId(),
+            event.clusterJobId(),
+            event.clusterJobId() + ":completed",
+            payload
+        );
+    }
+
+    @Override
+    public void insightReportRequested(InsightReportRequestedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("reportId", event.reportId());
+        payload.put("scope", event.scope());
+        payload.put("includeLearningRecommendations", event.includeLearningRecommendations());
+        publish(
+            properties.getInsightReportRequestedTopic(),
+            event.userId(),
+            INSIGHT_REPORT_REQUESTED,
+            event.userId(),
+            null,
+            event.reportId(),
+            payload
+        );
+    }
+
+    @Override
+    public void insightReportCompleted(InsightReportCompletedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("reportId", event.reportId());
+        payload.put("knowledgeGapCount", event.knowledgeGapCount());
+        payload.put("recommendationCount", event.recommendationCount());
+        publish(
+            properties.getInsightReportCompletedTopic(),
+            event.userId(),
+            INSIGHT_REPORT_COMPLETED,
+            event.userId(),
+            event.reportId(),
+            event.reportId() + ":completed",
             payload
         );
     }

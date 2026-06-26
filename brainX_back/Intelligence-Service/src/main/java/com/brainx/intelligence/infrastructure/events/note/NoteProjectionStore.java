@@ -17,5 +17,11 @@ public interface NoteProjectionStore {
         List<String> noteIds
     );
 
+    List<NoteProjection> findSearchableByUserIdAndDocumentGroupId(
+        String userId,
+        String documentGroupId,
+        int limit
+    );
+
     NoteProjection save(NoteProjection projection);
 }

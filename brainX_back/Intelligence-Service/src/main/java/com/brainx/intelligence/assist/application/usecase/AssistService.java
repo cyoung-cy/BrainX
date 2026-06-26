@@ -34,6 +34,9 @@ public class AssistService implements CreateInlineAssistUseCase, DecideAiSuggest
     static final String INLINE_ASSIST_FEATURE_ID = "inline-assist-chat";
     private static final String SOURCE_SERVICE = "AI-Service";
     private static final String DEFAULT_LANGUAGE = "ko";
+    private static final int MIN_SUMMARIZE_CONTEXT_CHARS = 80;
+    private static final int MIN_CONTINUE_BEFORE_CHARS = 120;
+    private static final int MIN_REWRITE_SELECTED_CHARS = 10;
 
     private final AssistProperties properties;
     private final AiModelSettingsPort aiModelSettingsPort;
@@ -229,23 +232,26 @@ public class AssistService implements CreateInlineAssistUseCase, DecideAiSuggest
     ) {
         switch (action) {
             case REWRITE, TRANSLATE -> {
-                if (!StringUtils.hasText(selectedText)) {
-                    throw new IllegalArgumentException(action.name() + " requires selectedText.");
+                if (charCount(selectedText) < MIN_REWRITE_SELECTED_CHARS) {
+                    throw new IllegalArgumentException("선택 영역이 너무 짧습니다. 최소 한 문장 이상 선택한 뒤 다시 시도해 주세요.");
                 }
             }
             case CONTINUE -> {
-                if (!StringUtils.hasText(contextBefore)) {
-                    throw new IllegalArgumentException("CONTINUE requires contextBefore.");
+                if (charCount(contextBefore) < MIN_CONTINUE_BEFORE_CHARS) {
+                    throw new IllegalArgumentException("이어쓰기에 필요한 앞 문맥이 부족합니다. 최소 한두 문단 이상 작성한 뒤 다시 시도해 주세요.");
                 }
             }
             case SUMMARIZE -> {
-                if (!StringUtils.hasText(selectedText)
-                    && !StringUtils.hasText(contextBefore)
-                    && !StringUtils.hasText(contextAfter)) {
-                    throw new IllegalArgumentException("SUMMARIZE requires selectedText or context.");
+                if (charCount(selectedText) + charCount(contextBefore) + charCount(contextAfter)
+                    < MIN_SUMMARIZE_CONTEXT_CHARS) {
+                    throw new IllegalArgumentException("요약에 필요한 노트 내용이 너무 짧습니다. 더 긴 본문이나 선택 영역을 제공해 주세요.");
                 }
             }
         }
+    }
+
+    private static int charCount(String value) {
+        return value == null ? 0 : value.trim().length();
     }
 
     private static InlineAssistAction requireAction(InlineAssistAction action) {

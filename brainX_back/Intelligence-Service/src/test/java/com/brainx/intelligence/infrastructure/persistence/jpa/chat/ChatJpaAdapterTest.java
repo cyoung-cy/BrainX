@@ -68,6 +68,14 @@ class ChatJpaAdapterTest {
             "RAG란?",
             "gpt-test",
             Map.of("documentGroupId", "group-1", "noteIds", List.of("note-1")),
+            Map.of(
+                "mode", "SELECTION",
+                "source", "RIGHT_SIDEBAR",
+                "items", List.of(Map.of(
+                    "type", "SELECTION",
+                    "text", "선택 문맥"
+                ))
+            ),
             Instant.parse("2026-06-23T00:00:01Z")
         ));
         chatJpaAdapter.saveMessage(ChatMessage.assistant(
@@ -109,6 +117,7 @@ class ChatJpaAdapterTest {
         assertThat(messages).hasSize(2);
         assertThat(messages.get(0).role()).isEqualTo(ChatRole.USER);
         assertThat(messages.get(0).noteScope()).containsEntry("noteIds", List.of("note-1"));
+        assertThat(messages.get(0).clientContext()).containsEntry("mode", "SELECTION");
         assertThat(messages.get(1).role()).isEqualTo(ChatRole.ASSISTANT);
         assertThat(messages.get(1).citations()).hasSize(1);
         assertThat(messages.get(1).citations().getFirst().sourcePath()).isEqualTo("docs/rag.md");

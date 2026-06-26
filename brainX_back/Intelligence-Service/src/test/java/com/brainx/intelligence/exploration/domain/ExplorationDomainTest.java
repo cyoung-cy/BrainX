@@ -27,6 +27,29 @@ class ExplorationDomainTest {
     }
 
     @Test
+    void semanticSearchQueryUserScopeOmitsDocumentGroup() {
+        var query = new SemanticSearchQuery("user-1", SearchScope.USER, null, "rag", Map.of(), 10, List.of());
+
+        assertThat(query.scope()).isEqualTo(SearchScope.USER);
+        assertThat(query.documentGroupId()).isNull();
+    }
+
+    @Test
+    void semanticSearchQueryUserScopeRejectsDocumentGroup() {
+        assertThatThrownBy(() -> new SemanticSearchQuery(
+            "user-1",
+            SearchScope.USER,
+            "group-1",
+            "rag",
+            Map.of(),
+            10,
+            List.of()
+        ))
+            .isInstanceOf(ExplorationDomainException.class)
+            .hasMessageContaining("documentGroupId");
+    }
+
+    @Test
     void semanticSearchResultsSortByScoreDescendingAndKeepsMatchedType() {
         var results = new SemanticSearchResults(List.of(
             new SemanticSearchResult("note-low", "Low", "", 0.25d, SearchMatchType.SEMANTIC),

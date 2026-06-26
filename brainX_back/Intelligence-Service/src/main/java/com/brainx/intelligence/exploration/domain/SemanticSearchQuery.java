@@ -10,6 +10,7 @@ import com.brainx.intelligence.shared.domain.DocumentGroups;
 
 public record SemanticSearchQuery(
     String userId,
+    SearchScope scope,
     String documentGroupId,
     String query,
     Map<String, Object> filters,
@@ -22,17 +23,29 @@ public record SemanticSearchQuery(
 
     public SemanticSearchQuery(
         String userId,
+        String documentGroupId,
         String query,
         Map<String, Object> filters,
         int limit,
         List<String> hybridWithClientKeywordIds
     ) {
-        this(userId, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, query, filters, limit, hybridWithClientKeywordIds);
+        this(userId, SearchScope.DOCUMENT_GROUP, documentGroupId, query, filters, limit, hybridWithClientKeywordIds);
+    }
+
+    public SemanticSearchQuery(
+        String userId,
+        String query,
+        Map<String, Object> filters,
+        int limit,
+        List<String> hybridWithClientKeywordIds
+    ) {
+        this(userId, SearchScope.DOCUMENT_GROUP, DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID, query, filters, limit, hybridWithClientKeywordIds);
     }
 
     public SemanticSearchQuery {
         userId = ExplorationValidation.requireText(userId, "userId");
-        documentGroupId = DocumentGroups.normalize(documentGroupId);
+        scope = scope == null ? SearchScope.DOCUMENT_GROUP : scope;
+        documentGroupId = normalizeDocumentGroupId(scope, documentGroupId);
         query = ExplorationValidation.requireText(query, "query");
         filters = immutableMap(filters);
         limit = normalizeLimit(limit);
@@ -44,6 +57,16 @@ public record SemanticSearchQuery(
             return DEFAULT_LIMIT;
         }
         return Math.min(value, MAX_LIMIT);
+    }
+
+    private static String normalizeDocumentGroupId(SearchScope scope, String documentGroupId) {
+        if (scope == SearchScope.USER) {
+            if (documentGroupId != null && !documentGroupId.isBlank()) {
+                throw new ExplorationDomainException("documentGroupId must be omitted when scope is USER.");
+            }
+            return null;
+        }
+        return DocumentGroups.normalize(documentGroupId);
     }
 
     private static int normalizeLimit(int value) {

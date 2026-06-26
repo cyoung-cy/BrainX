@@ -15,6 +15,10 @@ public class BrainxEventProducerProperties {
         "brainx.knowledge.intelligence.ai-suggestion-decision-recorded.v1";
     private String chatThreadCreatedTopic = "brainx.knowledge.intelligence.chat-thread-created.v1";
     private String chatMessageCreatedTopic = "brainx.knowledge.intelligence.chat-message-created.v1";
+    private String clusterJobRequestedTopic = "brainx.knowledge.intelligence.cluster-job-requested.v1";
+    private String clusterJobCompletedTopic = "brainx.knowledge.intelligence.cluster-job-completed.v1";
+    private String insightReportRequestedTopic = "brainx.knowledge.intelligence.insight-report-requested.v1";
+    private String insightReportCompletedTopic = "brainx.knowledge.intelligence.insight-report-completed.v1";
 
     public boolean isEnabled() {
         return enabled;
@@ -70,5 +74,37 @@ public class BrainxEventProducerProperties {
 
     public void setChatMessageCreatedTopic(String chatMessageCreatedTopic) {
         this.chatMessageCreatedTopic = chatMessageCreatedTopic;
+    }
+
+    public String getClusterJobRequestedTopic() {
+        return clusterJobRequestedTopic;
+    }
+
+    public void setClusterJobRequestedTopic(String clusterJobRequestedTopic) {
+        this.clusterJobRequestedTopic = clusterJobRequestedTopic;
+    }
+
+    public String getClusterJobCompletedTopic() {
+        return clusterJobCompletedTopic;
+    }
+
+    public void setClusterJobCompletedTopic(String clusterJobCompletedTopic) {
+        this.clusterJobCompletedTopic = clusterJobCompletedTopic;
+    }
+
+    public String getInsightReportRequestedTopic() {
+        return insightReportRequestedTopic;
+    }
+
+    public void setInsightReportRequestedTopic(String insightReportRequestedTopic) {
+        this.insightReportRequestedTopic = insightReportRequestedTopic;
+    }
+
+    public String getInsightReportCompletedTopic() {
+        return insightReportCompletedTopic;
+    }
+
+    public void setInsightReportCompletedTopic(String insightReportCompletedTopic) {
+        this.insightReportCompletedTopic = insightReportCompletedTopic;
     }
 }

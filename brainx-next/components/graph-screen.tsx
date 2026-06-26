@@ -146,6 +146,25 @@ type GraphControls = {
   bridges: () => void;
 };
 
+type GraphPerformanceProfile = {
+  repulsionSkipDistance: number;
+  physicsEveryFrames: number;
+  renderEveryFrames: number;
+};
+
+function graphPerformanceProfile(nodeCount: number): GraphPerformanceProfile {
+  if (nodeCount <= 30) {
+    return { repulsionSkipDistance: 400, physicsEveryFrames: 1, renderEveryFrames: 2 };
+  }
+  if (nodeCount <= 60) {
+    return { repulsionSkipDistance: 320, physicsEveryFrames: 1, renderEveryFrames: 3 };
+  }
+  if (nodeCount <= 100) {
+    return { repulsionSkipDistance: 240, physicsEveryFrames: 2, renderEveryFrames: 4 };
+  }
+  return { repulsionSkipDistance: 180, physicsEveryFrames: 3, renderEveryFrames: 5 };
+}
+
 type PlanetFlowNode = Node<{
   label: string;
   color: string;
@@ -419,12 +438,14 @@ function GraphCanvasFlow({
   // Physics loop
   useEffect(() => {
     let tick = 0;
+    const profile = graphPerformanceProfile(notes.length);
     const step = () => {
       tick++;
       const pos = positionsRef.current;
       const isStructured = notes.some(n => pos[n.id] && pos[n.id].tx !== null);
+      const runForcePhysics = !isStructured && (tick - 1) % profile.physicsEveryFrames === 0;
 
-      if (!isStructured) {
+      if (runForcePhysics) {
         for (let i = 0; i < notes.length; i += 1) {
           for (let j = i + 1; j < notes.length; j += 1) {
             const a = pos[notes[i].id];
@@ -433,7 +454,10 @@ function GraphCanvasFlow({
             let dx = a.x - b.x;
             let dy = a.y - b.y;
             // Optimization: Skip expensive math for nodes far away from each other
-            if (Math.abs(dx) > 400 || Math.abs(dy) > 400) continue;
+            if (
+              Math.abs(dx) > profile.repulsionSkipDistance ||
+              Math.abs(dy) > profile.repulsionSkipDistance
+            ) continue;
             
             const distance2 = dx * dx + dy * dy + 0.01;
             const distance = Math.sqrt(distance2);
@@ -519,7 +543,7 @@ function GraphCanvasFlow({
         }
       });
 
-      if (moved && tick % 2 === 0) {
+      if (moved && tick % profile.renderEveryFrames === 0) {
         setRfNodes((nds) => {
           let hasChanges = false;
           const next = nds.map((n) => {

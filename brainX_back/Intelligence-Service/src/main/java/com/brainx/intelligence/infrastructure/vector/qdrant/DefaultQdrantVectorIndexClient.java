@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.util.concurrent.ListenableFuture;
@@ -57,6 +58,37 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
     }
 
     @Override
+    public void deleteByPointIds(List<UUID> pointIds) {
+        ensureCollection();
+        if (pointIds == null || pointIds.isEmpty()) {
+            return;
+        }
+        await(qdrantClient.deleteAsync(
+            properties.getCollectionName(),
+            pointIds.stream()
+                .map(pointId -> id(pointId))
+                .toList(),
+            properties.getTimeout()
+        ));
+    }
+
+    @Override
+    public void overwritePayload(UUID pointId, Map<String, Object> payload) {
+        ensureCollection();
+        if (pointId == null) {
+            return;
+        }
+        await(qdrantClient.overwritePayloadAsync(
+            properties.getCollectionName(),
+            toPayload(payload),
+            id(pointId),
+            null,
+            null,
+            properties.getTimeout()
+        ));
+    }
+
+    @Override
     public void deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
         ensureCollection();
         await(qdrantClient.deleteAsync(
@@ -76,10 +108,7 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
             .setCollectionName(properties.getCollectionName())
             .addAllVector(toFloats(vector))
             .setLimit(limit)
-            .setFilter(Filter.newBuilder()
-                .addMust(matchKeyword(USER_ID, userId))
-                .addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId))
-                .build())
+            .setFilter(searchFilter(userId, documentGroupId))
             .setWithPayload(WithPayloadSelectorFactory.enable(true))
             .setWithVectors(WithVectorsSelectorFactory.enable(false))
             .build();
@@ -128,6 +157,15 @@ class DefaultQdrantVectorIndexClient implements QdrantVectorIndexClient {
             .addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId))
             .addMust(matchKeyword(NOTE_ID, noteId))
             .build();
+    }
+
+    private static Filter searchFilter(String userId, String documentGroupId) {
+        Filter.Builder builder = Filter.newBuilder()
+            .addMust(matchKeyword(USER_ID, userId));
+        if (documentGroupId != null && !documentGroupId.isBlank()) {
+            builder.addMust(matchKeyword(DOCUMENT_GROUP_ID, documentGroupId));
+        }
+        return builder.build();
     }
 
     private static QdrantVectorSearchHit toSearchHit(ScoredPoint point) {

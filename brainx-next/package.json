@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "generate:intelligence-api-types": "openapi-typescript ../brainX_back/Intelligence-Service/src/main/resources/contracts/knowledge-intelligence.openapi.yaml -o lib/generated/intelligence-openapi.ts"
+    "generate:intelligence-api-types": "openapi-typescript ../brainX_back/Intelligence-Service/src/main/resources/contracts/knowledge-intelligence.openapi.yaml --default-non-nullable false -o lib/generated/intelligence-openapi.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

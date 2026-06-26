@@ -20,9 +20,12 @@ import com.brainx.intelligence.chat.application.port.outbound.ChatPersistencePor
 import com.brainx.intelligence.chat.domain.ChatDomainException;
 import com.brainx.intelligence.chat.domain.ChatMessage;
 import com.brainx.intelligence.chat.domain.ChatRole;
+import com.brainx.intelligence.chat.domain.ChatRoute;
+import com.brainx.intelligence.chat.domain.ChatRouteDecision;
 import com.brainx.intelligence.chat.domain.ChatThread;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
 import com.brainx.intelligence.settings.domain.AiModel;
 import com.brainx.intelligence.settings.domain.VendorTokenCost;
@@ -38,7 +41,12 @@ import reactor.core.publisher.Flux;
 
 class ChatServiceTest {
 
+    private static final String SUFFICIENT_CLIENT_CONTEXT =
+        "프론트가 선택한 문맥은 사용자의 질문에 답할 수 있을 만큼 충분한 본문을 포함한다. "
+            + "현재 노트의 핵심 흐름, 관련 개념, 설명에 필요한 근거 문장을 함께 제공한다.";
+
     private final ChatProperties properties = new ChatProperties();
+    private final FakeChatRouteDecider routeDecider = new FakeChatRouteDecider();
     private final FakeChatPersistencePort persistencePort = new FakeChatPersistencePort();
     private final FakeNoteChunkRetrievalPort retrievalPort = new FakeNoteChunkRetrievalPort();
     private final FakeEntitlementPort entitlementPort = new FakeEntitlementPort();
@@ -48,6 +56,7 @@ class ChatServiceTest {
     private final FakeChatEventPort chatEventPort = new FakeChatEventPort();
     private final ChatService service = new ChatService(
         properties,
+        routeDecider,
         persistencePort,
         retrievalPort,
         entitlementPort,
@@ -75,6 +84,7 @@ class ChatServiceTest {
             new AiChatChunk("완료", false),
             new AiChatChunk("", true)
         );
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.NOTE_QA, "note question", "gpt-5.4-nano");
     }
 
     @Test
@@ -120,14 +130,19 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of("documentGroupId", "group-1"),
+            Map.of(),
             "gpt-test"
         )).collectList().block();
 
-        assertThat(events).hasSize(3);
-        assertThat(events.get(0).eventName()).isEqualTo("delta");
-        assertThat(events.get(0).data()).containsEntry("text", "답변 ");
-        assertThat(events.get(1).data()).containsEntry("text", "완료");
-        assertThat(events.get(2).eventName()).isEqualTo("done");
+        assertThat(events).hasSize(4);
+        assertThat(events.get(0).eventName()).isEqualTo("route");
+        assertThat(events.get(0).data()).containsEntry("route", "NOTE_QA");
+        assertThat(events.get(0).data()).containsEntry("routerModel", "gpt-5.4-nano");
+        assertThat(events.get(1).eventName()).isEqualTo("delta");
+        assertThat(events.get(1).data()).containsEntry("text", "답변 ");
+        assertThat(events.get(2).data()).containsEntry("text", "완료");
+        assertThat(events.get(3).eventName()).isEqualTo("done");
+        assertThat(retrievalPort.lastQuery.scope()).isEqualTo(SearchScope.DOCUMENT_GROUP);
         assertThat(retrievalPort.lastQuery.documentGroupId()).isEqualTo("group-1");
         assertThat(entitlementPort.lastRequest.capability()).isEqualTo("RAG_CHAT");
         assertThat(aiChatPort.lastRequest.modelId()).isEqualTo("gpt-test");
@@ -154,6 +169,225 @@ class ChatServiceTest {
     }
 
     @Test
+    void clientContextSkipsRetrievalAndIsUsedInPrompt() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var clientContext = Map.<String, Object>of(
+            "mode", "SELECTION",
+            "source", "RIGHT_SIDEBAR",
+            "items", List.of(Map.of(
+                "type", "SELECTION",
+                "noteId", "note-1",
+                "documentGroupId", "group-1",
+                "text", SUFFICIENT_CLIENT_CONTEXT
+            ))
+        );
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "선택 영역을 설명해줘",
+            Map.of("documentGroupId", "group-1"),
+            clientContext,
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events).hasSize(4);
+        assertThat(events.getFirst().eventName()).isEqualTo("route");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isEqualTo(1);
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content())
+            .contains("note sidebar")
+            .contains("unrelated to the provided note context")
+            .contains("do not answer the external question");
+        assertThat(aiChatPort.lastRequest.messages().getLast().content())
+            .contains("Frontend selected context")
+            .contains("mode=SELECTION")
+            .contains("source=RIGHT_SIDEBAR")
+            .contains("type=SELECTION")
+            .contains(SUFFICIENT_CLIENT_CONTEXT);
+        assertThat(persistencePort.messages.getFirst().clientContext())
+            .containsEntry("mode", "SELECTION")
+            .containsEntry("source", "RIGHT_SIDEBAR");
+    }
+
+    @Test
+    void rightSidebarClientContextTooShortReturnsFixedAnswerWithoutAiCall() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var clientContext = Map.<String, Object>of(
+            "mode", "NOTE_EXCERPT",
+            "source", "RIGHT_SIDEBAR",
+            "items", List.of(
+                Map.of(
+                    "type", "NOTE_TITLE",
+                    "noteId", "note-1",
+                    "documentGroupId", "group-1",
+                    "text", "짧은 노트"
+                ),
+                Map.of(
+                    "type", "NOTE_TEXT",
+                    "noteId", "note-1",
+                    "documentGroupId", "group-1",
+                    "text", "너무 짧음"
+                )
+            )
+        );
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "이 노트를 설명해줘",
+            Map.of("documentGroupId", "group-1"),
+            clientContext,
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events).hasSize(3);
+        assertThat(events.getFirst().eventName()).isEqualTo("route");
+        assertThat(events.get(1).eventName()).isEqualTo("delta");
+        assertThat(events.get(1).data().get("text")).asString().contains("현재 제공된 노트 내용이 너무 짧아");
+        assertThat(events.get(2).eventName()).isEqualTo("done");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isZero();
+        assertThat(persistencePort.messages.get(1).content()).contains("본문이나 선택 영역을 더 제공");
+    }
+
+    @Test
+    void workspaceClientContextDoesNotUseSidebarScopeGuard() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var clientContext = Map.<String, Object>of(
+            "mode", "NONE",
+            "source", "WORKSPACE_CHAT",
+            "items", List.of(Map.of(
+                "type", "NOTE_TEXT",
+                "text", "워크스페이스 채팅 문맥"
+            ))
+        );
+
+        service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "글 초안을 작성해줘",
+            Map.of("documentGroupId", "group-1"),
+            clientContext,
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content())
+            .doesNotContain("note sidebar")
+            .doesNotContain("do not answer the external question");
+    }
+
+    @Test
+    void workspaceSearchUsesUserWideRetrieval() {
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.WORKSPACE_SEARCH, "search all notes", "gpt-5.4-nano");
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+        retrievalPort.results = List.of(new NoteChunkSearchResult(
+            "user-1",
+            "group-2",
+            "note-2",
+            "note-2::0",
+            0,
+            "Other group note",
+            "workspace context",
+            0.91d,
+            "hash",
+            1,
+            null,
+            null
+        ));
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "내 노트 전체에서 인증 관련 내용을 찾아줘",
+            Map.of(),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events.getFirst().data()).containsEntry("route", "WORKSPACE_SEARCH");
+        assertThat(retrievalPort.lastQuery.scope()).isEqualTo(SearchScope.USER);
+        assertThat(retrievalPort.lastQuery.documentGroupId()).isNull();
+        assertThat(aiChatPort.lastRequest.messages().getLast().content()).contains("workspace context");
+        assertThat(persistencePort.messages.get(1).citations().getFirst().documentGroupId()).isEqualTo("group-2");
+    }
+
+    @Test
+    void composeAllowsGenerationWithoutRetrievedContext() {
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.COMPOSE, "write draft", "gpt-5.4-nano");
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "블로그 초안을 써줘",
+            Map.of(),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events.getFirst().data()).containsEntry("route", "COMPOSE");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isEqualTo(1);
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content()).contains("writing assistant");
+        assertThat(aiChatPort.lastRequest.messages().getLast().content()).contains("Request:");
+    }
+
+    @Test
+    void noteActionReturnsDraftWithoutWorkspaceMutation() {
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.NOTE_ACTION, "draft note action", "gpt-5.4-nano");
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "방금 답변을 노트에 추가할 초안으로 만들어줘",
+            Map.of(),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events.getFirst().data()).containsEntry("route", "NOTE_ACTION");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isEqualTo(1);
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content())
+            .contains("note action draft assistant")
+            .contains("Do not claim that anything was saved");
+    }
+
+    @Test
+    void outOfScopeReturnsFixedAnswerWithoutRetrievalOrAnswerAi() {
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.OUT_OF_SCOPE, "weather", "gpt-5.4-nano");
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var events = service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "오늘 날씨 어때?",
+            Map.of(),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(events).hasSize(3);
+        assertThat(events.getFirst().data()).containsEntry("route", "OUT_OF_SCOPE");
+        assertThat(events.get(1).data().get("text")).asString().contains("BrainX 본 채팅");
+        assertThat(retrievalPort.lastQuery).isNull();
+        assertThat(aiChatPort.calls).isZero();
+        assertThat(persistencePort.messages.get(1).content()).contains("BrainX 본 채팅");
+    }
+
+    @Test
     void emptyContextSkipsAiCallAndStoresNoContextAnswer() {
         ChatThread thread = existingThread();
         persistencePort.saveThread(thread);
@@ -163,12 +397,14 @@ class ChatServiceTest {
             thread.threadId(),
             "없는 내용?",
             Map.of(),
+            Map.of(),
             "gpt-test"
         )).collectList().block();
 
-        assertThat(events).hasSize(2);
-        assertThat(events.getFirst().eventName()).isEqualTo("delta");
-        assertThat(events.getFirst().data().get("text")).asString().contains("관련 노트 근거");
+        assertThat(events).hasSize(3);
+        assertThat(events.getFirst().eventName()).isEqualTo("route");
+        assertThat(events.get(1).eventName()).isEqualTo("delta");
+        assertThat(events.get(1).data().get("text")).asString().contains("관련 노트 근거");
         assertThat(aiChatPort.calls).isZero();
         assertThat(persistencePort.messages).hasSize(2);
         assertThat(persistencePort.messages.get(1).role()).isEqualTo(ChatRole.ASSISTANT);
@@ -202,6 +438,7 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of(),
+            Map.of(),
             "gpt-test"
         )))
             .isInstanceOf(ChatDomainException.class)
@@ -223,6 +460,7 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of("documentGroupId", "other-group"),
+            Map.of(),
             "gpt-test"
         )))
             .isInstanceOf(ChatDomainException.class)
@@ -257,13 +495,15 @@ class ChatServiceTest {
             thread.threadId(),
             "RAG란?",
             Map.of(),
+            Map.of(),
             "gpt-test"
         )).collectList().block();
 
-        assertThat(events).hasSize(2);
-        assertThat(events.getFirst().eventName()).isEqualTo("delta");
-        assertThat(events.get(1).eventName()).isEqualTo("error");
-        assertThat(events.get(1).data()).containsEntry("code", "STREAM_ERROR");
+        assertThat(events).hasSize(3);
+        assertThat(events.getFirst().eventName()).isEqualTo("route");
+        assertThat(events.get(1).eventName()).isEqualTo("delta");
+        assertThat(events.get(2).eventName()).isEqualTo("error");
+        assertThat(events.get(2).data()).containsEntry("code", "STREAM_ERROR");
         assertThat(persistencePort.messages).hasSize(1);
         assertThat(chatEventPort.messageEvents).isEmpty();
         assertThat(tokenUsagePort.records).isEmpty();
@@ -303,6 +543,18 @@ class ChatServiceTest {
                 .filter(message -> message.userId().equals(userId) && message.threadId().equals(threadId))
                 .sorted(Comparator.comparing(ChatMessage::createdAt))
                 .toList();
+        }
+    }
+
+    private static final class FakeChatRouteDecider implements ChatRouteDecider {
+
+        private ChatRouteDecision decision = new ChatRouteDecision(ChatRoute.NOTE_QA, "note question", "gpt-5.4-nano");
+        private ChatRouteRequest lastRequest;
+
+        @Override
+        public ChatRouteDecision decide(ChatRouteRequest request) {
+            lastRequest = request;
+            return decision;
         }
     }
 
