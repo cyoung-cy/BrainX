@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
 import { CLUSTERS, PRICING } from "@/lib/brainx-data";
-import { startDemoSession } from "@/lib/auth-api";
+import { clearAuthSession, logout, readAuthSession, startDemoSession, type AuthSession } from "@/lib/auth-api";
 
 import { cx } from "@/lib/utils";
 
@@ -132,10 +132,37 @@ function FeatureCard({
 
 export function LandingScreen() {
   const router = useRouter();
+  const [session, setSession] = useState<AuthSession | null>(null);
+
+  useEffect(() => {
+    const syncSession = () => setSession(readAuthSession());
+    syncSession();
+    window.addEventListener("brainx-auth-session-changed", syncSession);
+    window.addEventListener("storage", syncSession);
+    return () => {
+      window.removeEventListener("brainx-auth-session-changed", syncSession);
+      window.removeEventListener("storage", syncSession);
+    };
+  }, []);
+
+  const isLoggedIn = Boolean(session?.accessToken);
 
   const enterDemo = () => {
+    if (isLoggedIn) {
+      router.push("/home");
+      return;
+    }
     startDemoSession();
     router.push("/home");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      clearAuthSession();
+    }
+    setSession(null);
   };
 
   const features = [
@@ -184,12 +211,25 @@ export function LandingScreen() {
         <div className="flex-1" />
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Btn variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => router.push("/login")}>
-            로그인
-          </Btn>
-          <Btn variant="primary" size="sm" onClick={enterDemo}>
-            무료로 시작
-          </Btn>
+          {isLoggedIn ? (
+            <>
+              <Btn variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={handleLogout}>
+                로그아웃
+              </Btn>
+              <Btn variant="primary" size="sm" onClick={() => router.push("/home")}>
+                홈으로 돌아가기
+              </Btn>
+            </>
+          ) : (
+            <>
+              <Btn variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={() => router.push("/login")}>
+                로그인
+              </Btn>
+              <Btn variant="primary" size="sm" onClick={enterDemo}>
+                무료로 시작
+              </Btn>
+            </>
+          )}
         </div>
       </header>
 
@@ -207,11 +247,17 @@ export function LandingScreen() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Btn variant="primary" size="lg" icon="bolt" onClick={enterDemo}>
-              무료로 시작하기
+              {isLoggedIn ? "홈으로 돌아가기" : "무료로 시작하기"}
             </Btn>
-            <Btn variant="outline" size="lg" icon="eye" onClick={enterDemo}>
-              데모 보기
-            </Btn>
+            {isLoggedIn ? (
+              <Btn variant="outline" size="lg" icon="logout" onClick={handleLogout}>
+                로그아웃
+              </Btn>
+            ) : (
+              <Btn variant="outline" size="lg" icon="eye" onClick={enterDemo}>
+                데모 보기
+              </Btn>
+            )}
           </div>
           <div className="mt-9 flex items-center gap-6 text-[15px] text-txt3">
             <span className="flex items-center gap-1.5">
@@ -287,7 +333,7 @@ export function LandingScreen() {
               <p className="text-[16px] leading-relaxed text-txt2">{item.desc}</p>
               {index === 2 ? (
                 <Btn variant="outline" size="sm" icon="arrowL" className="mt-5 [&_svg]:rotate-180" onClick={enterDemo}>
-                  지금 경험하기
+                  {isLoggedIn ? "홈으로 돌아가기" : "지금 경험하기"}
                 </Btn>
               ) : null}
             </Card>
@@ -339,7 +385,7 @@ export function LandingScreen() {
             <h2 className="mb-4 text-[32px] font-bold tracking-tight md:text-[40px]">머릿속 우주를 정리할 시간</h2>
             <p className="mx-auto mb-7 max-w-md text-txt2">지금 첫 노트를 쓰면, BrainX가 나머지를 연결합니다.</p>
             <Btn variant="primary" size="lg" icon="bolt" onClick={enterDemo}>
-              무료로 시작하기
+              {isLoggedIn ? "홈으로 돌아가기" : "무료로 시작하기"}
             </Btn>
           </div>
         </Card>

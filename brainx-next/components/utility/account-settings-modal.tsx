@@ -43,6 +43,7 @@ import { createSupportTicket, getMySupportTickets, type SupportTicket, type Supp
 import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
+import { useGuideStore } from "@/lib/use-guide-store";
 
 type TabId = "profile" | "general" | "notifications" | "import" | "usage" | "stats" | "support" | "upgrade";
 type SocialProvider = "google" | "kakao" | "naver";
@@ -659,6 +660,19 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
             </div>
           ))}
 
+          {/* 튜토리얼 다시보기 버튼 */}
+          <button
+            type="button"
+            onClick={() => {
+              useGuideStore.getState().triggerTutorialReplay();
+              onClose();
+            }}
+            className="mb-2 flex h-[29px] w-full items-center gap-2.5 rounded-[6px] px-2 text-left text-[13px] text-[#6c55f6] hover:bg-[#eeeafe] transition"
+          >
+            <Icon name="sparkle" size={15} />
+            <span>튜토리얼 다시보기</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setTab("upgrade")}
@@ -809,7 +823,7 @@ function ProfilePanel({
               value={nickname}
               onChange={(event) => onNicknameChange(event.target.value)}
               onKeyDown={onNameKeyDown}
-              className="h-8 w-full max-w-[306px] rounded-[7px] border border-[#ded8cf] px-3 text-[12px] text-[#36332f] outline-none focus:border-[#6c55f6]"
+              className="h-8 w-full max-w-[306px] rounded-[7px] border border-[#ded8cf] bg-white px-3 text-[12px] text-[#36332f] outline-none focus:border-[#6c55f6]"
             />
             <div className="mt-3 flex items-center gap-3">
               <input ref={profileInputRef} type="file" accept="image/*" className="hidden" onChange={onProfileImageChange} />
