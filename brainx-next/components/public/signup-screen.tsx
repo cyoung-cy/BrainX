@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { allConsents, EMPTY_CONSENTS, LEGAL_DOCUMENTS, type ConsentKey, type ConsentState } from "@/lib/legal";
@@ -12,6 +12,98 @@ import { AuthShell, Field } from "@/components/public/auth-shared";
 
 type VerificationStatus = "idle" | "sent" | "checking" | "verified" | "invalid";
 type EmailAvailabilityStatus = "idle" | "checking" | "available" | "unavailable";
+const EMAIL_FORMAT_ERROR = "올바른 이메일 형식이 아닙니다";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// brainx_signup_final.html 좌측 패널의 애니메이션 그래프를 그대로 포팅
+const GRAPH_COLORS = ["#9B8FEE", "#4BC3AC", "#5BA8F0", "#F0855A", "#C4BFF5", "#7B6FD8"];
+
+function SignupGraphCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const parent = canvas?.parentElement;
+    if (!canvas || !parent) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let width = 0;
+    let height = 0;
+    let nodes: Array<{ x: number; y: number; r: number; vx: number; vy: number; color: string; alpha: number }> = [];
+    let frame = 0;
+
+    const initNodes = () => {
+      nodes = Array.from({ length: 18 }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        r: 5 + Math.random() * 20,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        color: GRAPH_COLORS[Math.floor(Math.random() * GRAPH_COLORS.length)],
+        alpha: 0.25 + Math.random() * 0.45
+      }));
+    };
+
+    const resize = () => {
+      const rect = parent.getBoundingClientRect();
+      width = canvas.width = rect.width;
+      height = canvas.height = rect.height;
+      if (nodes.length === 0) initNodes();
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x;
+          const dy = nodes[i].y - nodes[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 160) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(108,99,216,${0.08 * (1 - dist / 160)})`;
+            ctx.lineWidth = 0.8;
+            ctx.moveTo(nodes[i].x, nodes[i].y);
+            ctx.lineTo(nodes[j].x, nodes[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      nodes.forEach((n) => {
+        const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 2.2);
+        g.addColorStop(0, n.color + "44");
+        g.addColorStop(1, n.color + "00");
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = n.color + Math.floor(n.alpha * 255).toString(16).padStart(2, "0");
+        ctx.fill();
+        n.x += n.vx;
+        n.y += n.vy;
+        if (n.x < -n.r) n.x = width + n.r;
+        if (n.x > width + n.r) n.x = -n.r;
+        if (n.y < -n.r) n.y = height + n.r;
+        if (n.y > height + n.r) n.y = -n.r;
+      });
+      frame = requestAnimationFrame(draw);
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(parent);
+    frame = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />;
+}
 
 function getPasswordStrength(password: string) {
   const checks = [
@@ -54,6 +146,10 @@ function getPasswordStrength(password: string) {
   };
 }
 
+function isValidEmailFormat(value: string) {
+  return EMAIL_PATTERN.test(value.trim());
+}
+
 export function SignupScreen() {
   const router = useRouter();
   const { pushToast } = useBrainX();
@@ -62,6 +158,7 @@ export function SignupScreen() {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [emailAvailabilityStatus, setEmailAvailabilityStatus] = useState<EmailAvailabilityStatus>("idle");
+  const [emailFormatError, setEmailFormatError] = useState("");
   const [checkedEmail, setCheckedEmail] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -109,6 +206,7 @@ export function SignupScreen() {
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
+    setEmailFormatError(value.trim() && !isValidEmailFormat(value) ? EMAIL_FORMAT_ERROR : "");
     setCheckedEmail("");
     setEmailAvailabilityStatus("idle");
     setVerificationCode("");
@@ -123,6 +221,13 @@ export function SignupScreen() {
   const handleCheckEmail = async () => {
     if (!canCheckEmail) return;
     const normalizedEmail = email.trim();
+    if (!isValidEmailFormat(normalizedEmail)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      setCheckedEmail("");
+      setEmailAvailabilityStatus("idle");
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setEmailAvailabilityStatus("checking");
     try {
       const data = await checkEmailAvailability(normalizedEmail);
@@ -144,6 +249,11 @@ export function SignupScreen() {
 
   const handleSendCode = async () => {
     if (!canSendCode) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setSendingCode(true);
     try {
       await requestEmailVerification(email.trim(), "SIGNUP");
@@ -159,6 +269,11 @@ export function SignupScreen() {
 
   const handleCheckCode = async () => {
     if (!canCheckCode) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     setVerificationStatus("checking");
     try {
       await verifyEmailCode(email.trim(), verificationCode.trim(), "SIGNUP");
@@ -172,6 +287,11 @@ export function SignupScreen() {
 
   const handleSignup = async () => {
     if (!canProceed) return;
+    if (!isValidEmailFormat(email)) {
+      setEmailFormatError(EMAIL_FORMAT_ERROR);
+      pushToast(EMAIL_FORMAT_ERROR, "err");
+      return;
+    }
     if (password !== passwordConfirm) {
       pushToast("비밀번호 확인이 일치하지 않습니다.", "err");
       return;
@@ -201,6 +321,37 @@ export function SignupScreen() {
   };
 
   return (
+    <div className="grid h-screen overflow-hidden bg-bg lg:grid-cols-[4fr_6fr]">
+      {/* LEFT — 애니메이션 그래프 패널 (brainx_signup_final.html 그대로). 높이 고정으로 크기·텍스트 위치 불변 */}
+      <div
+        className="relative hidden flex-col justify-between overflow-hidden p-8 lg:flex lg:h-screen"
+        style={{ background: "linear-gradient(145deg, rgb(var(--surface2)) 0%, rgb(var(--bg2)) 52%, rgb(var(--surface)) 100%)" }}
+      >
+        <SignupGraphCanvas />
+        <button type="button" onClick={() => router.push("/")} className="relative z-10 flex w-fit items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-gradient-to-br from-[#7B6FD8] to-[#4ECFB3]">
+            <Icon name="brain" size={17} className="text-white" />
+          </span>
+          <span className="text-[15px] font-semibold text-txt">BrainX</span>
+        </button>
+        <div className="relative z-10 mb-10 max-w-[320px]">
+          <h2 className="mb-3.5 text-[32px] font-bold leading-[1.25] text-txt">
+            내 지식의 우주를 
+            <br />
+            탐험하는 AI 두뇌
+          </h2>
+          <p className="text-[14px] leading-[1.75] text-txt2">
+            적기만 하세요. 연결과 정리는 AI가 합니다.
+            <br />
+            흩어진 노트가 하나의 살아있는 그래프가 됩니다.
+          </p>
+        </div>
+        <div className="relative z-10 text-[11px] text-txt3">© 2026 BrainX 개발팀</div>
+      </div>
+
+      {/* RIGHT — form panel */}
+      <div className="relative flex h-screen items-center justify-center overflow-hidden border-l border-line/70 bg-bg px-6 py-6">
+        <div className="w-full max-w-[500px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
     <AuthShell>
       <div className="w-full max-w-[600px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
           <h1 className="mb-1 text-[24px] font-bold tracking-tight text-txt">두뇌를 깨우는 1분</h1>
@@ -215,6 +366,7 @@ export function SignupScreen() {
             onChange={(event) => handleEmailChange(event.target.value)}
             autoComplete="email"
             disabled={submitting}
+            error={emailFormatError}
           />
         </div>
         <Btn variant={emailChecked ? "outline" : "soft"} size="sm" className="mt-[25px] h-9 shrink-0 px-3 text-[13px]" disabled={!canCheckEmail} onClick={handleCheckEmail}>
