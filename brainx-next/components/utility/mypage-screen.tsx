@@ -891,7 +891,7 @@ function AccountSettingsModal({
                 <input
                   value={nickname}
                   onChange={(event) => setNickname(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-neutral-300 px-3.5 text-[15px] outline-none transition focus:border-neutral-900"
+                  className="h-11 w-full rounded-xl border border-neutral-300 bg-white px-3.5 text-[15px] text-neutral-950 outline-none transition focus:border-neutral-900"
                 />
               </label>
               <label className="block">
