@@ -120,6 +120,7 @@ function dragHandlePlugin(editor: Editor) {
       handle.className = "split-drag-handle";
       handle.contentEditable = "false";
       handle.textContent = "⠿";
+      handle.style.display = "none";
       document.body.appendChild(handle);
 
       const indicator = document.createElement("div");
@@ -193,7 +194,7 @@ function dragHandlePlugin(editor: Editor) {
         const rect = dom.getBoundingClientRect();
         handle.style.left = `${rect.left - 22}px`;
         handle.style.top = `${rect.top + 2}px`;
-        handle.style.display = "flex";
+        // 손잡이 아이콘은 숨김 — 이미지/PDF 블록의 자체 드래그는 startBlockDrag()로 동작
       }
 
       function updateDropIndicator(clientX: number, clientY: number) {
