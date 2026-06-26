@@ -116,6 +116,69 @@ class NoteProjectionJpaAdapterTest {
     }
 
     @Test
+    void findLinkSuggestionSourceNoteUsesDefaultIndexedSearchableProjection() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-1",
+            "Default note",
+            null,
+            List.of(),
+            1,
+            "hash-1",
+            "default markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-1", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Other group note",
+            null,
+            List.of(),
+            1,
+            "hash-2",
+            "other markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ).indexed(1, "hash-2", Instant.parse("2026-06-19T00:00:01Z")));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "pending-note",
+            "Pending note",
+            null,
+            List.of(),
+            1,
+            "hash-3",
+            "pending markdown",
+            true,
+            false,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z")
+        ));
+
+        var source = adapter.findLinkSuggestionSourceNote("user-1", "default", "note-1");
+        var pending = adapter.findLinkSuggestionSourceNote("user-1", "default", "pending-note");
+
+        assertThat(source).get()
+            .extracting("documentGroupId", "noteId", "title")
+            .containsExactly("default", "note-1", "Default note");
+        assertThat(pending).isEmpty();
+    }
+
+    @Test
     void findByUserIdAndNoteIdsReturnsExistingProjectionsOnly() {
         adapter.save(new NoteProjection(
             "user-1",
@@ -140,6 +203,104 @@ class NoteProjectionJpaAdapterTest {
         );
 
         assertThat(projections).extracting(NoteProjection::noteId).containsExactly("note-1");
+    }
+
+    @Test
+    void findBridgeSourceNotesReturnsActiveDefaultGroupTitlesAndTagsWithoutMarkdownRequirement() {
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-1",
+            "Java",
+            null,
+            List.of("backend"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-1",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "note-2",
+            "Database",
+            null,
+            List.of("sql"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-2",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "default",
+            "archived-note",
+            "Archived",
+            null,
+            List.of("old"),
+            1,
+            null,
+            null,
+            true,
+            true,
+            false,
+            false,
+            "evt-3",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.REMOVED,
+            null,
+            null,
+            null
+        ));
+        adapter.save(new NoteProjection(
+            "user-1",
+            "group-1",
+            "note-1",
+            "Other group",
+            null,
+            List.of("ignored"),
+            1,
+            null,
+            null,
+            true,
+            false,
+            false,
+            false,
+            "evt-4",
+            Instant.parse("2026-06-19T00:00:00Z"),
+            NoteSearchIndexStatus.NOT_INDEXED,
+            null,
+            null,
+            null
+        ));
+
+        var sources = adapter.findBridgeSourceNotes(
+            "user-1",
+            "default",
+            List.of("note-2", "archived-note", "note-1")
+        );
+
+        assertThat(sources).extracting("noteId").containsExactly("note-2", "note-1");
+        assertThat(sources.getFirst().title()).isEqualTo("Database");
+        assertThat(sources.getFirst().tags()).containsExactly("sql");
     }
 
     @Test

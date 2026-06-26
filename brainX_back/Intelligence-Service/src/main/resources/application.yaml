@@ -45,6 +45,10 @@ brainx:
       group-id: ${BRAINX_EVENTS_CONSUMER_GROUP_ID:intelligence-service}
   assist:
     default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+  connection:
+    bridge:
+      default-model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
+      max-recommendations: ${BRAINX_CONNECTION_BRIDGE_MAX_RECOMMENDATIONS:3}
   note-auto-link:
     model: ${OPENAI_CHAT_MODEL:gpt-5.4-mini}
     max-notes: ${BRAINX_NOTE_AUTO_LINK_MAX_NOTES:50}

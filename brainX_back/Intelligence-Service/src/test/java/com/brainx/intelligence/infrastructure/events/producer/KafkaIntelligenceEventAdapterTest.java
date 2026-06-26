@@ -16,6 +16,8 @@ import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort.
 import com.brainx.intelligence.assist.domain.AiSuggestionDecision;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatMessageCreatedEvent;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort.ChatThreadCreatedEvent;
+import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort.BridgeConceptCreatedEvent;
+import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort.LinkSuggestionCreatedEvent;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort.SemanticSearchPerformedEvent;
 import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
@@ -154,6 +156,63 @@ class KafkaIntelligenceEventAdapterTest {
         assertThat(root.get("payload").get("featureId").asText()).isEqualTo("inline-assist-chat");
         assertThat(root.get("payload").get("noteId").asText()).isEqualTo("note-1");
         assertThat(root.get("payload").get("modelId").asText()).isEqualTo("gpt-test");
+    }
+
+    @Test
+    void aiSuggestionCreatedPublishesLinkSuggestionFeaturePayload() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.linkSuggestionCreated(new LinkSuggestionCreatedEvent(
+            "user-1",
+            "link-suggestion-1",
+            "link-suggestions",
+            "note-1",
+            "gpt-link"
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("ai-suggestion-created-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("AiSuggestionCreated");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("link-suggestion-1");
+        assertThat(root.get("payload").get("featureId").asText()).isEqualTo("link-suggestions");
+        assertThat(root.get("payload").get("noteId").asText()).isEqualTo("note-1");
+        assertThat(root.get("payload").get("modelId").asText()).isEqualTo("gpt-link");
+    }
+
+    @Test
+    void aiSuggestionCreatedPublishesBridgeConceptFeaturePayload() throws Exception {
+        KafkaTemplate<String, String> kafkaTemplate = kafkaTemplate();
+        var adapter = new KafkaIntelligenceEventAdapter(kafkaTemplate, objectMapper, properties);
+
+        adapter.bridgeConceptCreated(new BridgeConceptCreatedEvent(
+            "user-1",
+            "bridge-abc123",
+            "bridge-concepts",
+            null,
+            "gpt-bridge"
+        ));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate).send(
+            eq("ai-suggestion-created-topic"),
+            eq("user-1"),
+            payload.capture()
+        );
+        var root = objectMapper.readTree(payload.getValue());
+
+        assertThat(root.get("eventType").asText()).isEqualTo("AiSuggestionCreated");
+        assertThat(root.get("idempotencyKey").asText()).isEqualTo("bridge-abc123");
+        assertThat(root.get("payload").get("suggestionId").asText()).isEqualTo("bridge-abc123");
+        assertThat(root.get("payload").get("featureId").asText()).isEqualTo("bridge-concepts");
+        assertThat(root.get("payload").get("noteId").isNull()).isTrue();
+        assertThat(root.get("payload").get("modelId").asText()).isEqualTo("gpt-bridge");
     }
 
     @Test

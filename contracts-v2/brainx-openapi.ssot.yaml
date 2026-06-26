@@ -10813,13 +10813,15 @@ components:
     BridgeConceptsRequest:
       type: object
       properties:
-        fromNoteId:
-          type: string
-        toNoteId:
-          type: string
+        noteIds:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
       required:
-      - fromNoteId
-      - toNoteId
+      - noteIds
       additionalProperties: false
     BridgeConceptsData:
       type: object

@@ -12,6 +12,7 @@ import org.springframework.util.StringUtils;
 
 import com.brainx.intelligence.assist.application.port.outbound.AssistEventPort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
+import com.brainx.intelligence.connection.application.port.outbound.ConnectionEventPort;
 import com.brainx.intelligence.exploration.application.port.outbound.ExplorationEventPort;
 import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
@@ -21,7 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
 @ConditionalOnProperty(prefix = "brainx.events.producer", name = "enabled", havingValue = "true")
-public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort {
+public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort, ConnectionEventPort {
 
     private static final String PRODUCER = "AI-Service";
     private static final int EVENT_VERSION = 1;
@@ -101,6 +102,44 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
 
     @Override
     public void aiSuggestionCreated(AiSuggestionCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("featureId", event.featureId());
+        payload.put("noteId", event.noteId());
+        payload.put("modelId", event.modelId());
+        publish(
+            properties.getAiSuggestionCreatedTopic(),
+            event.userId(),
+            AI_SUGGESTION_CREATED,
+            event.userId(),
+            null,
+            event.suggestionId(),
+            payload
+        );
+    }
+
+    @Override
+    public void linkSuggestionCreated(LinkSuggestionCreatedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("userId", event.userId());
+        payload.put("suggestionId", event.suggestionId());
+        payload.put("featureId", event.featureId());
+        payload.put("noteId", event.noteId());
+        payload.put("modelId", event.modelId());
+        publish(
+            properties.getAiSuggestionCreatedTopic(),
+            event.userId(),
+            AI_SUGGESTION_CREATED,
+            event.userId(),
+            null,
+            event.suggestionId(),
+            payload
+        );
+    }
+
+    @Override
+    public void bridgeConceptCreated(BridgeConceptCreatedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
         payload.put("suggestionId", event.suggestionId());

@@ -155,7 +155,7 @@ export interface paths {
         };
         /**
          * 노트 요약 조회
-         * @description 캐시 미스 시에는 동기 LLM 호출 대신 SummaryGenerationRequested 이벤트/잡으로 처리할 수 있다.
+         * @description 캐시 미스 시에는 동기 LLM 호출 없이 SummaryGenerationRequested 이벤트를 쌓으므로 처리 중일 수 있다.
          */
         get: operations["getNoteSummary"];
         put?: never;
@@ -177,7 +177,7 @@ export interface paths {
         put?: never;
         /**
          * AI 폴더 정리 제안 요청
-         * @description AI 비용이 발생하므로 토큰 사용량 이벤트를 추가했다.
+         * @description AI 비용이 발생하면 토큰 사용량 이벤트를 추가한다.
          */
         post: operations["createFolderOrganizationProposal"];
         delete?: never;
@@ -324,7 +324,7 @@ export interface components {
                 code: string;
                 message: string;
                 traceId?: string;
-                /** @description Machine-readable error details */
+                /** @description 기계가 읽을 수 있는 오류 상세 정보 */
                 details?: {
                     [key: string]: unknown;
                 };
@@ -341,7 +341,7 @@ export interface components {
              * @enum {string}
              */
             scope?: "DOCUMENT_GROUP" | "USER";
-            /** @description Logical document group boundary for RAG/search isolation. If omitted, Knowledge Intelligence treats it as default. */
+            /** @description RAG/검색 격리를 위한 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다. */
             documentGroupId?: string;
             query: string;
             filters?: {
@@ -382,7 +382,7 @@ export interface components {
             decision: "ACCEPTED" | "REJECTED" | "REGENERATED";
         };
         ChatThreadCreateRequest: {
-            /** @description Logical document group boundary for this chat thread. If omitted, Knowledge Intelligence treats it as default. */
+            /** @description 이 채팅 스레드의 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다. */
             documentGroupId?: string;
             title: string;
             modelId: string;
@@ -397,7 +397,7 @@ export interface components {
         };
         ChatMessageCreateRequest: {
             message: string;
-            /** @description Optional narrowing scope inside the chat thread documentGroupId. noteScope.documentGroupId must match the thread documentGroupId when supplied. */
+            /** @description 채팅 스레드 documentGroupId 안에서 선택적으로 범위를 좁히는 값. 제공할 경우 noteScope.documentGroupId는 스레드 documentGroupId와 일치해야 한다. */
             noteScope?: {
                 [key: string]: unknown;
             };
@@ -437,9 +437,9 @@ export interface components {
                 vendorInputCostPer1kTokens?: number | null;
                 vendorCachedInputCostPer1kTokens?: number | null;
                 vendorOutputCostPer1kTokens?: number | null;
-                /** @description ISO 4217 currency code for vendor token costs. */
+                /** @description 벤더 토큰 비용에 사용하는 ISO 4217 통화 코드. */
                 costCurrency?: string | null;
-                /** @description Whether the requesting user can select/use this model. */
+                /** @description 요청 사용자가 이 모델을 선택하거나 사용할 수 있는지 여부. */
                 enabled?: boolean;
             }[];
             enabledModels: string[];
@@ -506,8 +506,7 @@ export interface components {
             }[];
         };
         BridgeConceptsRequest: {
-            fromNoteId: string;
-            toNoteId: string;
+            noteIds: string[];
         };
         BridgeConceptsData: {
             recommendations: {
@@ -560,7 +559,7 @@ export interface components {
     };
     responses: never;
     parameters: {
-        /** @description Recommended for commands and job requests. Same key must return the same result for retries. */
+        /** @description 명령 및 작업 요청에 권장한다. 같은 키로 재시도하면 같은 결과를 반환해야 한다. */
         IdempotencyKey: string;
     };
     requestBodies: never;
@@ -582,7 +581,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -593,7 +592,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -602,7 +601,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -611,7 +610,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -620,7 +619,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -629,7 +628,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -638,7 +637,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -662,7 +661,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description AI inline assist SSE stream */
+            /** @description AI 인라인 어시스트 SSE 스트림 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -671,7 +670,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -680,7 +679,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -689,7 +688,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -698,7 +697,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -724,7 +723,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -735,7 +734,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -744,7 +743,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -753,7 +752,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -762,7 +761,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -771,7 +770,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -780,7 +779,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -804,7 +803,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -815,7 +814,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -824,7 +823,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -833,7 +832,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -842,7 +841,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -851,7 +850,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -860,7 +859,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -886,7 +885,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description RAG chat SSE stream */
+            /** @description RAG 채팅 SSE 스트림 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -895,7 +894,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -904,7 +903,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -913,7 +912,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -922,7 +921,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -944,7 +943,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -955,7 +954,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -964,7 +963,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -973,7 +972,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -982,7 +981,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -991,7 +990,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1000,7 +999,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1020,7 +1019,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1031,7 +1030,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1040,7 +1039,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1049,7 +1048,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1058,7 +1057,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1067,7 +1066,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1076,7 +1075,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1100,7 +1099,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1111,7 +1110,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1120,7 +1119,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1129,7 +1128,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1138,7 +1137,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1147,7 +1146,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1156,7 +1155,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1178,7 +1177,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1189,7 +1188,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1198,7 +1197,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1207,7 +1206,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1216,7 +1215,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1225,7 +1224,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1234,7 +1233,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1258,7 +1257,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1269,7 +1268,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1278,7 +1277,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1287,7 +1286,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1296,7 +1295,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1305,7 +1304,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1314,7 +1313,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1338,7 +1337,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1349,7 +1348,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1358,7 +1357,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1367,7 +1366,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1376,7 +1375,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1385,7 +1384,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1394,7 +1393,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1409,7 +1408,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Recommended for commands and job requests. Same key must return the same result for retries. */
+                /** @description 명령 및 작업 요청에 권장한다. 같은 키로 재시도하면 같은 결과를 반환해야 한다. */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -1421,7 +1420,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -1432,7 +1431,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1441,7 +1440,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1450,7 +1449,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1459,7 +1458,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1468,7 +1467,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1477,7 +1476,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1499,7 +1498,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1510,7 +1509,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1519,7 +1518,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1528,7 +1527,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1537,7 +1536,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1546,7 +1545,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1555,7 +1554,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1579,7 +1578,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1590,7 +1589,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1599,7 +1598,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1608,7 +1607,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1617,7 +1616,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1626,7 +1625,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1635,7 +1634,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1650,7 +1649,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Recommended for commands and job requests. Same key must return the same result for retries. */
+                /** @description 명령 및 작업 요청에 권장한다. 같은 키로 재시도하면 같은 결과를 반환해야 한다. */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -1662,7 +1661,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -1673,7 +1672,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1682,7 +1681,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1691,7 +1690,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1700,7 +1699,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1709,7 +1708,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1718,7 +1717,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1740,7 +1739,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1751,7 +1750,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1760,7 +1759,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1769,7 +1768,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1778,7 +1777,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1787,7 +1786,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1796,7 +1795,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1816,7 +1815,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1827,7 +1826,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1836,7 +1835,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1845,7 +1844,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1854,7 +1853,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1863,7 +1862,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1872,7 +1871,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -1896,7 +1895,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Success */
+            /** @description 성공 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1907,7 +1906,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Bad request */
+            /** @description 잘못된 요청 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1916,7 +1915,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description 인증 필요 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1925,7 +1924,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Forbidden */
+            /** @description 권한 없음 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1934,7 +1933,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Not found */
+            /** @description 찾을 수 없음 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1943,7 +1942,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Conflict */
+            /** @description 충돌 */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1952,7 +1951,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiErrorResponse"];
                 };
             };
-            /** @description Internal server error */
+            /** @description 서버 내부 오류 */
             500: {
                 headers: {
                     [name: string]: unknown;
