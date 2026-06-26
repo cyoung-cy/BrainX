@@ -23,4 +23,3 @@
 | 백엔드 (Ingestion-Service) | `brainX_back/Ingestion-Service/` |
 | 백엔드 (전체) | `brainX_back/` |
 | 프론트엔드 | `brainx-next/` |
-| 크롬 익스텐션 | `brainx-chrome-extension/` |
