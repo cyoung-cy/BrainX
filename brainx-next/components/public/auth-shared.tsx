@@ -127,9 +127,9 @@ export function SocialButtons({ recentLogin = null }: SocialButtonsProps) {
   };
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 items-end gap-2">
       {providers.map((provider) => (
-        <div key={provider.name} className="flex flex-col items-center gap-2">
+        <div key={provider.name} className="flex flex-col items-center gap-5">
           {recentLogin === provider.provider ? (
             <div className="relative w-fit">
               <div className="inline-flex items-center gap-2 rounded-[10px] bg-black px-3 py-2 text-[12px] font-medium text-white shadow-sm dark:bg-white dark:text-black">
