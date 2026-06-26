@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BrainX Web Clipper</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">B</div>
+    <span class="header-title">BrainX Web Clipper</span>
+    <button class="header-action" id="logoutBtn" style="display:none">로그아웃</button>
+  </div>
+
+  <!-- Loading View (hidden by default; shown via JS) -->
+  <div class="loading-view" id="viewLoading" style="display:none">
+    <div class="spinner"></div>
+    <span>불러오는 중...</span>
+  </div>
+
+  <!-- Login View -->
+  <div class="view" id="viewLogin">
+    <p class="login-desc">BrainX 계정으로 로그인하여<br/>웹 페이지를 노트로 저장하세요</p>
+
+    <!-- 소셜 로그인 -->
+    <div class="social-section">
+      <button class="btn btn-social" id="socialGoogleBtn">
+        <span class="social-icon">G</span> Google로 로그인
+      </button>
+      <button class="btn btn-social" id="socialKakaoBtn">
+        <span class="social-icon kakao">K</span> Kakao로 로그인
+      </button>
+      <button class="btn btn-social" id="socialNaverBtn">
+        <span class="social-icon naver">N</span> Naver로 로그인
+      </button>
+    </div>
+
+    <div class="divider"><span>또는 이메일로</span></div>
+
+    <div class="field">
+      <label>이메일</label>
+      <input type="email" id="loginEmail" placeholder="you@example.com" autocomplete="email" />
+    </div>
+    <div class="field">
+      <label>비밀번호</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <div class="error-msg" id="loginError"></div>
+    <button class="btn btn-primary" id="loginBtn">
+      <span id="loginBtnText">로그인</span>
+    </button>
+  </div>
+
+  <!-- 소셜 로그인 안내 View -->
+  <div class="view" id="viewSocialWait">
+    <div class="success-icon" style="background:rgba(99,102,241,0.15); font-size:22px">🔑</div>
+    <div class="success-title">BrainX 앱에서 로그인</div>
+    <div class="success-desc" id="socialWaitDesc">BrainX 앱 탭을 열었습니다.<br/>로그인 완료 후 익스텐션 아이콘을 다시 클릭해주세요.</div>
+    <button class="btn btn-ghost" id="socialCancelBtn">← 돌아가기</button>
+  </div>
+
+  <!-- Capture View -->
+  <div class="view" id="viewCapture">
+    <div class="page-card">
+      <div class="page-title" id="pageTitle">페이지 제목</div>
+      <div class="page-url" id="pageUrl">https://example.com</div>
+    </div>
+
+    <!-- 선택 텍스트가 있을 때만 표시 -->
+    <div id="selectedSection" style="display:none">
+      <div class="selected-label">선택한 텍스트</div>
+      <div class="selected-preview" id="selectedPreview"></div>
+    </div>
+
+    <div class="field">
+      <label>저장할 폴더</label>
+      <select id="folderSelect">
+        <option value="">📁 최상위 (폴더 없음)</option>
+      </select>
+    </div>
+
+    <div class="error-msg" id="captureError"></div>
+
+    <button class="btn btn-primary" id="captureBtn">
+      <span id="captureBtnText">BrainX에 저장</span>
+    </button>
+  </div>
+
+  <!-- Success View -->
+  <div class="view" id="viewSuccess">
+    <div class="success-icon">✓</div>
+    <div class="success-title">저장 완료!</div>
+    <div class="success-desc" id="successDesc">노트가 BrainX에 저장되었습니다.</div>
+    <button class="btn btn-primary" id="openInBrainxBtn">
+      BrainX에서 열기 ↗
+    </button>
+    <button class="btn btn-ghost" id="captureAnotherBtn">다른 항목 저장</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="api.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

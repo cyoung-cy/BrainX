@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "BrainX Web Clipper",
+  "version": "1.0.0",
+  "description": "웹 페이지를 BrainX 노트로 즉시 저장하는 확장 프로그램",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "contextMenus",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "https://api.brainx.com/*",
+    "https://brainx.com/*",
+    "https://*.brainx.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "BrainX Web Clipper"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
