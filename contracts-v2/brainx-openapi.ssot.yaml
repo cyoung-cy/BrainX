@@ -2193,6 +2193,64 @@ paths:
       security:
       - bearerAuth: []
       - guestSessionAuth: []
+  /api/v1/notes/drafts/claim:
+    post:
+      operationId: claimGuestNoteDrafts
+      summary: guest Redis draft를 회원 노트로 전환
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.signup
+        type: frontend
+        description: 회원가입/로그인 직후 guest Redis draft를 USER PostgreSQL 노트로 저장
+      x-produces-events:
+      - NoteCreated
+      - NoteContentSaved
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 로그인된 USER actor가 기존 guest cookie의 Redis draft를 자신의 PostgreSQL 노트로 claim한다. Gateway는 유효한 JWT 요청에서도 guest cookie가 있으면 X-Guest-Id를 Workspace-Service로 전달해야 한다. 성공적으로 저장된 guest draft는 Redis draft key와 dirty set에서 제거된다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/NoteDraftClaimData'
+        '400':
+          description: X-Guest-Id 누락
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: USER actor가 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/notes/draft-ids:
     post:
       operationId: issueNoteDraftId
@@ -12088,6 +12146,38 @@ components:
       - issuedAt
       - status
       additionalProperties: false
+    ClaimedNoteDraft:
+      type: object
+      properties:
+        noteId:
+          type: string
+          description: PostgreSQL에 저장된 회원 노트 ID. sourceNoteId와 같을 수 있다.
+        sourceNoteId:
+          type: string
+          description: guest Redis draft의 원래 noteId.
+        title:
+          type: string
+        version:
+          type: integer
+      required:
+      - noteId
+      - sourceNoteId
+      - title
+      - version
+      additionalProperties: false
+    NoteDraftClaimData:
+      type: object
+      properties:
+        claimedCount:
+          type: integer
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimedNoteDraft'
+      required:
+      - claimedCount
+      - notes
+      additionalProperties: false
     NoteMetadataPatchRequest:
       type: object
       properties:
@@ -13168,6 +13258,13 @@ components:
     SemanticSearchRequest:
       type: object
       properties:
+        scope:
+          type: string
+          enum:
+          - DOCUMENT_GROUP
+          - USER
+          default: DOCUMENT_GROUP
+          description: Search scope. DOCUMENT_GROUP searches within documentGroupId (default group if omitted). USER searches all note chunks owned by the user and must not include documentGroupId.
         documentGroupId:
           type: string
           description: RAG/검색 격리를 위한 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다.
@@ -13320,11 +13417,66 @@ components:
           type: object
           description: 채팅 스레드 documentGroupId 안에서 선택적으로 범위를 좁히는 값. 제공할 경우 noteScope.documentGroupId는 스레드 documentGroupId와 일치해야 한다.
           additionalProperties: true
+        clientContext:
+          $ref: '#/components/schemas/AiClientContext'
         modelId:
           type: string
       required:
       - message
       - modelId
+      additionalProperties: false
+    AiClientContext:
+      type: object
+      description: Frontend-selected AI context for the current task. The user message and client context are separate so the model can distinguish instructions from source material.
+      properties:
+        mode:
+          type: string
+          enum:
+          - SELECTION
+          - AROUND_CURSOR
+          - FULL_NOTE
+          - NOTE_EXCERPT
+          - NONE
+        source:
+          type: string
+          enum:
+          - RIGHT_SIDEBAR
+          - EDITOR_INLINE
+          - WORKSPACE_CHAT
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiContextItem'
+      required:
+      - mode
+      - source
+      - items
+      additionalProperties: false
+    AiContextItem:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - NOTE_TITLE
+          - NOTE_TEXT
+          - SELECTION
+          - CONTEXT_BEFORE
+          - CONTEXT_AFTER
+        noteId:
+          type: string
+        documentGroupId:
+          type: string
+        text:
+          type: string
+        truncated:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+      - type
+      - text
       additionalProperties: false
     ChatThreadDetailData:
       type: object
@@ -13520,13 +13672,15 @@ components:
     BridgeConceptsRequest:
       type: object
       properties:
-        fromNoteId:
-          type: string
-        toNoteId:
-          type: string
+        noteIds:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
       required:
-      - fromNoteId
-      - toNoteId
+      - noteIds
       additionalProperties: false
     BridgeConceptsData:
       type: object

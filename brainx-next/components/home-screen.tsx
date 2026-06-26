@@ -202,7 +202,7 @@ function UserInsightDashboard({ notes }: { notes: BrainXNote[] }) {
               활동에서 관찰한 패턴 <Icon name="chevR" size={12} />
             </button>
           </div>
-          
+
           <div className="flex-1 flex flex-col justify-start">
             {insights.map((insight, index) => (
               <div key={index} className="flex items-stretch gap-3 border-b border-line/40 bg-surface/60 p-4 transition-colors hover:bg-surface cursor-default last:border-b-0">
@@ -313,7 +313,7 @@ function UserInsightDashboard({ notes }: { notes: BrainXNote[] }) {
                 <div className="mb-1 text-[15px] font-medium uppercase tracking-wider text-accent/70">연결 부족 노트</div>
                 <div className="mb-1 text-[14px] font-semibold text-txt">{dormantNote?.title || "추천 노트가 없습니다"}</div>
                 <div className="mb-3 text-[12px] leading-relaxed text-txt3">연결이 아직 적어요. 관련 개념을 추가하거나 다른 노트와 연결해보세요.</div>
-                <button 
+                <button
                   onClick={() => dormantNote && router.push(`/notes/${dormantNote.id}`)}
                   className="inline-flex items-center gap-1 rounded-[0.4rem] border border-accent/30 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-accent hover:bg-accent/10 transition-colors"
                 >

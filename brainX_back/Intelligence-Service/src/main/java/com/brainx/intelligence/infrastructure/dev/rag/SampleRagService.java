@@ -85,6 +85,7 @@ public class SampleRagService {
                 tags,
                 1,
                 snapshot.markdownHash(),
+                snapshot.markdown(),
                 false,
                 false,
                 false,

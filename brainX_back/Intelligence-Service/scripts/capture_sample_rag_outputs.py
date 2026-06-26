@@ -15,19 +15,41 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_QUERIES = [
-    "RAG 채팅 메시지 전송 API 경로와 응답 방식은?",
-    "정확한 단어가 기억 안 날 때 BrainX는 어떻게 예전 노트를 찾게 해?",
-    "고양이와 펫처럼 단어가 달라도 관련 노트를 찾는 방식은?",
-    "AI 챗봇은 벡터 조회와 LLM 호출을 어떻게 나눠서 오케스트레이션해?",
-    "AI 기능 토큰 사용량은 어떤 이벤트로 Commerce에 기록돼?",
-    "노트 자동 저장 후 검색 인덱스나 임베딩은 어떤 흐름으로 갱신돼?",
-    "작성 페이지에서 태그는 어떻게 입력하고 자동완성돼?",
-    "노션 OAuth authorize는 request body가 필요한가, bearerAuth는 어떻게 봐야 해?",
-    "무료 플랜과 Pro/Team 플랜에서 검색/RAG 기능 차이는?",
-    "챗봇 화면은 어떤 도메인과 연결되고 무엇을 보여줘?",
-    "BrainX 핵심 차별점 한 줄로 정리해줘",
-    "Kubernetes HPA 설정 파일은 어디에 있어?",
+DEFAULT_SCENARIOS = [
+    {
+        "query": "RAG 채팅 메시지 전송 API 경로와 응답 방식은?",
+        "minContextCount": 1,
+        "minTopScore": 0.35,
+        "requiredUsageFeatureIds": ["note-search-query-embedding"],
+    },
+    {
+        "query": "정확한 단어가 기억 안 날 때 BrainX는 어떻게 예전 노트를 찾게 해?",
+        "minContextCount": 1,
+        "minTopScore": 0.35,
+        "requiredUsageFeatureIds": ["note-search-query-embedding"],
+    },
+    {
+        "query": "고양이와 펫처럼 단어가 달라도 관련 노트를 찾는 방식은?",
+        "minContextCount": 1,
+        "requiredUsageFeatureIds": ["note-search-query-embedding"],
+    },
+    {
+        "query": "AI 챗봇은 벡터 조회와 LLM 호출을 어떻게 나눠서 오케스트레이션해?",
+        "minContextCount": 1,
+        "requiredUsageFeatureIds": ["note-search-query-embedding"],
+    },
+    {
+        "query": "AI 기능 토큰 사용량은 어떤 이벤트로 Commerce에 기록돼?",
+        "minContextCount": 1,
+        "requiredUsageFeatureIds": ["note-search-query-embedding"],
+    },
+    {"query": "노트 자동 저장 후 검색 인덱스나 임베딩은 어떤 흐름으로 갱신돼?"},
+    {"query": "작성 페이지에서 태그는 어떻게 입력하고 자동완성돼?"},
+    {"query": "노션 OAuth authorize는 request body가 필요한가, bearerAuth는 어떻게 봐야 해?"},
+    {"query": "무료 플랜과 Pro/Team 플랜에서 검색/RAG 기능 차이는?"},
+    {"query": "챗봇 화면은 어떤 도메인과 연결되고 무엇을 보여줘?"},
+    {"query": "BrainX 핵심 차별점 한 줄로 정리해줘"},
+    {"query": "Kubernetes HPA 설정 파일은 어디에 있어?"},
 ]
 
 JAVA_UTF8_OPTIONS = [
@@ -57,8 +79,9 @@ def main() -> int:
     raw_dir = run_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    queries = load_queries(args)
-    if not queries:
+    scenarios = load_scenarios(args)
+    queries = [scenario["query"] for scenario in scenarios]
+    if not scenarios:
         print("No queries to run.", file=sys.stderr)
         return 2
 
@@ -82,7 +105,7 @@ def main() -> int:
         "processEncoding": args.process_encoding,
         "queryInputMode": "stdin",
         "javaToolOptions": JAVA_UTF8_OPTIONS,
-        "queryCount": len(queries),
+        "queryCount": len(scenarios),
         "build": None,
         "ingest": None,
         "askSession": None,
@@ -147,10 +170,11 @@ def main() -> int:
 
     records: list[dict[str, Any]] = []
     with records_path.open("w", encoding="utf-8") as records_file:
-        for index, query in enumerate(queries, start=1):
+        for index, scenario in enumerate(scenarios, start=1):
+            query = scenario["query"]
             label = f"query-{index:03d}"
             response = ask_result.parsed_json[index - 1] if index <= len(ask_result.parsed_json) else None
-            record = query_record(label, query, ask_result, ask_record, response)
+            record = query_record(label, scenario, ask_result, ask_record, response)
             records_file.write(json.dumps(record, ensure_ascii=False) + "\n")
             records.append(record)
             summary["runs"].append(compact_record(record))
@@ -163,6 +187,10 @@ def main() -> int:
     if ask_result.returncode != 0:
         print(f"Ask session failed. See {ask_record['stderrPath']}", file=sys.stderr)
         return ask_result.returncode
+    failed = [record for record in records if record["status"] not in {"completed", "capture_only"}]
+    if failed:
+        print(f"RAG capture completed with {len(failed)} failed scenario(s). See {summary_path}", file=sys.stderr)
+        return 1
 
     print(f"Saved run summary: {summary_path}")
     print(f"Saved query records: {records_path}")
@@ -175,7 +203,7 @@ def parse_args() -> argparse.Namespace:
         description="Run sample_notes RAG ask once for many queries and store the outputs.",
     )
     parser.add_argument("queries", nargs="*", help="Queries to run. If omitted, default scenarios are used.")
-    parser.add_argument("--queries-file", help="UTF-8 text file with one query per line. Blank lines and # comments are skipped.")
+    parser.add_argument("--queries-file", help="UTF-8 text or JSON file. JSON can contain objects with query and validation fields.")
     parser.add_argument("--answer-mode", choices=["retrieval", "chat"], default="retrieval", help="retrieval disables chat; chat calls the configured ChatModel.")
     parser.add_argument("--repo-root", default=".", help="Repository root. Defaults to the current directory.")
     parser.add_argument("--out-dir", default="build/rag-captures", help="Directory where capture runs are written.")
@@ -198,16 +226,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_queries(args: argparse.Namespace) -> list[str]:
-    queries: list[str] = []
+def load_scenarios(args: argparse.Namespace) -> list[dict[str, Any]]:
+    scenarios: list[dict[str, Any]] = []
     if args.queries_file:
         path = Path(args.queries_file)
-        for line in path.read_text(encoding="utf-8").splitlines():
+        text = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".json":
+            loaded = json.loads(text)
+            if not isinstance(loaded, list):
+                raise ValueError("--queries-file JSON must be an array.")
+            scenarios.extend(scenario_from_value(item) for item in loaded)
+            return scenarios
+        for line in text.splitlines():
             stripped = line.strip()
             if stripped and not stripped.startswith("#"):
-                queries.append(stripped)
-    queries.extend(query.strip() for query in args.queries if query.strip())
-    return queries or DEFAULT_QUERIES
+                scenarios.append({"query": stripped})
+    scenarios.extend({"query": query.strip()} for query in args.queries if query.strip())
+    return scenarios or [dict(item) for item in DEFAULT_SCENARIOS]
+
+
+def scenario_from_value(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {"query": value.strip()}
+    if isinstance(value, dict):
+        query = str(value.get("query") or "").strip()
+        if not query:
+            raise ValueError("Scenario query must not be blank.")
+        scenario = dict(value)
+        scenario["query"] = query
+        return scenario
+    raise ValueError("Scenario must be a string or object.")
 
 
 def resolve_gradle(repo_root: Path, gradle_arg: str | None) -> str:
@@ -426,18 +474,22 @@ def save_command_output(
 
 def query_record(
     label: str,
-    query: str,
+    scenario: dict[str, Any],
     session_result: CommandResult,
     session_record: dict[str, Any],
     response: Any,
 ) -> dict[str, Any]:
-    status = "completed" if session_result.returncode == 0 and response is not None else "missing_json"
+    validation = validate_rag_response(scenario, response)
+    status = validation["status"] if session_result.returncode == 0 and response is not None else "missing_json"
     if session_result.returncode != 0:
         status = "failed"
     return {
         "label": label,
-        "query": query,
+        "query": scenario["query"],
+        "scenario": scenario,
         "status": status,
+        "validation": validation,
+        "failures": validation["failures"],
         "returnCode": session_result.returncode,
         "startedAt": session_result.started_at,
         "finishedAt": session_result.finished_at,
@@ -449,6 +501,101 @@ def query_record(
         "stderrBytesPath": session_record["stderrBytesPath"],
         "response": response,
     }
+
+
+def validate_rag_response(scenario: dict[str, Any], response: Any) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {"status": "missing_response", "failures": ["response JSON is missing"]}
+    failures: list[str] = []
+    contexts = response.get("contexts")
+    if not isinstance(contexts, list):
+        contexts = []
+    if min_context_count := optional_int(scenario.get("minContextCount")):
+        if len(contexts) < min_context_count:
+            failures.append(f"context count {len(contexts)} is below {min_context_count}")
+    if min_top_score := optional_float(scenario.get("minTopScore")):
+        top_score = context_score(contexts[0]) if contexts else None
+        if top_score is None or top_score < min_top_score:
+            failures.append(f"top score {top_score} is below {min_top_score}")
+    titles = [str(context.get("title") or "") for context in contexts if isinstance(context, dict)]
+    filenames = [str(context.get("sourceFilename") or "") for context in contexts if isinstance(context, dict)]
+    for expected in string_list(scenario.get("expectedContextTitles")):
+        if not contains_text(titles, expected):
+            failures.append(f"expected context title not found: {expected}")
+    for expected in string_list(scenario.get("expectedContextFilenames")):
+        if not contains_text(filenames, expected):
+            failures.append(f"expected context filename not found: {expected}")
+    for forbidden in string_list(scenario.get("forbiddenContextTitles")):
+        if contains_text(titles, forbidden):
+            failures.append(f"forbidden context title found: {forbidden}")
+    feature_ids = [
+        str(record.get("featureId") or "")
+        for record in response.get("usageRecords", [])
+        if isinstance(record, dict)
+    ]
+    for required in string_list(scenario.get("requiredUsageFeatureIds")):
+        if required not in feature_ids:
+            failures.append(f"required usage feature is missing: {required}")
+    answer = str(response.get("answer") or "")
+    for expected in string_list(scenario.get("answerMustContain")):
+        if expected not in answer:
+            failures.append(f"answer missing text: {expected}")
+    for forbidden in string_list(scenario.get("answerMustNotContain")):
+        if forbidden in answer:
+            failures.append(f"answer contains forbidden text: {forbidden}")
+    if not has_validation_rules(scenario):
+        return {"status": "capture_only", "failures": []}
+    return {"status": "completed" if not failures else "failed", "failures": failures}
+
+
+def has_validation_rules(scenario: dict[str, Any]) -> bool:
+    return any(
+        key in scenario and scenario.get(key) not in (None, "", [], {})
+        for key in [
+            "expectedContextTitles",
+            "expectedContextFilenames",
+            "forbiddenContextTitles",
+            "minContextCount",
+            "minTopScore",
+            "requiredUsageFeatureIds",
+            "answerMustContain",
+            "answerMustNotContain",
+        ]
+    )
+
+
+def string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    return [str(value)]
+
+
+def contains_text(values: list[str], expected: str) -> bool:
+    lowered = expected.lower()
+    return any(lowered in value.lower() for value in values)
+
+
+def optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def context_score(value: Any) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    score = value.get("score")
+    return float(score) if score is not None else None
 
 
 def compact_command_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -473,6 +620,7 @@ def compact_record(record: dict[str, Any]) -> dict[str, Any]:
         "label": record["label"],
         "query": record.get("query"),
         "status": record["status"],
+        "failures": record.get("failures", []),
         "returnCode": record["returnCode"],
         "durationSeconds": record["durationSeconds"],
         "answerMode": response.get("answerMode") if isinstance(response, dict) else None,
@@ -613,6 +761,7 @@ def write_chunk_report(path: Path, summary: dict[str, Any], records: list[dict[s
         usage_records = usage_record_summaries(response.get("usageRecords"))
         lines.extend([
             f"- status: `{record['status']}`",
+            f"- failures: `{'; '.join(record.get('failures', [])) or 'none'}`",
             f"- answerMode: `{response.get('answerMode', '')}`",
             f"- model: `{response.get('model', '')}`",
             f"- tokenUsage: `{format_token_usage_summary(token_usage)}`",

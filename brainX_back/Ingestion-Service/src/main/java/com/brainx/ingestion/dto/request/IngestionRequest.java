@@ -90,4 +90,16 @@ public class IngestionRequest {
         private String templateId;
         private String noteContent;
     }
+
+    @Getter
+    @NoArgsConstructor
+    public static class ExtensionCaptureRequest {
+        @NotBlank(message = "url은 필수입니다")
+        private String url;
+        @NotBlank(message = "title은 필수입니다")
+        private String title;
+        private String selectedText;
+        private String metaDescription;
+        private String folderId;
+    }
 }

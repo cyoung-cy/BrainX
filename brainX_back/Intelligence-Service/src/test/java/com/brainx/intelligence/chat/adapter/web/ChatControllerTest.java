@@ -106,6 +106,25 @@ class ChatControllerTest {
                       "noteScope": {
                         "documentGroupId": "group-1"
                       },
+                      "clientContext": {
+                        "mode": "SELECTION",
+                        "source": "RIGHT_SIDEBAR",
+                        "items": [
+                          {
+                            "type": "SELECTION",
+                            "noteId": "note-1",
+                            "documentGroupId": "group-1",
+                            "text": "selected context",
+                            "truncated": false,
+                            "metadata": {
+                              "sourceRange": {
+                                "from": 1,
+                                "to": 8
+                              }
+                            }
+                          }
+                        ]
+                      },
                       "modelId": "gpt-test"
                     }
                     """))
@@ -125,6 +144,10 @@ class ChatControllerTest {
                 && command.threadId().equals("thread-1")
                 && command.message().equals("What is RAG?")
                 && command.noteScope().get("documentGroupId").equals("group-1")
+                && command.clientContext().get("mode").equals("SELECTION")
+                && command.clientContext().get("source").equals("RIGHT_SIDEBAR")
+                && ((Map<?, ?>) ((List<?>) command.clientContext().get("items")).getFirst())
+                    .get("text").equals("selected context")
                 && command.modelId().equals("gpt-test")
         ));
     }

@@ -8,6 +8,10 @@ interface QdrantVectorIndexClient {
 
     void upsert(List<QdrantVectorPoint> points);
 
+    void deleteByPointIds(List<UUID> pointIds);
+
+    void overwritePayload(UUID pointId, Map<String, Object> payload);
+
     void deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId);
 
     List<QdrantVectorSearchHit> search(String userId, String documentGroupId, List<Double> vector, int limit);

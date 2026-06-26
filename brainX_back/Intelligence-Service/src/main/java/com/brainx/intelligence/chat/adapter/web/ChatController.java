@@ -2,6 +2,7 @@ package com.brainx.intelligence.chat.adapter.web;
 
 import java.security.Principal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -88,6 +89,7 @@ public class ChatController {
             threadId,
             request.message(),
             nullToEmpty(request.noteScope()),
+            clientContextToMap(request.clientContext()),
             request.modelId()
         )).map(this::sse);
 
@@ -145,6 +147,19 @@ public class ChatController {
         return values == null ? Map.of() : values;
     }
 
+    private static Map<String, Object> clientContextToMap(ClientContextRequest clientContext) {
+        if (clientContext == null) {
+            return Map.of();
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("mode", clientContext.mode());
+        values.put("source", clientContext.source());
+        values.put("items", clientContext.items() == null
+            ? List.of()
+            : clientContext.items().stream().map(AiContextItemRequest::toMap).toList());
+        return values;
+    }
+
     record ChatThreadCreateRequest(
         String documentGroupId,
         @NotBlank String title,
@@ -155,8 +170,45 @@ public class ChatController {
     record ChatMessageCreateRequest(
         @NotBlank String message,
         Map<String, Object> noteScope,
+        @Valid ClientContextRequest clientContext,
         @NotBlank String modelId
     ) {
+    }
+
+    record ClientContextRequest(
+        @NotBlank String mode,
+        @NotBlank String source,
+        @Valid List<AiContextItemRequest> items
+    ) {
+    }
+
+    record AiContextItemRequest(
+        @NotBlank String type,
+        String noteId,
+        String documentGroupId,
+        @NotBlank String text,
+        Boolean truncated,
+        Map<String, Object> metadata
+    ) {
+
+        Map<String, Object> toMap() {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("type", type);
+            if (noteId != null && !noteId.isBlank()) {
+                values.put("noteId", noteId);
+            }
+            if (documentGroupId != null && !documentGroupId.isBlank()) {
+                values.put("documentGroupId", documentGroupId);
+            }
+            values.put("text", text);
+            if (truncated != null) {
+                values.put("truncated", truncated);
+            }
+            if (metadata != null && !metadata.isEmpty()) {
+                values.put("metadata", metadata);
+            }
+            return values;
+        }
     }
 
     record ChatThreadData(

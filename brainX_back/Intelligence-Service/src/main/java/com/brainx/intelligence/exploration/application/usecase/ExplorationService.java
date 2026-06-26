@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
@@ -53,6 +52,7 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
     public SemanticSearchResponse semanticSearch(SemanticSearchCommand command) {
         var query = new SemanticSearchQuery(
             command.userId(),
+            command.scope(),
             command.documentGroupId(),
             command.query(),
             command.filters(),
@@ -72,6 +72,7 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
         var matches = noteSearchIndexPort.search(
             new NoteSearchQuery(
                 query.userId(),
+                query.scope(),
                 query.documentGroupId(),
                 query.query(),
                 query.filters(),
@@ -80,12 +81,12 @@ public class ExplorationService implements SemanticSearchUseCase, GetNoteSummary
             )
         );
         var results = new SemanticSearchResults(matches, TokenChargeDecision.charged(tokenEstimate));
-        String causationId = UUID.randomUUID().toString();
 
         explorationEventPort.semanticSearchPerformed(new SemanticSearchPerformedEvent(
             query.userId(),
+            query.scope(),
             query.documentGroupId(),
-            sha256(query.userId() + "\n" + query.documentGroupId() + "\n" + query.query()),
+            sha256(query.userId() + "\n" + query.scope().name() + "\n" + query.documentGroupId() + "\n" + query.query()),
             results.results().size(),
             results.charged()
         ));

@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort.NoteChunkSearchQuery;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteChunkDelta;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteSearchQuery;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorPoint;
 import com.brainx.intelligence.infrastructure.vector.qdrant.QdrantVectorIndexClient.QdrantVectorSearchHit;
 import com.brainx.intelligence.settings.application.port.outbound.AiModelCatalogPort;
@@ -66,6 +68,95 @@ class QdrantNoteSearchIndexAdapterTest {
         assertThat(tokenUsagePort.records.getFirst().modelId()).isEqualTo("voyage-4-lite");
         assertThat(tokenUsagePort.records.getFirst().inputTokens()).isEqualTo(10);
         assertThat(tokenUsagePort.records.getFirst().estimatedCost()).isEqualByComparingTo("0.0000002");
+    }
+
+    @Test
+    void deltaEmbedsOnlyUpsertChunksDeletesByPointIdAndOverwritesPayload() {
+        NoteSearchDocument upsert = new NoteSearchDocument(
+            "user-1",
+            "group-1",
+            "note-1",
+            "note-1::new",
+            1,
+            "RAG note",
+            "new chunk",
+            "new chunk",
+            List.of(),
+            "hash-2",
+            2,
+            null,
+            null
+        );
+        NoteSearchDocument payloadOnly = new NoteSearchDocument(
+            "user-1",
+            "group-1",
+            "note-1",
+            "note-1::stable",
+            0,
+            "RAG note",
+            "stable chunk",
+            "stable chunk",
+            List.of("keyword-1"),
+            "hash-2",
+            2,
+            null,
+            null
+        );
+
+        boolean indexed = adapter.applyNoteChunkDelta(
+            "user-1",
+            "group-1",
+            "note-1",
+            new NoteChunkDelta(List.of(upsert), List.of("note-1::old"), List.of(payloadOnly))
+        );
+
+        assertThat(indexed).isTrue();
+        assertThat(embeddingPort.requests).hasSize(1);
+        assertThat(embeddingPort.requests.getFirst().texts()).containsExactly("new chunk");
+        assertThat(vectorIndexClient.deletedPointIds).containsExactly(UUID.nameUUIDFromBytes(
+            "user-1::group-1::note-1::old".getBytes(StandardCharsets.UTF_8)
+        ));
+        assertThat(vectorIndexClient.upsertedPoints).hasSize(1);
+        assertThat(vectorIndexClient.upsertedPoints.getFirst().payload()).containsEntry("chunkId", "note-1::new");
+        assertThat(vectorIndexClient.overwrittenPayloads).containsKey(UUID.nameUUIDFromBytes(
+            "user-1::group-1::note-1::stable".getBytes(StandardCharsets.UTF_8)
+        ));
+        assertThat(vectorIndexClient.overwrittenPayloads.values().iterator().next())
+            .containsEntry("chunkId", "note-1::stable")
+            .containsEntry("keywordIds", List.of("keyword-1"));
+        assertThat(tokenUsagePort.records).hasSize(1);
+        assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("note-search-index-embedding");
+    }
+
+    @Test
+    void deltaWithoutUpsertsDoesNotRequireEmbeddingProvider() {
+        QdrantNoteSearchIndexAdapter noEmbedding = adapter(vectorIndexClient, null, new FakeTokenUsagePort());
+        NoteSearchDocument payloadOnly = new NoteSearchDocument(
+            "user-1",
+            "group-1",
+            "note-1",
+            "note-1::stable",
+            0,
+            "RAG note",
+            "stable chunk",
+            "stable chunk",
+            List.of(),
+            "hash-2",
+            2,
+            null,
+            null
+        );
+
+        boolean indexed = noEmbedding.applyNoteChunkDelta(
+            "user-1",
+            "group-1",
+            "note-1",
+            new NoteChunkDelta(List.of(), List.of("note-1::old"), List.of(payloadOnly))
+        );
+
+        assertThat(indexed).isTrue();
+        assertThat(vectorIndexClient.deletedPointIds).hasSize(1);
+        assertThat(vectorIndexClient.overwrittenPayloads).hasSize(1);
     }
 
     @Test
@@ -142,6 +233,52 @@ class QdrantNoteSearchIndexAdapterTest {
     }
 
     @Test
+    void userScopeSearchDoesNotFilterByDocumentGroupAndStillDeduplicatesByBestNoteScore() {
+        vectorIndexClient.searchHits = List.of(
+            hit(0.4d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-1",
+                "noteId", "note-1",
+                "title", "Group 1 note",
+                "excerpt", "low",
+                "keywordIds", List.of()
+            )),
+            hit(0.8d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-2",
+                "noteId", "note-1",
+                "title", "Group 2 same note",
+                "excerpt", "high",
+                "keywordIds", List.of()
+            )),
+            hit(0.7d, Map.of(
+                "userId", "other-user",
+                "documentGroupId", "group-3",
+                "noteId", "note-2",
+                "title", "Other user",
+                "excerpt", "must not leak",
+                "keywordIds", List.of()
+            ))
+        );
+
+        var results = adapter.search(new NoteSearchQuery(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "semantic search",
+            Map.of(),
+            3,
+            List.of()
+        ));
+
+        assertThat(vectorIndexClient.lastSearchUserId).isEqualTo("user-1");
+        assertThat(vectorIndexClient.lastSearchDocumentGroupId).isNull();
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().title()).isEqualTo("Group 2 same note");
+        assertThat(results.getFirst().score()).isEqualTo(0.8d);
+    }
+
+    @Test
     void searchChunksKeepsChunkLevelHitsWithoutDedupe() {
         vectorIndexClient.searchHits = List.of(
             hit(0.5d, Map.of(
@@ -183,6 +320,47 @@ class QdrantNoteSearchIndexAdapterTest {
     }
 
     @Test
+    void userScopeSearchChunksDoesNotFilterByDocumentGroup() {
+        vectorIndexClient.searchHits = List.of(
+            hit(0.7d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-1",
+                "noteId", "note-1",
+                "chunkId", "note-1::0",
+                "chunkIndex", 0,
+                "title", "Group 1",
+                "doc_content", "first group",
+                "markdownHash", "hash-1",
+                "version", 1
+            )),
+            hit(0.9d, Map.of(
+                "userId", "user-1",
+                "documentGroupId", "group-2",
+                "noteId", "note-2",
+                "chunkId", "note-2::0",
+                "chunkIndex", 0,
+                "title", "Group 2",
+                "doc_content", "second group",
+                "markdownHash", "hash-2",
+                "version", 1
+            ))
+        );
+
+        var results = adapter.searchChunks(new NoteChunkSearchQuery(
+            "user-1",
+            SearchScope.USER,
+            null,
+            "semantic search",
+            3
+        ));
+
+        assertThat(vectorIndexClient.lastSearchUserId).isEqualTo("user-1");
+        assertThat(vectorIndexClient.lastSearchDocumentGroupId).isNull();
+        assertThat(results).hasSize(2);
+        assertThat(results).extracting("documentGroupId").containsExactly("group-2", "group-1");
+    }
+
+    @Test
     void deleteUsesUserAndNoteFilter() {
         boolean deleted = adapter.deleteByUserIdAndDocumentGroupIdAndNoteId("user-1", "group-1", "note-1");
 
@@ -199,6 +377,11 @@ class QdrantNoteSearchIndexAdapterTest {
         assertThat(noClient.search(new NoteSearchQuery("user-1", "query", Map.of(), 3, List.of()))).isEmpty();
         assertThat(noEmbedding.replaceNoteChunks("user-1", "default", "note-1", List.of(
             new NoteSearchDocument("user-1", "note-1", "title", "excerpt", List.of())
+        ))).isFalse();
+        assertThat(noEmbedding.applyNoteChunkDelta("user-1", "default", "note-1", new NoteChunkDelta(
+            List.of(new NoteSearchDocument("user-1", "note-1", "title", "excerpt", List.of())),
+            List.of(),
+            List.of()
         ))).isFalse();
         assertThat(noEmbedding.searchChunks(new NoteChunkSearchQuery("user-1", "query", 2))).isEmpty();
     }
@@ -231,6 +414,8 @@ class QdrantNoteSearchIndexAdapterTest {
 
         private final List<QdrantVectorPoint> upsertedPoints = new ArrayList<>();
         private final List<String> deletedKeys = new ArrayList<>();
+        private final List<UUID> deletedPointIds = new ArrayList<>();
+        private final Map<UUID, Map<String, Object>> overwrittenPayloads = new java.util.LinkedHashMap<>();
         private List<QdrantVectorSearchHit> searchHits = List.of();
         private String lastSearchUserId;
         private String lastSearchDocumentGroupId;
@@ -240,6 +425,16 @@ class QdrantNoteSearchIndexAdapterTest {
         @Override
         public void upsert(List<QdrantVectorPoint> points) {
             upsertedPoints.addAll(points);
+        }
+
+        @Override
+        public void deleteByPointIds(List<UUID> pointIds) {
+            deletedPointIds.addAll(pointIds);
+        }
+
+        @Override
+        public void overwritePayload(UUID pointId, Map<String, Object> payload) {
+            overwrittenPayloads.put(pointId, payload);
         }
 
         @Override
@@ -255,7 +450,8 @@ class QdrantNoteSearchIndexAdapterTest {
             lastSearchLimit = limit;
             return searchHits.stream()
                 .filter(hit -> userId.equals(hit.payload().getOrDefault("userId", userId)))
-                .filter(hit -> documentGroupId.equals(hit.payload().getOrDefault("documentGroupId", documentGroupId)))
+                .filter(hit -> documentGroupId == null
+                    || documentGroupId.equals(hit.payload().getOrDefault("documentGroupId", documentGroupId)))
                 .toList();
         }
     }

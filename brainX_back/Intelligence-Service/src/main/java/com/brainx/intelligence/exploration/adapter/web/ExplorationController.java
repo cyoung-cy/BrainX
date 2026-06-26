@@ -18,6 +18,7 @@ import com.brainx.intelligence.exploration.application.port.inbound.GetNoteSumma
 import com.brainx.intelligence.exploration.application.port.inbound.SemanticSearchUseCase;
 import com.brainx.intelligence.exploration.application.port.inbound.SemanticSearchUseCase.SemanticSearchCommand;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.exploration.domain.SummarySource;
 import com.brainx.intelligence.infrastructure.web.ApiSuccessResponse;
 
@@ -46,6 +47,7 @@ public class ExplorationController {
     ) {
         var result = semanticSearchUseCase.semanticSearch(new SemanticSearchCommand(
             userId(principal),
+            SearchScope.normalize(request.scope()),
             request.documentGroupId(),
             request.query(),
             nullToEmpty(request.filters()),
@@ -102,6 +104,7 @@ public class ExplorationController {
     }
 
     record SemanticSearchRequest(
+        String scope,
         String documentGroupId,
         @NotBlank String query,
         Map<String, Object> filters,

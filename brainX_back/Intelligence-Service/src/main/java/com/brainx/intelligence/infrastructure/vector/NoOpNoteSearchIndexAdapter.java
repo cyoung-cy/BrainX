@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort.NoteChunkDelta;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
@@ -30,6 +31,12 @@ public class NoOpNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteChun
 
     @Override
     public boolean replaceNoteChunks(String userId, String documentGroupId, String noteId, List<NoteSearchDocument> chunks) {
+        // No-op fallback for local contexts without a vector store.
+        return false;
+    }
+
+    @Override
+    public boolean applyNoteChunkDelta(String userId, String documentGroupId, String noteId, NoteChunkDelta delta) {
         // No-op fallback for local contexts without a vector store.
         return false;
     }

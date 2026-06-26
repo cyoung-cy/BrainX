@@ -229,7 +229,7 @@ function SidebarItem({
       {active ? (
         <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-accent" />
       ) : null}
-      
+
       {isNotes && active ? (
         hovered ? (
           notesExplorerOpen !== false ? (

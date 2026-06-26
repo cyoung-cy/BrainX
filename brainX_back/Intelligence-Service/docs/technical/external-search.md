@@ -69,6 +69,18 @@ CLI 출력은 JSON이며 `query`, `answer`, `sources`, `provider`, `modelId`, `t
 $env:BRAINX_DEV_EXTERNAL_SEARCH_ALLOWED_DOMAINS = "developers.openai.com,platform.openai.com"
 ```
 
+## Batch Capture
+
+실제 provider 검색 품질은 dev-only helper로 batch capture한다.
+
+```powershell
+python scripts\capture_external_search_cli.py --run-name 20260626-external-search-quality
+```
+
+이 script는 실행 전 `.brainx-local.properties` 또는 환경변수의 `OPENAI_API_KEY`를 확인한다. 없으면 provider 호출 없이 exit code `2`로 실패 report를 남긴다. scenario별로 `allowedDomains`, `blockedDomains`, `minSourceCount`, `requiredSourceDomains`, `forbiddenSourceDomains`, `answerMustContain`, `requireTokenUsage`를 검증하고 실패 시 exit code `1`을 반환한다.
+
+출력 위치는 `build/external-search-captures/<run-id>/`이며 `summary.json`, `responses.jsonl`, `report.md`, `raw/*.stdout.txt`, `raw/*.stderr.txt`를 남긴다.
+
 ## Usage와 비용
 
 OpenAI response usage가 있으면 `TokenUsagePort`에 `featureId=external-search-web`으로 기록한다.

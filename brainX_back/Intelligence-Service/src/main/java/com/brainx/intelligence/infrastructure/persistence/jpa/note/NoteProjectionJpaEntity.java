@@ -50,6 +50,10 @@ public class NoteProjectionJpaEntity {
     @Column(name = "markdown_hash", length = 160)
     private String markdownHash;
 
+    @Lob
+    @Column(name = "markdown")
+    private String markdown;
+
     @Column(name = "content_pending", nullable = false)
     private boolean contentPending;
 
@@ -95,6 +99,7 @@ public class NoteProjectionJpaEntity {
         entity.tags = projection.tags();
         entity.version = projection.version();
         entity.markdownHash = projection.markdownHash();
+        entity.markdown = projection.markdown();
         entity.contentPending = projection.contentPending();
         entity.archived = projection.archived();
         entity.trashed = projection.trashed();
@@ -126,6 +131,7 @@ public class NoteProjectionJpaEntity {
             tags,
             version,
             markdownHash,
+            markdown,
             contentPending,
             archived,
             trashed,

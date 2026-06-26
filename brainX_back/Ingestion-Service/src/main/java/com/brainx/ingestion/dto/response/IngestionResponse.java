@@ -181,4 +181,10 @@ public class IngestionResponse {
                     .build();
         }
     }
+
+    @Getter
+    @Builder
+    public static class ExtensionCaptureResponse {
+        private String noteId;
+    }
 }

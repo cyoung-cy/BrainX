@@ -1,7 +1,9 @@
 package com.brainx.intelligence.infrastructure.events.note;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
@@ -10,6 +12,7 @@ import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
 @Component
 public class MarkdownNoteChunker {
 
+    public static final int CHUNKER_VERSION = 1;
     static final int DEFAULT_MAX_CHUNK_LENGTH = 1200;
     static final int DEFAULT_OVERLAP_LENGTH = 150;
     static final int DEFAULT_MAX_CHUNKS = 80;
@@ -96,13 +99,16 @@ public class MarkdownNoteChunker {
         }
 
         List<NoteSearchDocument> chunks = new ArrayList<>();
+        Map<String, Integer> duplicateOrdinals = new HashMap<>();
         for (int index = 0; index < bodies.size() && index < maxChunks; index++) {
             String chunkText = withTitlePrefix(normalizedTitle, bodies.get(index));
+            String embeddingTextHash = NoteChunkIndexHasher.embeddingTextHash(chunkText);
+            int duplicateOrdinal = duplicateOrdinals.merge(embeddingTextHash, 1, Integer::sum) - 1;
             chunks.add(new NoteSearchDocument(
                 userId,
                 documentGroupId,
                 noteId,
-                noteId + "::" + index,
+                noteId + "::" + embeddingTextHash + "::" + duplicateOrdinal,
                 index,
                 normalizedTitle,
                 excerpt(chunkText),

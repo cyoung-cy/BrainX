@@ -53,6 +53,11 @@ public class ChatMessageJpaEntity {
     private Map<String, Object> noteScope = Map.of();
 
     @Lob
+    @Column(name = "client_context", nullable = false)
+    @Convert(converter = JsonMapAttributeConverter.class)
+    private Map<String, Object> clientContext = Map.of();
+
+    @Lob
     @Column(name = "citations", nullable = false)
     @Convert(converter = JsonListMapAttributeConverter.class)
     private List<Map<String, Object>> citations = List.of();
@@ -77,6 +82,7 @@ public class ChatMessageJpaEntity {
         entity.content = message.content();
         entity.modelId = message.modelId();
         entity.noteScope = message.noteScope();
+        entity.clientContext = message.clientContext();
         entity.citations = message.citations().stream()
             .map(ChatCitation::toMap)
             .toList();
@@ -94,6 +100,7 @@ public class ChatMessageJpaEntity {
             content,
             modelId,
             noteScope,
+            clientContext,
             citations.stream().map(ChatMessageJpaEntity::citationFromMap).toList(),
             tokenUsage == null || tokenUsage.isEmpty() ? null : tokenUsageFromMap(tokenUsage),
             createdAt

@@ -29,6 +29,7 @@ import com.brainx.intelligence.exploration.application.port.inbound.SemanticSear
 import com.brainx.intelligence.exploration.application.port.inbound.SemanticSearchUseCase.SemanticSearchCommand;
 import com.brainx.intelligence.exploration.application.port.inbound.SemanticSearchUseCase.SemanticSearchResponse;
 import com.brainx.intelligence.exploration.domain.SearchMatchType;
+import com.brainx.intelligence.exploration.domain.SearchScope;
 import com.brainx.intelligence.exploration.domain.SummarySource;
 import com.brainx.intelligence.infrastructure.security.SecurityConfig;
 import com.brainx.intelligence.infrastructure.web.GlobalApiExceptionHandler;
@@ -66,6 +67,7 @@ class ExplorationControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
+                      "scope": "DOCUMENT_GROUP",
                       "documentGroupId": "group-1",
                       "query": "RAG 검색",
                       "filters": {},
@@ -86,11 +88,52 @@ class ExplorationControllerTest {
 
         verify(semanticSearchUseCase).semanticSearch(argThat(command ->
             command.userId().equals("user-1")
+                && command.scope() == SearchScope.DOCUMENT_GROUP
                 && command.documentGroupId().equals("group-1")
                 && command.query().equals("RAG 검색")
                 && command.limit().equals(5)
                 && command.hybridWithClientKeywordIds().equals(List.of("keyword-1"))
         ));
+    }
+
+    @Test
+    void semanticSearchAcceptsUserScopeWithoutDocumentGroup() throws Exception {
+        when(semanticSearchUseCase.semanticSearch(any(SemanticSearchCommand.class)))
+            .thenReturn(new SemanticSearchResponse(List.of(), 10, true));
+
+        mockMvc.perform(post("/api/v1/intelligence/semantic-search")
+                .with(user("user-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "scope": "USER",
+                      "query": "전체 노트 검색"
+                    }
+                    """))
+            .andExpect(status().isOk());
+
+        verify(semanticSearchUseCase).semanticSearch(argThat(command ->
+            command.scope() == SearchScope.USER
+                && command.documentGroupId() == null
+                && command.query().equals("전체 노트 검색")
+        ));
+    }
+
+    @Test
+    void semanticSearchRejectsUserScopeWithDocumentGroup() throws Exception {
+        mockMvc.perform(post("/api/v1/intelligence/semantic-search")
+                .with(user("user-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "scope": "USER",
+                      "documentGroupId": "group-1",
+                      "query": "전체 노트 검색"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
     }
 
     @Test

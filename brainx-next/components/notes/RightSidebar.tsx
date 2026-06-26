@@ -6,7 +6,8 @@ import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { MOCK_CONTEXT_DATA } from "@/lib/notes/mockNotes";
-import { createInlineAssistStream } from "@/lib/intelligence-api";
+import { createChatThread, sendChatMessageStream } from "@/lib/intelligence-api";
+import { buildNoteAiContext, validateAiContextSufficiency } from "@/lib/ai-context";
 
 /* ── 헤딩 파싱 ─────────────────────────────────────────────────────────────
    note.content는 두 가지 형태일 수 있다 — 한 번도 편집 안 한 시드 노트는 원문 마크다운
@@ -179,6 +180,9 @@ export interface PendingAiRequest {
   nonce: number;
 }
 
+const DEFAULT_DOCUMENT_GROUP_ID = "default";
+const DEFAULT_CHAT_MODEL_ID = "gpt-5.4-mini";
+
 interface Props {
   activeNote: MockNote | null;
   allNotes: MockNote[];
@@ -197,6 +201,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
   const chatEndRef = useRef<HTMLDivElement>(null);
   const aiRequestAbortRef = useRef<AbortController | null>(null);
   const aiMockTimerRef = useRef<number | null>(null);
+  const chatThreadIdsRef = useRef<Record<string, string>>({});
 
   const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
   const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
@@ -208,30 +213,91 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     };
   }, []);
 
-  const sendAi = () => {
+  const updateLatestAiMessage = (text: string, streaming: boolean) => {
+    setAiMessages((m) => {
+      const next = [...m];
+      next[next.length - 1] = { role: "ai", text, streaming };
+      return next;
+    });
+  };
+
+  const ensureNoteChatThread = async (note: MockNote) => {
+    const existing = chatThreadIdsRef.current[note.id];
+    if (existing) return existing;
+    const created = await createChatThread({
+      documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+      title: `${note.title} AI`,
+      modelId: DEFAULT_CHAT_MODEL_ID,
+    });
+    chatThreadIdsRef.current[note.id] = created.threadId;
+    return created.threadId;
+  };
+
+  const sendAi = async () => {
     if (!activeNote || !aiInput.trim()) return;
+    const note = activeNote;
     const prompt = aiInput.trim();
+
+    aiRequestAbortRef.current?.abort();
+    aiRequestAbortRef.current = null;
+    if (aiMockTimerRef.current !== null) {
+      window.clearInterval(aiMockTimerRef.current);
+      aiMockTimerRef.current = null;
+    }
+
     setAiMessages((m) => [...m, { role: "user", text: prompt }]);
     setAiInput("");
-
-    const answer = ctx.aiSuggestions.length > 0
-      ? `「${activeNote.title}」 노트를 분석했습니다.\n\n${ctx.aiSuggestions.slice(0, 2).join(", ")} 등의 개념과 연결하면 더 풍부한 지식 체계가 만들어져요.`
-      : `「${activeNote.title}」 노트를 분석했습니다. 내용을 더 추가하면 연관 노트를 찾아드릴 수 있어요.`;
-
     setAiMessages((m) => [...m, { role: "ai", text: "", streaming: true }]);
-    let idx = 0;
-    const timer = window.setInterval(() => {
-      idx += 4;
-      setAiMessages((m) => {
-        const next = [...m];
-        next[next.length - 1] = { role: "ai", text: answer.slice(0, idx), streaming: idx < answer.length };
-        return next;
-      });
-      if (idx >= answer.length) {
-        window.clearInterval(timer);
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    }, 16);
+
+    const clientContext = buildNoteAiContext({
+      task: "note.ask",
+      surface: "RIGHT_SIDEBAR",
+      documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+      noteId: note.id,
+      title: note.title,
+      content: note.content,
+    });
+    const sufficiency = validateAiContextSufficiency("note.ask", clientContext);
+    if (!sufficiency.ok) {
+      updateLatestAiMessage(sufficiency.message, false);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    const controller = new AbortController();
+    aiRequestAbortRef.current = controller;
+    let streamedText = "";
+
+    try {
+      const threadId = await ensureNoteChatThread(note);
+      await sendChatMessageStream(
+        threadId,
+        {
+          message: prompt,
+          noteScope: {
+            documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+            noteId: note.id,
+          },
+          clientContext,
+          modelId: DEFAULT_CHAT_MODEL_ID,
+        },
+        {
+          signal: controller.signal,
+          onDelta: (delta) => {
+            streamedText += delta;
+            updateLatestAiMessage(streamedText, true);
+          },
+        }
+      );
+      if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+      updateLatestAiMessage(streamedText || "응답 결과가 비어 있습니다.", false);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+      const message = error instanceof Error ? error.message : "AI 요청에 실패했습니다.";
+      updateLatestAiMessage(message, false);
+    }
   };
 
   /* 버블 툴바의 AI 버튼(요약/다시쓰기) → 인라인 AI 채팅에 응답 추가 */
@@ -270,31 +336,54 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     }
 
     if (type === "summarize") {
+      const clientContext = buildNoteAiContext({
+        task: "note.summarize.selection",
+        surface: "RIGHT_SIDEBAR",
+        documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+        noteId: activeNote.id,
+        title: activeNote.title,
+        selectedText,
+      });
+      const sufficiency = validateAiContextSufficiency("note.summarize.selection", clientContext);
+      if (!sufficiency.ok) {
+        setAiMessages((m) => {
+          const next = [...m];
+          next[next.length - 1] = { role: "ai", text: sufficiency.message, streaming: false };
+          return next;
+        });
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        onAiRequestHandled?.();
+        return;
+      }
+
       const controller = new AbortController();
       aiRequestAbortRef.current = controller;
       let streamedText = "";
 
-      createInlineAssistStream(
-        {
-          noteId: activeNote.id,
-          selectedText,
-          contextBefore: "",
-          contextAfter: "",
-          action: "SUMMARIZE",
-          language: "ko",
-        },
-        {
-          signal: controller.signal,
-          onDelta: (delta) => {
-            streamedText += delta;
-            setAiMessages((m) => {
-              const next = [...m];
-              next[next.length - 1] = { role: "ai", text: streamedText, streaming: true };
-              return next;
-            });
+      ensureNoteChatThread(activeNote)
+        .then((threadId) => sendChatMessageStream(
+          threadId,
+          {
+            message: "선택한 텍스트를 요약해줘.",
+            noteScope: {
+              documentGroupId: DEFAULT_DOCUMENT_GROUP_ID,
+              noteId: activeNote.id,
+            },
+            clientContext,
+            modelId: DEFAULT_CHAT_MODEL_ID,
           },
-        }
-      )
+          {
+            signal: controller.signal,
+            onDelta: (delta) => {
+              streamedText += delta;
+              setAiMessages((m) => {
+                const next = [...m];
+                next[next.length - 1] = { role: "ai", text: streamedText, streaming: true };
+                return next;
+              });
+            },
+          }
+        ))
         .then((done) => {
           if (!done) throw new Error("AI 요약 완료 이벤트를 받지 못했습니다.");
           if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
