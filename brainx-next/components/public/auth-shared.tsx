@@ -93,7 +93,7 @@ export function SocialButtons({ recentLogin = null }: SocialButtonsProps) {
       color: "#191600",
       icon: (
         <span className="grid h-5 w-5 place-items-center rounded-full bg-[#191600] text-[10px] font-black leading-none text-[#FEE500]">
-          T
+          K
         </span>
       )
     },
