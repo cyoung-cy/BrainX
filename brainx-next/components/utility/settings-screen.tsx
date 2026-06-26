@@ -206,7 +206,7 @@ export function SettingsScreen() {
             </div>
             <label className="block">
               <div className="mb-1.5 text-[12px] font-medium text-txt2">닉네임</div>
-              <input value={nickname} onChange={(event) => setNickname(event.target.value)} className="h-11 w-full rounded-xl border border-line/60 bg-surface2/50 px-3.5 text-[14px] text-txt outline-none focus:border-primary/60" />
+              <input value={nickname} onChange={(event) => setNickname(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-[14px] text-slate-950 outline-none focus:border-primary/60" />
             </label>
             <Btn variant="primary" icon="copy" onClick={saveProfile} disabled={savingProfile || loading}>프로필 저장</Btn>
           </div>
