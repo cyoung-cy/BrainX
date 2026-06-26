@@ -51,6 +51,15 @@ export type NoteSaveResult = {
   status: "SAVED";
 };
 
+export type NoteMetadataResult = {
+  noteId: string;
+  title: string;
+  folderId: string | null;
+  tags: string[];
+  version: number;
+  typography?: NoteTypography | null;
+};
+
 export type NoteDraftSaveResult = {
   noteId: string;
   actorType: "USER" | "GUEST";
@@ -69,25 +78,12 @@ export type NoteDraftIdResult = {
 export type NoteDraftData = {
   noteId: string;
   actorType: "USER" | "GUEST";
-  title: string;
+  title: string | null;
   markdown: string;
   baseVersion: number;
-  clientSavedAt: string;
+  clientSavedAt: string | null;
   savedAt: string;
   expiresAt: string;
-};
-
-export type NoteDraftListData = {
-  drafts: NoteDraftData[];
-};
-
-export type NoteMetadataResult = {
-  noteId: string;
-  title: string;
-  folderId: string | null;
-  tags: string[];
-  version: number;
-  typography?: NoteTypography | null;
 };
 
 type NoteListData = {
@@ -97,6 +93,10 @@ type NoteListData = {
 
 type FolderTreeData = {
   folders: WorkspaceFolderItem[];
+};
+
+type NoteDraftListData = {
+  drafts: NoteDraftData[];
 };
 
 function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
@@ -123,7 +123,7 @@ async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
-  if (response.status === 401) {
+  if (response.status === 401 || response.status === 403) {
     clearAuthSession();
     throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
   }
@@ -185,13 +185,32 @@ export async function updateWorkspaceNoteContent(note: MockNote) {
   });
 }
 
+export async function updateWorkspaceNoteMetadata(note: MockNote) {
+  return authedRequest<NoteMetadataResult>(`/api/v1/notes/${note.id}/metadata`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      title: note.title,
+      folderId: note.folderId ?? null,
+      tags: note.tags,
+      typography: note.typography ?? null
+    })
+  });
+}
+
+export async function issueWorkspaceNoteDraftId() {
+  return authedRequest<NoteDraftIdResult>("/api/v1/notes/draft-ids", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
 export async function saveWorkspaceNoteDraft(note: MockNote) {
   return authedRequest<NoteDraftSaveResult>(`/api/v1/notes/${note.id}/draft`, {
     method: "PUT",
     body: JSON.stringify({
-      baseVersion: note.version ?? 1,
       title: note.title,
       markdown: note.content,
+      baseVersion: note.version ?? 1,
       clientSavedAt: new Date().toISOString()
     })
   });
@@ -203,24 +222,6 @@ export async function getWorkspaceNoteDraft(noteId: string) {
 
 export async function listWorkspaceNoteDrafts() {
   return authedRequest<NoteDraftListData>("/api/v1/notes/drafts/list");
-}
-
-export async function issueWorkspaceNoteDraftId() {
-  return authedRequest<NoteDraftIdResult>("/api/v1/notes/draft-ids", {
-    method: "POST"
-  });
-}
-
-export async function updateWorkspaceNoteMetadata(note: MockNote) {
-  return authedRequest<NoteMetadataResult>(`/api/v1/notes/${note.id}/metadata`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      title: note.title,
-      folderId: note.folderId ?? null,
-      tags: note.tags,
-      typography: note.typography ?? null
-    })
-  });
 }
 
 export function workspaceNoteToMock(note: WorkspaceNoteItem | NoteDetail): MockNote {
@@ -244,14 +245,14 @@ export function workspaceDraftToMock(draft: NoteDraftData): MockNote {
   const savedAt = Date.parse(draft.savedAt) || Date.now();
   return {
     id: draft.noteId,
-    title: draft.title || "임시 노트",
+    title: draft.title?.trim() || "제목 없음",
     content: draft.markdown ?? "",
     tags: [],
-    category: "backend",
+    category: "frontend",
     createdAt: savedAt,
     updatedAt: savedAt,
-    version: draft.baseVersion,
-    persisted: false
+    version: draft.baseVersion ?? 1,
+    persisted: false,
   };
 }
 
