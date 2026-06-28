@@ -66,11 +66,16 @@ public class Note {
         this.updatedAt = now;
     }
 
-    public void applyDraft(String title, String markdown, Instant now) {
+    public void applyDraft(String title, String markdown, String folderId, Instant now) {
         if (title != null && !title.isBlank()) {
             this.title = title;
         }
         this.markdown = markdown == null ? "" : markdown;
+        // draft가 마지막으로 들고 있던 폴더 배치를 그대로 반영한다(guest -> user 승계, idle flush
+        // 모두 이 경로를 타므로 폴더 구조가 그대로 유지된다) — folderId가 빈 문자열이면 루트로
+        // 이동(FolderPatchRequest/handleMoveFolderToParent와 동일한 규칙), null이면 변경 없음이
+        // 아니라 "루트"로 취급한다(draft는 항상 현재 폴더 배치 전체를 보내므로 부분 patch가 아님).
+        this.folderId = (folderId == null || folderId.isBlank()) ? null : folderId;
         this.version++;
         this.updatedAt = now;
     }

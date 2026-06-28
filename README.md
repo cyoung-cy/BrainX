@@ -382,7 +382,7 @@ cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 ### Frontend
 
 ```powershell
-cd C:\Edu\BrainX\brainx-next
+cd C:\Edu\Final_Project\BrainX\brainx-next
 npm install
 npm run dev
 ```
@@ -392,7 +392,7 @@ npm run dev
 타입 체크:
 
 ```powershell
-cd C:\Edu\BrainX\brainx-next
+cd C:\Edu\Final_Project\BrainX\brainx-next
 npm run typecheck
 ```
 
@@ -536,6 +536,37 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 
 ## Current Notes
 
+- **(2026-06-29 SSOT 계약 변경) 폴더 cascade 삭제 / draft folderId / 이어쓰기 floating UI**:
+  - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `brainX_back/Workspace-Service`(`WorkspaceController`/`WorkspaceService`/`NoteDraftService`/`Note`/`Folder`/`NoteRepository`), `brainx-next`(`workspace-api.ts`/`NotesWorkspace.tsx`/`NoteEditor.tsx`).
+  - **폴더 삭제 정책 변경(API 계약 변경)**: `DELETE /api/v1/folders/{folderId}`가 하위 폴더/노트를 부모로 승격하던 것을 그만두고, 하위 폴더(중첩 포함)와 그 안의 노트를 전부 cascade로 삭제하도록 바꿨다. 요청 바디(`FolderDeleteRequest`)를 없애고 노트 삭제와 동일한 `mode`(trash|permanent) 쿼리 파라미터로 통일했으며, 응답을 `DeleteFolderData`(삭제된 폴더/노트 id 목록)로 바꿨다. 같은 actor의 Redis draft(아직 flush 전인 노트)도 같은 폴더 id 집합 기준으로 함께 삭제해 orphan을 막는다.
+  - **Redis draft에 folderId 추가(API 계약 변경)**: `NoteDraftSaveRequest`/`NoteDraftData`에 `folderId`를 추가해, draft 저장/flush/guest claim 전 과정에서 노트-폴더 배치가 유지되게 했다. guest 폴더는 claim 시 `Folder.userId`만 갱신(폴더 id는 그대로)하므로 draft.folderId 참조가 끊기지 않는다 — 그 결과 게스트 때 폴더에 넣어둔 노트가 회원가입 직후에도 같은 폴더 배치로 보인다.
+  - **이어쓰기 위치를 floating UI로 전환**: ProseMirror Decoration.widget(텍스트 흐름 안에 꽂혀 있던 방식)을 없애고, SlashCommandMenu/CursorContinueButton과 같은 `coordsAtPos` 기반 React 컴포넌트로 바꿔 캐럿 오른쪽 아래에 절대 위치로 띄운다 — 문서 구조/흐름에 영향이 전혀 없다.
+- **(2026-06-28 버그 수정) 노트 삭제 API 연결 / 헤딩 위쪽 여백 / 이어쓰기 위치 / 게스트 폴더 승계**:
+  - 분석 대상: `brainx-next/lib/workspace-api.ts`, `NotesWorkspace.tsx`, `app/globals.css`, `NoteEditor.tsx`, `brainX_back/Workspace-Service` `WorkspaceController`/`WorkspaceService`/`NoteDraftPersistenceService`/`Folder`.
+  - 노트 삭제(`handleDeleteNote`)가 클라이언트 메모리만 바꾸고 백엔드를 호출하지 않던 문제를 고쳤다 — `DELETE /api/v1/notes/{noteId}?mode=trash`를 호출해 성공해야만 화면을 정리하고, guest나 아직 Postgres로 flush되지 않은 draft-only 노트는 컨트롤러가 Redis draft만 지우고 성공으로 응답하도록 백엔드도 함께 고쳤다.
+  - 헤딩(H1~H3) `margin-top`이 헤딩 자신의 큰 폰트 기준 1.2~1.4em이라(실제로는 본문의 2배 이상) "# "를 입력해 그 줄이 헤딩으로 바뀌는 순간 줄 자체가 크게 밀려 보이던 문제를 0.25~0.3em으로 좁혀 해결했다. 아래쪽 여백은 변경하지 않았다.
+  - "이어쓰기" AI 제안 위젯이 inline-flex라 커서 바로 뒤 같은 줄에 끼어들어 작성 중인 줄을 가리던 문제를 flex(block)로 바꿔 커서 아래 자기 줄로 내렸다(ProseMirror decoration 위치/구조는 그대로, CSS만 변경).
+  - 게스트는 노트는 Postgres에 못 만들지만(`memberUserId()` 정책) 폴더 생성에는 그 제약이 없어, 게스트가 만든 폴더가 Postgres에 guestId 소유로 남아 회원가입 후에도 안 보이는 gap을 발견했다 — `claimGuestDrafts`가 note draft와 같은 트랜잭션에서 폴더 소유자도 user로 옮기도록 `WorkspaceService.reassignGuestFolders`를 추가했고, 프론트의 폴더 생성/이름변경/이동/삭제도 이번에 처음으로 백엔드에 연결했다(이전엔 폴더 API 자체가 호출되지 않고 있었음).
+- **(2026-06-28 버그 수정) 제목 공백 정규화 / 헤딩 뒤 빈 줄 / 게스트→유저 노트 승계 새로고침 수정**:
+  - 분석 대상: `brainx-next/components/notes/EditorPanel.tsx`, `NotesExplorer.tsx`, `NoteEditor.tsx`, `NotesWorkspace.tsx`, `lib/auth-api.ts`.
+  - 노트 제목을 전부 지우고 blur하면 `t && ...` 가드 때문에 `onTitleChange`가 전혀 호출되지 않고 입력창만 빈 문자열로 굳어버리던 버그를 고쳤다 — 빈 제목 commit 시 탭바와 동일한 기준("제목 없음")으로 정규화한다(NotesExplorer의 동일한 rename 로직도 함께 수정).
+  - tiptap v3 StarterKit이 기본 포함하는 `TrailingNode` 확장이 "마지막 노드가 단락이 아니면 빈 단락을 자동 삽입"하는데, heading은 글 쓰는 동안 거의 항상 마지막 노드라 `#`+Space/슬래시 명령으로 헤딩을 만들 때마다 보이지 않는 빈 단락이 끼어들어 다음 줄이 밀려 보였다 — `trailingNode: { notAfter: ["heading"] }`로 범위를 좁혀 표/이미지 등 다른 블록 뒤의 기존 동작은 유지했다.
+  - 회원가입 2단계(`signupWithEmail` → `completeOnboarding`) 중 실제 "가입 완료" 시점인 `completeOnboarding`에는 게스트 draft claim 호출이 빠져 있어 가입 직후 화면에 게스트 노트가 안 보일 수 있었다 — 호출을 추가했다. 또한 `NotesWorkspace`가 마운트 후 로그인 상태 변화를 구독하지 않아, 같은 탭에서 로그인/로그아웃해도 이전 actor의 탭/노트가 화면에 남아있던 문제를 막기 위해, claim 시도 직후와 `clearAuthSession()`(로그아웃) 시점에 기존 `brainx:notes-refresh` 이벤트를 `resetWorkspace:true`로 재사용해 워크스페이스를 비우고 새 actor 기준으로 다시 불러오게 했다.
+  - Workspace-Service의 노트 조회/수정/삭제는 이미 모두 `(userId, noteId)` 쌍으로 스코프돼 있어(`NoteRepository.findByNoteIdAndUserId` 등) guest/user 데이터가 DB 레벨에서 섞일 수 있는 경로는 없었다 — 다만 노트 "삭제" UI(`NotesWorkspace.handleDeleteNote`)가 현재 백엔드 호출 없이 클라이언트 메모리에서만 제거되는 상태라는 점을 확인했다(별도 후속 작업 필요, 이번 수정 범위 아님).
+- **(2026-06-28 버그 수정) 빈 패널 콘텐츠 잔존 + 슬래시 명령어 H1~H3 미적용 수정**:
+  - 분석 대상: `brainx-next/components/notes/PaneTreeRenderer.tsx`, `NotesWorkspace.tsx`, `SlashCommandMenu.tsx`.
+  - `PaneTreeRenderer`가 leaf의 탭이 0개일 때 `node.noteId`(닫힌 뒤에도 정리 안 된 leaf 자체 필드)나 `notes[0]`(조회 실패 시 임의의 다른 노트)로 fallback 하던 부분을 제거했다 — 탭이 0개면 항상 "노트 없음" 상태로 렌더링되도록 고쳐, 모든 탭을 닫아도 직전 노트 내용이 패널에 남아있던 문제를 막았다.
+  - "탭이 0개인지" 판정(`isWorkspaceEmpty`, 세션 하이드레이션의 "완전히 빈 세션인지" 체크, `nextActiveId` 후보 선정)을 모두 `paneTabs` 객체 전체가 아니라 `root` 트리에 실제로 존재하는 leaf 기준으로 통일했다 — 트리에서 이미 제거된 고아 `paneTabs` 항목이 남아있어도 Welcome 판정이 깨지지 않는다.
+  - 슬래시 명령어(`/h1`,`/h2`,`/h3`)로 헤딩을 적용하면 `HeadingLevelSync`(헤딩 본문의 실제 "#" 글자 수로 level을 되돌려 동기화하는 라이브 마크다운 프리뷰 로직)가 "#" 마커 텍스트가 없다는 이유로 즉시 평문으로 되돌리던 버그를 고쳤다 — `# `/`## `/`### ` 마커 텍스트를 직접 삽입한 뒤 `setNode`를 호출해 `# `+Space 단축키와 동일한 경로를 타게 했다.
+- **(2026-06-28 버그 수정) 노트 워크스페이스 Welcome 보드/세션 복원 레이스 컨디션 수정**:
+  - 분석 대상: `brainx-next/components/notes/NotesWorkspace.tsx`.
+  - URL(`/notes/[id]`)로 노트를 열 때, 서버에서 노트 목록을 불러오는 `loadFromServer` 콜백이 컴포넌트 마운트 시점에 캡처한 옛 `state.activeId`(paneId)를 그대로 써서, 그 사이 localStorage 세션이 복원되며 트리의 실제 paneId가 바뀌면 존재하지 않는 paneId에 노트를 매달아버리는 문제가 있었다(화면엔 반영되지 않고 고아 `paneTabs` 항목만 남아, 직전 세션이 Welcome 상태였을 경우 "노트를 클릭/이동해도 Welcome처럼 보이는" 현상으로 나타남). 항상 최신 트리를 들고 있는 `latestSessionRef`에서 현재 보이는 paneId를 다시 계산하도록 고쳤다.
+  - 탭을 모두 닫아 Welcome 상태로 돌아가는 전환은 세션 자동저장 디바운스(350ms)를 거치지 않고 즉시 localStorage에 기록하도록 바꿔, 그 안에 새로고침하면 직전(탭이 남아있던) 세션이 복원되어 닫은 탭/분할이 되살아나던 문제를 막았다.
+  - API/계약 변경 없음 — 순수 프론트엔드 상태 동기화 버그 수정이라 SSOT/OpenAPI 변경은 없다.
+- **(2026-06-28 구현) Workspace Redis dirty draft owner 탐색을 SCAN으로 전환**:
+  - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `contracts-v2/brainx-asyncapi.ssot.yaml`, `README.md`, `Workspace-Service` Redis draft 구현.
+  - `NoteDraftService.userIdsWithDirtyDrafts()`가 `redisTemplate.keys("workspace:note:dirty:user:*")`로 Redis 전체 키 공간을 블로킹 탐색하던 문제를 `SCAN MATCH workspace:note:dirty:user:* COUNT 500` 기반 점진 탐색으로 바꿨습니다.
+  - API 응답 계약은 그대로이며, OpenAPI에는 백그라운드 PostgreSQL flush 대상 사용자 탐색이 `KEYS` 대신 `SCAN`을 사용한다는 구현 기준을 명시했습니다.
 - **(2026-06-25 SSOT 계약 변경) BrainX-Admin 실제 데이터 연동용 관리자 API 확정**:
   - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `contracts-v2/brainx-asyncapi.ssot.yaml`, `README.md`, `BrainX-Admin/brainx-admin-next`의 현재 UI 더미 데이터.
   - OpenAPI: `/api/v1/admin/**` 아래에 관리자 대시보드, 사용자 목록/상세/플랜 변경/상태 변경/탈퇴/일괄 처리, 문의 상세/배정, 결제 KPI/내역/환불/재시도/구독/실패 추적/요금제 가격 수정, 관리자 프로필/비밀번호 변경 API를 추가했습니다.

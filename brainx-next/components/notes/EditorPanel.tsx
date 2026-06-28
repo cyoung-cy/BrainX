@@ -54,6 +54,7 @@ interface Props {
   onTogglePinTab: (tabId: string) => void;
   onSplitTabRight: (tabId: string) => void;
   onSplitTabDown: (tabId: string) => void;
+  canSplitWorkspace: boolean;
   contextOpen?: boolean;
   onContextToggle?: () => void;
 }
@@ -96,6 +97,7 @@ export default function EditorPanel({
   onTogglePinTab,
   onSplitTabRight,
   onSplitTabDown,
+  canSplitWorkspace,
   contextOpen,
   onContextToggle,
 }: Props) {
@@ -188,9 +190,13 @@ export default function EditorPanel({
 
   const commitTitle = useCallback((focusBody = false) => {
     if (!note) return;
-    const t = titleDraft.trim();
-    if (t && t !== note.title) onTitleChange(note.id, t);
-    setTitleDraft(t || note.title);
+    // 제목을 전부 지우고 commit(blur/Enter)하면 빈 문자열로 방치하지 않고 "제목 없음"으로
+    // 정규화한다 — 이전에는 t가 빈 문자열이면 `t && ...` 가드에 걸려 onTitleChange가 전혀
+    // 호출되지 않고 입력창만 note.title(이미 onChange로 ""가 된 상태)로 되돌아가, 탭/사이드바
+    // 제목이 빈 문자열로 굳어버리는 문제가 있었다.
+    const t = titleDraft.trim() || "제목 없음";
+    if (t !== note.title) onTitleChange(note.id, t);
+    setTitleDraft(t);
     setIsEditingTitle(false);
     if (focusBody) {
       // 제목 input이 사라지는 렌더 이후에 포커스해야 실제로 적용됨.
@@ -219,9 +225,10 @@ export default function EditorPanel({
   }
 
   const isEdit = mode === "edit";
-  /* 사이드바 노트 드래그는 빈 패널/빈 새 노트 위에서 "교체"로 동작한다. 하지만 탭 드래그는
-     본문이 비어있는 새 노트라도 실제 탭이 존재하므로, 항상 분할 이동이 가능해야 한다. */
+  /* 사이드바 노트 드래그는 빈 패널/빈 새 노트 위에서 "교체"로 동작한다.
+     탭 드래그는 분할이 허용된 워크스페이스에서만 분할 이동이 가능하다. */
   const isEmptyTarget = !note || note.content.trim() === "";
+  const shouldReplace = dragPayload?.kind === "note" && (isEmptyTarget || !canSplitWorkspace);
   /* 문서 제목은 본문 H1보다 한 단계 더 커야 한다(위계 구분, Obsidian/Notion 스타일) — 고정 px가
      아니라 note.typography(전역 배율/h1 개별 오버라이드)로 계산된 실제 H1 px 기준으로 1.2배를
      잡아서, 사용자가 본문 글씨를 키워도(Ctrl+휠/서식 패널) 제목이 H1에 따라잡히지 않는다. */
@@ -265,6 +272,7 @@ export default function EditorPanel({
         onTogglePinTab={onTogglePinTab}
         onSplitTabRight={onSplitTabRight}
         onSplitTabDown={onSplitTabDown}
+        canSplitWorkspace={canSplitWorkspace}
         onContextToggle={onContextToggle}
         contextOpen={contextOpen}
       />
@@ -450,36 +458,45 @@ export default function EditorPanel({
           className="absolute inset-0 z-10"
           style={{ top: 36 }}
           onDragOver={(e) => {
+            if (dragPayload.kind === "tab" && !canSplitWorkspace) {
+              e.dataTransfer.dropEffect = "none";
+              setHoverZone(null);
+              return;
+            }
+
             e.preventDefault();
             // dropEffect는 드래그 시작 쪽이 선언한 effectAllowed와 맞아야 한다 — 사이드바 노트는
             // "copy"(NotesExplorer/FolderTree), 탭은 "copyMove"(TabBar)로 선언되어 있다. 여기서
             // isEmptyTarget 여부와 무관하게 항상 같은 규칙으로 맞춰야 일부 브라우저에서 drop이
             // 무시되는 effectAllowed/dropEffect 불일치를 피할 수 있다.
             e.dataTransfer.dropEffect = dragPayload.kind === "note" ? "copy" : "move";
-            const shouldReplace = dragPayload.kind === "note" && isEmptyTarget;
             if (shouldReplace) {
               if (hoverZone !== "replace") setHoverZone("replace");
-            } else {
+            } else if (canSplitWorkspace) {
               const z = getZone(e);
               if (z !== hoverZone) setHoverZone(z);
+            } else if (hoverZone !== null) {
+              setHoverZone(null);
             }
           }}
           onDragLeave={() => setHoverZone(null)}
           onDrop={(e) => {
             e.preventDefault();
             setHoverZone(null);
-            const shouldReplace = dragPayload.kind === "note" && isEmptyTarget;
             if (shouldReplace) {
               onReplaceActiveTab(dragPayload.noteId);
+              return;
+            }
+            if (!canSplitWorkspace) {
+              return;
+            }
+            const zone = getZone(e);
+            if (dragPayload.kind === "tab") {
+              // 탭을 본문에 드롭 → 새 분할을 만들면서 원본 패널에서는 제거한다(이동, 복제 아님).
+              // 본문이 비어있는 새 노트도 실제 탭이므로 분할 이동 대상이다.
+              onMoveTabToSplit(dragPayload.paneId, dragPayload.tabId, dragPayload.noteId, zone);
             } else {
-              const zone = getZone(e);
-              if (dragPayload.kind === "tab") {
-                // 탭을 본문에 드롭 → 새 분할을 만들면서 원본 패널에서는 제거한다(이동, 복제 아님).
-                // 본문이 비어있는 새 노트도 실제 탭이므로 분할 이동 대상이다.
-                onMoveTabToSplit(dragPayload.paneId, dragPayload.tabId, dragPayload.noteId, zone);
-              } else {
-                onDrop(zone, dragPayload.noteId);
-              }
+              onDrop(zone, dragPayload.noteId);
             }
           }}
         >

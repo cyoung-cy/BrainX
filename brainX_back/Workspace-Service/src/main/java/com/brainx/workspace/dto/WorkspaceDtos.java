@@ -50,16 +50,16 @@ public final class WorkspaceDtos {
                                       Map<String, Object> conflict) {
     }
 
-    public record NoteDraftSaveRequest(String title, @NotNull String markdown, @NotNull Integer baseVersion,
-                                       @NotNull Instant clientSavedAt) {
+    public record NoteDraftSaveRequest(String title, @NotNull String markdown, String folderId,
+                                       @NotNull Integer baseVersion, @NotNull Instant clientSavedAt) {
     }
 
     public record NoteDraftSaveData(String noteId, String actorType, Instant savedAt,
                                     Instant expiresAt, String status) {
     }
 
-    public record NoteDraftData(String noteId, String actorType, String title, String markdown, Integer baseVersion,
-                                Instant clientSavedAt, Instant savedAt, Instant expiresAt) {
+    public record NoteDraftData(String noteId, String actorType, String title, String markdown, String folderId,
+                                Integer baseVersion, Instant clientSavedAt, Instant savedAt, Instant expiresAt) {
     }
 
     public record NoteDraftListData(List<NoteDraftData> drafts) {
@@ -118,7 +118,7 @@ public final class WorkspaceDtos {
     public record FolderPatchRequest(String name, String parentFolderId) {
     }
 
-    public record FolderDeleteRequest(@NotBlank String childNoteAction, String targetFolderId) {
+    public record DeleteFolderData(List<String> deletedFolderIds, List<String> deletedNoteIds, Instant deletedAt) {
     }
 
     public record TagsSuggestionData(List<TagSuggestionItem> tags) {

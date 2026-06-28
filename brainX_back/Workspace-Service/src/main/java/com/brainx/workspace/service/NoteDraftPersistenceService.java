@@ -27,6 +27,9 @@ public class NoteDraftPersistenceService {
     @Transactional
     public NoteDraftClaimData claimGuestDrafts(String userId, String guestId) {
         Actor guest = new Actor(ActorType.GUEST, guestId);
+        // 폴더 생성은 guest도 막혀있지 않아 Postgres에 guestId 소유로 남아있을 수 있다 — note
+        // draft 승계와 같은 트랜잭션에서 폴더 소유권도 함께 옮긴다.
+        workspaceService.reassignGuestFolders(guestId, userId);
         List<ClaimedNoteDraft> claimed = new ArrayList<>();
         for (NoteDraftData draft : noteDraftService.listDrafts(guest).drafts()) {
             ClaimedNoteDraft note = workspaceService.persistDraft(userId, draft);

@@ -110,7 +110,7 @@ public class WorkspaceService {
         Note note = noteRepository.findByNoteIdAndUserId(draft.noteId(), userId).orElse(null);
         if (note == null) {
             String noteId = noteRepository.existsById(draft.noteId()) ? Ids.note() : draft.noteId();
-            note = new Note(noteId, userId, title, markdown, null, List.of(), now);
+            note = new Note(noteId, userId, title, markdown, draft.folderId(), List.of(), now);
             noteRepository.save(note);
             eventPublisher.publish("NoteCreated", userId, payload(
                     "noteId", note.getNoteId(),
@@ -121,7 +121,7 @@ public class WorkspaceService {
                     "version", note.getVersion()
             ));
         } else {
-            note.applyDraft(title, markdown, now);
+            note.applyDraft(title, markdown, draft.folderId(), now);
             eventPublisher.publish("NoteContentSaved", userId, Map.of(
                     "noteId", note.getNoteId(),
                     "userId", userId,
@@ -245,6 +245,17 @@ public class WorkspaceService {
                 .toList());
     }
 
+    /** guest draft claim 시 폴더 구조도 함께 승계한다 — 노트와 달리 폴더 생성은 actor 제약이
+        없어 guest도 Postgres에 폴더를 만들 수 있는데, claim이 Redis note draft만 옮기고 폴더는
+        그대로 guestId 소유로 남아있던 gap을 메운다. */
+    @Transactional
+    public int reassignGuestFolders(String fromUserId, String toUserId) {
+        List<Folder> folders = folderRepository.findByUserIdOrderByNameAsc(fromUserId);
+        Instant now = Instant.now();
+        folders.forEach(folder -> folder.reassignOwner(toUserId, now));
+        return folders.size();
+    }
+
     public FolderData createFolder(String userId, FolderCreateRequest request) {
         Instant now = Instant.now();
         Folder folder = new Folder(Ids.folder(), userId, request.name(), request.parentFolderId(), now);
@@ -269,33 +280,52 @@ public class WorkspaceService {
         return folderData(folder);
     }
 
-    public Void deleteFolder(String userId, String folderId, FolderDeleteRequest request) {
-        if (!"MOVE".equalsIgnoreCase(request.childNoteAction()) && !"TRASH".equalsIgnoreCase(request.childNoteAction())) {
-            throw new WorkspaceException(HttpStatus.BAD_REQUEST, "INVALID_CHILD_NOTE_ACTION", "childNoteAction must be MOVE or TRASH.");
+    /** 폴더 삭제는 더 이상 "부모로 승격"하지 않고 하위 폴더/노트를 전부 cascade 삭제한다
+        (orphan folder/note를 만들지 않기 위한 정책 변경). mode는 노트 삭제와 동일한 의미:
+        trash=복구 가능한 소프트 삭제, permanent=완전 삭제. 폴더 자체는 소프트 삭제 개념이 없어
+        항상 행을 지운다. */
+    public DeleteFolderData deleteFolder(String userId, String folderId, String mode) {
+        if (!"trash".equalsIgnoreCase(mode) && !"permanent".equalsIgnoreCase(mode)) {
+            throw new WorkspaceException(HttpStatus.BAD_REQUEST, "INVALID_DELETE_MODE", "Delete mode must be trash or permanent.");
         }
         folder(userId, folderId);
-        List<Note> children = noteRepository.findByUserIdAndFolderIdAndDeletedFalse(userId, folderId);
-        if ("TRASH".equalsIgnoreCase(request.childNoteAction())) {
-            children.forEach(note -> note.trash(Instant.now()));
+        Set<String> folderIds = collectDescendantFolderIds(userId, folderId);
+        List<Note> notes = noteRepository.findByUserIdAndFolderIdIn(userId, folderIds);
+        Instant now = Instant.now();
+        if ("permanent".equalsIgnoreCase(mode)) {
+            noteRepository.deleteAll(notes);
         } else {
-            children.forEach(note -> note.moveToFolder(request.targetFolderId(), Instant.now()));
+            notes.forEach(note -> note.trash(now));
         }
-        folderRepository.deleteById(folderId);
+        folderRepository.deleteAllById(folderIds);
+        List<String> noteIds = notes.stream().map(Note::getNoteId).toList();
         eventPublisher.publish("FolderDeleted", userId, payload(
-                "folderId", folderId,
                 "userId", userId,
-                "childNoteAction", request.childNoteAction(),
-                "targetFolderId", request.targetFolderId()
+                "folderIds", List.copyOf(folderIds),
+                "mode", mode,
+                "noteIds", noteIds
         ));
-        if (!children.isEmpty()) {
-            eventPublisher.publish("NotesMoved", userId, payload(
-                    "userId", userId,
-                    "noteIds", children.stream().map(Note::getNoteId).toList(),
-                    "sourceFolderId", folderId,
-                    "targetFolderId", request.targetFolderId()
-            ));
+        return new DeleteFolderData(List.copyOf(folderIds), noteIds, now);
+    }
+
+    /** folderId 자신과 그 모든 하위(중첩 포함) 폴더 id를 모은다. */
+    private Set<String> collectDescendantFolderIds(String userId, String folderId) {
+        List<Folder> allFolders = folderRepository.findByUserIdOrderByNameAsc(userId);
+        Set<String> result = new HashSet<>();
+        result.add(folderId);
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Folder candidate : allFolders) {
+                if (candidate.getParentFolderId() != null
+                        && result.contains(candidate.getParentFolderId())
+                        && !result.contains(candidate.getFolderId())) {
+                    result.add(candidate.getFolderId());
+                    changed = true;
+                }
+            }
         }
-        return null;
+        return result;
     }
 
     @Transactional(readOnly = true)
