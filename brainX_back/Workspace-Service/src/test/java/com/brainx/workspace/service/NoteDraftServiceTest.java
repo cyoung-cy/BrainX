@@ -5,6 +5,8 @@ import com.brainx.workspace.security.CurrentActor.Actor;
 import com.brainx.workspace.security.CurrentActor.ActorType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -15,9 +17,11 @@ import java.time.Instant;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,7 +37,7 @@ class NoteDraftServiceTest {
         NoteDraftService service = new NoteDraftService(redisTemplate, new ObjectMapper());
         ReflectionTestUtils.setField(service, "draftTtlSeconds", 60L);
 
-        NoteDraftSaveRequest request = new NoteDraftSaveRequest("Draft title", "hello draft", 3, Instant.parse("2026-06-25T00:00:00Z"));
+        NoteDraftSaveRequest request = new NoteDraftSaveRequest("Draft title", "hello draft", null, 3, Instant.parse("2026-06-25T00:00:00Z"));
 
         var userResult = service.saveDraft(new Actor(ActorType.USER, "usr_123"), "note_1", request);
         var guestResult = service.saveDraft(new Actor(ActorType.GUEST, "gst_abc"), "note_1", request);
@@ -137,23 +141,60 @@ class NoteDraftServiceTest {
     @Test
     void userIdsWithDirtyDraftsReturnsUserIdsFromDirtyKeys() {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-        when(redisTemplate.keys("workspace:note:dirty:user:*")).thenReturn(Set.of(
+        Cursor<String> cursor = mock(Cursor.class);
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, true, true, false);
+        when(cursor.next()).thenReturn(
                 "workspace:note:dirty:user:usr_1",
-                "workspace:note:dirty:user:usr_2"
-        ));
+                "workspace:note:dirty:user:usr_2",
+                "workspace:note:dirty:user:usr_1"
+        );
 
         NoteDraftService service = new NoteDraftService(redisTemplate, new ObjectMapper());
 
-        assertThat(service.userIdsWithDirtyDrafts()).containsExactlyInAnyOrder("usr_1", "usr_2");
+        assertThat(service.userIdsWithDirtyDrafts()).containsExactly("usr_1", "usr_2");
+        var scanOptionsCaptor = forClass(ScanOptions.class);
+        verify(redisTemplate).scan(scanOptionsCaptor.capture());
+        assertThat(scanOptionsCaptor.getValue().getPattern()).isEqualTo("workspace:note:dirty:user:*");
+        assertThat(scanOptionsCaptor.getValue().getCount()).isEqualTo(500L);
+        verify(redisTemplate, never()).keys(any(String.class));
+        verify(cursor).close();
     }
 
     @Test
-    void userIdsWithDirtyDraftsReturnsEmptyListWhenNoDirtyKeysExist() {
+    void userIdsWithDirtyDraftsReturnsEmptyListWhenScanHasNoDirtyKeys() {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-        when(redisTemplate.keys("workspace:note:dirty:user:*")).thenReturn(null);
+        Cursor<String> cursor = mock(Cursor.class);
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
 
         NoteDraftService service = new NoteDraftService(redisTemplate, new ObjectMapper());
 
         assertThat(service.userIdsWithDirtyDrafts()).isEmpty();
+        var scanOptionsCaptor = forClass(ScanOptions.class);
+        verify(redisTemplate).scan(scanOptionsCaptor.capture());
+        assertThat(scanOptionsCaptor.getValue().getPattern()).isEqualTo("workspace:note:dirty:user:*");
+        assertThat(scanOptionsCaptor.getValue().getCount()).isEqualTo(500L);
+        verify(redisTemplate, never()).keys(any(String.class));
+        verify(cursor).close();
+    }
+
+    @Test
+    void userIdsWithDirtyDraftsSkipsMalformedKeysWithUnexpectedSegments() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        Cursor<String> cursor = mock(Cursor.class);
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, true, true, false);
+        when(cursor.next()).thenReturn(
+                "workspace:note:dirty:user:usr_1",
+                "workspace:note:dirty:user:usr_2:extra",
+                "workspace:note:dirty:user:usr_3"
+        );
+
+        NoteDraftService service = new NoteDraftService(redisTemplate, new ObjectMapper());
+
+        assertThat(service.userIdsWithDirtyDrafts()).containsExactly("usr_1", "usr_3");
+        verify(redisTemplate).scan(any(ScanOptions.class));
+        verify(cursor).close();
     }
 }

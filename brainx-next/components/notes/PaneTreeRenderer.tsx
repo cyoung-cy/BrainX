@@ -47,6 +47,7 @@ interface Props {
   onCloseAllTabs: (paneId: string) => void;
   onTogglePinTab: (paneId: string, tabId: string) => void;
   onSplitTab: (paneId: string, tabId: string, direction: "horizontal" | "vertical") => void;
+  hasSplitPanels: boolean;
   contextOpen?: boolean;
   onContextToggle?: () => void;
 }
@@ -85,16 +86,25 @@ export default function PaneTreeRenderer({
   onCloseAllTabs,
   onTogglePinTab,
   onSplitTab,
+  hasSplitPanels,
   contextOpen,
   onContextToggle,
 }: Props) {
   if (node.type === "leaf") {
     const tabsState = paneTabs[node.id];
+    const tabs = tabsState?.tabs ?? [];
     const activeTabId = tabsState?.activeTabId ?? "";
-    const fallbackTab: Tab = { id: activeTabId, kind: "note", noteId: node.noteId };
-    const activeTab: Tab = tabsState?.tabs.find((t) => t.id === activeTabId) ?? fallbackTab;
-    const note = activeTab.kind === "note" ? notes.find((n) => n.id === activeTab.noteId) ?? notes[0] : null;
-    const tabs = tabsState?.tabs ?? [fallbackTab];
+    // 탭이 0개(또는 activeTabId가 가리키는 탭이 없음)이면 진짜로 "이 패널에 열린 노트가 없다"는
+    // 뜻이다 — node.noteId(leaf가 들고 있던 마지막 노트 id, 닫힌 뒤에도 정리가 안 됐을 수 있음)로
+    // 되돌아가면 안 된다. 그러면 탭을 다 닫았는데도 직전에 보던 노트 내용이 그대로 남아있는
+    // 것처럼 보인다. fallbackTab의 noteId는 항상 빈 문자열로 둬서, 아래 note 조회가 반드시
+    // null이 되게 한다(EditorPanel이 빈 패널 화면을 그린다).
+    const fallbackTab: Tab = { id: activeTabId, kind: "note", noteId: "" };
+    const activeTab: Tab = tabs.find((t) => t.id === activeTabId) ?? fallbackTab;
+    // 노트를 찾지 못하면 notes[0](임의의 다른 노트)로 빠지지 않고 null로 둔다 — EditorPanel은
+    // note===null일 때 이미 "노트 없음" 복구 화면을 그리도록 되어 있다.
+    const note = activeTab.kind === "note" ? notes.find((n) => n.id === activeTab.noteId) ?? null : null;
+    const canSplitPane = hasSplitPanels || tabs.length > 1;
 
     return (
       <EditorPanel
@@ -139,6 +149,7 @@ export default function PaneTreeRenderer({
         onTogglePinTab={(tabId) => onTogglePinTab(node.id, tabId)}
         onSplitTabRight={(tabId) => onSplitTab(node.id, tabId, "horizontal")}
         onSplitTabDown={(tabId) => onSplitTab(node.id, tabId, "vertical")}
+        canSplitWorkspace={canSplitPane}
         contextOpen={contextOpen}
         onContextToggle={onContextToggle}
       />
@@ -186,6 +197,7 @@ export default function PaneTreeRenderer({
               onCloseAllTabs={onCloseAllTabs}
               onTogglePinTab={onTogglePinTab}
               onSplitTab={onSplitTab}
+              hasSplitPanels={hasSplitPanels}
               contextOpen={contextOpen}
               onContextToggle={onContextToggle}
             />

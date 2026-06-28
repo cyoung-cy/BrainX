@@ -727,7 +727,11 @@ html.light .aurora b {
      기존 비율(1.8배)을 그대로 유지 — 본문 font-size가 바뀌면 em 단위라 자동으로 같이 커진다 */
   font-size: var(--note-fs-h1, 1.8em);
   font-weight: 700;
-  margin-top: 1.4em;
+  /* margin-top이 1.4em(heading 자신의 큰 폰트 기준이라 실제로는 본문의 2배 이상)이라, "# "를
+     입력해 그 줄이 heading으로 바뀌는 순간 지금 쓰던 줄 자체가 그 여백만큼 아래로 밀려 보이는
+     문제가 있었다(아래쪽 여백은 그대로 둬도 문제 없음 — 그 줄이 움직이는 게 아니라 다음
+     내용이 밀리는 것뿐이라 자연스러움). Notion처럼 위쪽은 좁게 좁힌다. */
+  margin-top: 0.3em;
   margin-bottom: 0.2em;
   color: rgb(var(--txt));
   letter-spacing: -0.02em;
@@ -736,7 +740,7 @@ html.light .aurora b {
 .tiptap-note-content .ProseMirror h2 {
   font-size: var(--note-fs-h2, 1.35em);
   font-weight: 600;
-  margin-top: 1.2em;
+  margin-top: 0.3em;
   margin-bottom: 0.15em;
   color: rgb(var(--txt));
 }
@@ -744,7 +748,7 @@ html.light .aurora b {
 .tiptap-note-content .ProseMirror h3 {
   font-size: var(--note-fs-h3, 1.1em);
   font-weight: 600;
-  margin-top: 1em;
+  margin-top: 0.25em;
   color: rgb(var(--txt));
 }
 

@@ -31,6 +31,7 @@ interface TabBarProps {
   onTogglePinTab: (tabId: string) => void;
   onSplitTabRight: (tabId: string) => void;
   onSplitTabDown: (tabId: string) => void;
+  canSplitWorkspace: boolean;
   onContextToggle?: () => void;
   contextOpen?: boolean;
 }
@@ -62,6 +63,7 @@ export default function TabBar({
   onTogglePinTab,
   onSplitTabRight,
   onSplitTabDown,
+  canSplitWorkspace,
   onContextToggle,
   contextOpen,
 }: TabBarProps) {
@@ -259,6 +261,7 @@ export default function TabBar({
           onOpenNewWindow={() => window.open(`/notes/${contextMenu.noteId}`, "_blank")}
           onSplitRight={() => onSplitTabRight(contextMenu.tabId)}
           onSplitDown={() => onSplitTabDown(contextMenu.tabId)}
+          canSplitWorkspace={canSplitWorkspace}
         />
       )}
     </div>
