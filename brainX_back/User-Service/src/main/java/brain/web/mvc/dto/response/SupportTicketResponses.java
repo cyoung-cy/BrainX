@@ -26,7 +26,7 @@ public class SupportTicketResponses {
                     .status(toTicketStatus(inquiry.getStatus()))
                     .createdAt(inquiry.getCreatedAt())
                     .updatedAt(inquiry.getUpdatedAt())
-                    .hasNewReply(false)
+                    .hasNewReply(inquiry.getReplyContent() != null && !inquiry.getReplyContent().isBlank())
                     .build();
         }
     }
@@ -57,19 +57,31 @@ public class SupportTicketResponses {
             List<SupportMessageData> messages
     ) {
         public static SupportTicketDetailData from(SupportInquiry inquiry) {
+            List<SupportMessageData> messages = new java.util.ArrayList<>();
+            messages.add(SupportMessageData.builder()
+                    .messageId(inquiry.getInquiryId() + "_msg_001")
+                    .senderType("USER")
+                    .content(inquiry.getContent())
+                    .attachments(List.of())
+                    .createdAt(inquiry.getCreatedAt())
+                    .build());
+            if (inquiry.getReplyContent() != null && !inquiry.getReplyContent().isBlank()) {
+                messages.add(SupportMessageData.builder()
+                        .messageId(inquiry.getInquiryId() + "_reply_001")
+                        .senderType("ADMIN")
+                        .content(inquiry.getReplyContent())
+                        .attachments(List.of())
+                        .createdAt(inquiry.getRepliedAt() != null ? inquiry.getRepliedAt() : inquiry.getUpdatedAt())
+                        .build());
+            }
+
             return SupportTicketDetailData.builder()
                     .ticketId(inquiry.getInquiryId())
                     .category(inquiry.getCategory())
                     .subject(inquiry.getTitle())
                     .status(toTicketStatus(inquiry.getStatus()))
                     .createdAt(inquiry.getCreatedAt())
-                    .messages(List.of(SupportMessageData.builder()
-                            .messageId(inquiry.getInquiryId() + "_msg_001")
-                            .senderType("USER")
-                            .content(inquiry.getContent())
-                            .attachments(List.of())
-                            .createdAt(inquiry.getCreatedAt())
-                            .build()))
+                    .messages(messages)
                     .build();
         }
     }

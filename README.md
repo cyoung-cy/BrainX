@@ -467,12 +467,12 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 일괄 처리 | POST | `/api/v1/admin/users/bulk-actions` | 플랜 변경/정지/재활성화/탈퇴/공지 |
 | 문의 목록 | GET | `/api/v1/admin/support/tickets` | 관리자 문의 목록 |
 | 문의 상세/배정 | GET/PATCH | `/api/v1/admin/support/tickets/{ticketId}` | 담당자/상태 변경, `SupportTicketUpdated` |
-| 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 답변 등록, `SupportTicketReplied`, `NotificationRequested` |
-| 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 매출/구독/실패 집계 |
-| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장 |
+| 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 로그인 관리자 이름으로 답변 등록, 사용자 문의 상세의 ADMIN 메시지로 표시 |
+| 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 이번 달 매출/활성 유료 구독/MRR/실패 건 집계 |
+| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 간편결제/신용카드/체크카드 결제수단 |
 | 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded` |
 | 결제 재시도 | POST | `/api/v1/admin/billing/payments/{paymentId}/retry` | Commerce 결제 재시도, `PaymentSucceeded`/`PaymentFailed` |
-| 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장 |
+| 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장. 무료 플랜은 제외하고 유료 구독만 표시 |
 | 결제 실패 추적 | GET | `/api/v1/admin/billing/payment-failures` | Commerce 실패 사유/재시도 횟수 |
 | 요금제 목록 | GET | `/api/v1/admin/billing/plans` | Commerce 플랜 카탈로그 |
 | 요금제 가격 | PATCH | `/api/v1/admin/billing/plans/{planId}` | Commerce 플랜 가격 변경, `PlanPriceChanged` |
@@ -575,6 +575,9 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 - **Workspace-Service**: Gateway가 전달한 `X-User-Id`/`X-Guest-Id`를 `CurrentActor`로 해석하는 흐름을 기준으로 전환 중입니다. Redis 도입 전까지 직접 Workspace-Service를 호출하는 개발 편의 경로에는 `dev-test-user` fallback이 남아 있으나, 정식 흐름은 Gateway를 통해 회원은 USER actor, 비회원은 GUEST actor로 처리합니다.
 - **Commerce-Service (신규, 2026-06-19 추가)**:
   - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
+  - **(2026-06-28 수정)** Toss confirm 성공 응답의 `method`, `card.cardType`, `easyPay.provider`를 저장해 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `간편결제`, `신용카드`, `체크카드` 계열로 표시합니다. Admin-Service 사용자 목록의 플랜은 Commerce 활성 구독을 우선하고 성공 결제 이력으로 보정합니다.
+  - **(2026-06-28 수정)** 관리자 결제 관리의 구독 현황은 유료 구독만 표시하고, 사용자 표시는 시스템 문자열이 아니라 사람 이름으로 읽히는 표시명만 노출하도록 정리했습니다.
+  - **(2026-06-28 수정)** 관리자 문의 답변은 로그인 관리자 이름으로 User-Service에 저장되며, 관리자 콘솔에는 "관리자명에 의해 답변 완료"와 답변 본문이 표시되고 사용자 마이페이지 문의 상세에는 ADMIN 메시지로 표시됩니다.
   - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.
   - **TEMP**: 결제/등급 변경 동작 확인용으로 Pro 500원, Max 1000원으로 가격을 임시로 낮춰 두었습니다 (`Commerce-Service/src/main/java/.../service/PlanDataSeeder.java`). 실제 요금으로 전환 전 되돌려야 합니다.
   - **TEMP**: `application.yml`의 Toss `client-key`/`secret-key`는 Toss Payments 공식 문서에 공개된 샌드박스 테스트 키입니다. 실서비스 전환 시 가맹점 본인의 키로 교체해야 합니다.

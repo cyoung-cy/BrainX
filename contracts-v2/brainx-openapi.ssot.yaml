@@ -11727,6 +11727,15 @@ components:
         hasNewReply:
           type: boolean
           nullable: true
+        replyContent:
+          type: string
+          nullable: true
+          description: Admin reply content. Included for admin ticket views and omitted or null on unresolved tickets.
+        repliedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the admin reply was completed.
       required:
       - ticketId
       - status
@@ -14647,15 +14656,20 @@ components:
       additionalProperties: false
     AdminBillingSummaryData:
       type: object
+      description: Monthly billing summary computed from Commerce-Service ledger data.
       properties:
         monthlyRevenue:
           type: number
+          description: Successful checkout revenue for the current month.
         activeSubscriptions:
           type: integer
+          description: Active paid subscriptions only. Free-tier subscriptions are excluded.
         mrr:
           type: number
+          description: Monthly recurring revenue from active paid subscriptions.
         failedPaymentCount:
           type: integer
+          description: Failed checkout sessions in the current month.
       required:
       - monthlyRevenue
       - activeSubscriptions
@@ -14681,6 +14695,7 @@ components:
           type: string
         method:
           type: string
+          description: User-selected payment method resolved from the payment provider response, such as 간편결제, 신용카드, or 체크카드. This is not the provider name.
         status:
           $ref: '#/components/schemas/AdminPaymentStatus'
         paidAt:
@@ -14737,6 +14752,7 @@ components:
       additionalProperties: false
     AdminSubscriptionRow:
       type: object
+      description: Paid subscription rows shown in the admin console subscription tab. Free-tier records are excluded.
       properties:
         subscriptionId:
           type: string
@@ -14744,6 +14760,7 @@ components:
           type: string
         userName:
           type: string
+          description: User display name shown in the admin console. System-generated identifiers must not be surfaced here.
         initial:
           type: string
         planId:
@@ -15246,6 +15263,7 @@ components:
           type: string
         method:
           type: string
+          description: User-selected payment method resolved from the payment provider response, such as 간편결제, 신용카드, or 체크카드. This is not the provider name.
         status:
           type: string
         paidAt:

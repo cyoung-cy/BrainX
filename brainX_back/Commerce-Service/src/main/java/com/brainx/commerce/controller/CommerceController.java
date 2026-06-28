@@ -3,6 +3,7 @@ package com.brainx.commerce.controller;
 import com.brainx.commerce.dto.ApiResponse;
 import com.brainx.commerce.dto.CommerceDtos.*;
 import com.brainx.commerce.service.CommerceService;
+import com.brainx.commerce.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,9 @@ public class CommerceController {
     private static final String DEV_TEST_USER_ID = "dev-test-user";
 
     private static String resolveUserId(Authentication auth) {
+        if (auth != null && auth.getPrincipal() instanceof AuthenticatedUser user) {
+            return user.userId();
+        }
         return auth != null ? auth.getName() : DEV_TEST_USER_ID;
     }
 

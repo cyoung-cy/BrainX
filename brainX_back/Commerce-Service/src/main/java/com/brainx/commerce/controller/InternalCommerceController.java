@@ -15,7 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,9 +35,14 @@ public class InternalCommerceController {
 
     @GetMapping("/billing/summary")
     public ResponseEntity<Map<String, Object>> getBillingSummary() {
-        long activeSubscriptions = subscriptionRepository.countByStatus(Subscription.Status.ACTIVE);
+        ZoneId zone = ZoneId.systemDefault();
+        YearMonth currentMonth = YearMonth.now(zone);
+        LocalDateTime monthStart = currentMonth.atDay(1).atStartOfDay();
+        LocalDateTime nextMonthStart = currentMonth.plusMonths(1).atDay(1).atStartOfDay();
 
-        List<Subscription> activeSubs = subscriptionRepository.findByStatus(Subscription.Status.ACTIVE);
+        List<Subscription> activeSubs = subscriptionRepository.findByStatus(Subscription.Status.ACTIVE).stream()
+                .filter(subscription -> subscription.getPlanId() != null && !"free".equalsIgnoreCase(subscription.getPlanId()))
+                .toList();
         Map<String, Long> planPrices = planRepository.findAll().stream()
                 .collect(Collectors.toMap(Plan::getPlanId, Plan::getPrice, (p1, p2) -> p1));
 
@@ -42,16 +50,20 @@ public class InternalCommerceController {
                 .mapToLong(sub -> planPrices.getOrDefault(sub.getPlanId(), 0L))
                 .sum();
 
-        List<CheckoutSession> succeededSessions = checkoutSessionRepository.findByStatusOrderByConfirmedAtDesc(CheckoutSession.Status.SUCCEEDED);
+        List<CheckoutSession> succeededSessions = checkoutSessionRepository.findByStatusOrderByConfirmedAtDesc(CheckoutSession.Status.SUCCEEDED).stream()
+                .filter(session -> isInCurrentMonth(session.getConfirmedAt() != null ? session.getConfirmedAt() : session.getCreatedAt(), zone, currentMonth))
+                .toList();
         long monthlyRevenueVal = succeededSessions.stream()
                 .mapToLong(CheckoutSession::getAmount)
                 .sum();
 
-        long failedPaymentCount = checkoutSessionRepository.findByStatusOrderByConfirmedAtDesc(CheckoutSession.Status.FAILED).size();
+        long failedPaymentCount = checkoutSessionRepository.findByStatusOrderByConfirmedAtDesc(CheckoutSession.Status.FAILED).stream()
+                .filter(session -> isInCurrentMonth(session.getConfirmedAt() != null ? session.getConfirmedAt() : session.getCreatedAt(), zone, currentMonth))
+                .count();
 
         return ResponseEntity.ok(Map.of(
                 "monthlyRevenue", BigDecimal.valueOf(monthlyRevenueVal),
-                "activeSubscriptions", (int) activeSubscriptions,
+                "activeSubscriptions", activeSubs.size(),
                 "mrr", BigDecimal.valueOf(mrrVal),
                 "failedPaymentCount", (int) failedPaymentCount
         ));
@@ -125,7 +137,7 @@ public class InternalCommerceController {
     public ResponseEntity<Map<String, Object>> retryPayment(@PathVariable String paymentId) {
         CheckoutSession session = checkoutSessionRepository.findById(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentId));
-        session.markSucceeded(session.getPaymentKey(), "retried-" + session.getPaymentId(), Instant.now());
+        session.markSucceeded(session.getPaymentKey(), "retried-" + session.getPaymentId(), session.getPaymentMethod(), Instant.now());
         return ResponseEntity.ok(Map.of("paymentId", paymentId, "status", "RETRY_SUCCESS", "acceptedAt", Instant.now().toString()));
     }
 
@@ -169,7 +181,9 @@ public class InternalCommerceController {
                     session.getPlanId(),
                     BigDecimal.valueOf(session.getAmount()),
                     session.getCurrency(),
-                    session.getProvider().name(),
+                    session.getPaymentMethod() != null && !session.getPaymentMethod().isBlank()
+                            ? session.getPaymentMethod()
+                            : session.getProvider().name(),
                     session.getStatus().name(),
                     session.getConfirmedAt() != null ? session.getConfirmedAt() : session.getCreatedAt(),
                     session.getFailureReason()
@@ -243,5 +257,13 @@ public class InternalCommerceController {
                     Instant.now()
             );
         }
+    }
+
+    private boolean isInCurrentMonth(Instant instant, ZoneId zone, YearMonth month) {
+        if (instant == null) {
+            return false;
+        }
+        LocalDateTime value = LocalDateTime.ofInstant(instant, zone);
+        return YearMonth.from(value).equals(month);
     }
 }

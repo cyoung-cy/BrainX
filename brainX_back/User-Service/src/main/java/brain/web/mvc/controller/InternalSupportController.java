@@ -75,7 +75,9 @@ public class InternalSupportController {
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found: " + ticketId));
 
         String replyContent = body.get("body");
-        ticket.reply(replyContent, "adm_001", "김운영");
+        String adminUserId = body.getOrDefault("adminUserId", "adm_001");
+        String adminName = body.getOrDefault("adminName", "김운영");
+        ticket.reply(replyContent, adminUserId, adminName);
 
         return ResponseEntity.ok(Map.of("replyId", "RPL-" + System.currentTimeMillis()));
     }

@@ -164,8 +164,7 @@ public class AdminService {
             usersFromService = Collections.emptyList();
         }
 
-        Map<String, String> userPlans = listSubscriptionsInternal().stream()
-                .collect(Collectors.toMap(InternalSubscriptionDto::userId, InternalSubscriptionDto::planId, (left, right) -> left));
+        Map<String, String> userPlans = resolveUserPlans();
 
         List<AdminUserRow> rows = usersFromService.stream()
                 .map(user -> mapUserRow(user, userPlans.getOrDefault(user.userId(), "free")))
@@ -186,11 +185,7 @@ public class AdminService {
             throw new IllegalArgumentException("User not found: " + userId);
         }
 
-        String userPlan = listSubscriptionsInternal().stream()
-                .filter(sub -> sub.userId().equals(userId))
-                .map(InternalSubscriptionDto::planId)
-                .findFirst()
-                .orElse("free");
+        String userPlan = resolveUserPlans().getOrDefault(userId, "free");
 
         AdminUserRow row = mapUserRow(user, userPlan);
         return new AdminUserDetailData(
@@ -322,14 +317,18 @@ public class AdminService {
     }
 
     @Transactional
-    public SupportReplyData replyTicket(String ticketId, SupportReplyCreateRequest request) {
-        SupportReplyData reply = new SupportReplyData("RPL-" + UUID.randomUUID(), ticketId, "adm_001", OffsetDateTime.now());
+    public SupportReplyData replyTicket(String ticketId, SupportReplyCreateRequest request, String adminUserId, String adminName) {
+        SupportReplyData reply = new SupportReplyData("RPL-" + UUID.randomUUID(), ticketId, adminUserId, OffsetDateTime.now());
         recordOperation("SUPPORT_TICKET_REPLY", "SUPPORT_TICKET", ticketId, "replyId=" + reply.replyId());
 
         userRestClient.post()
                 .uri("/internal/v1/support/tickets/{ticketId}/replies", ticketId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("body", request.body()))
+                .body(Map.of(
+                        "body", request.body(),
+                        "adminUserId", adminUserId,
+                        "adminName", adminName
+                ))
                 .retrieve()
                 .toBodilessEntity();
 
@@ -362,10 +361,19 @@ public class AdminService {
             payments = Collections.emptyList();
         }
 
-        Map<String, InternalUserDto> usersById = userMap();
+        Map<String, InternalUserDto> usersById = new java.util.HashMap<>(userMap());
 
         List<AdminPaymentRow> rows = payments.stream()
-                .map(payment -> mapPayment(payment, usersById.get(payment.userId())))
+                .sorted(Comparator.comparing(InternalPaymentDto::paidAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .collect(Collectors.toMap(
+                        payment -> normalizedUserId(payment.userId()) + "|" + valueOr(payment.planId(), "") + "|" + (payment.amount() != null ? payment.amount().toPlainString() : "0"),
+                        payment -> payment,
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .map(payment -> mapPayment(payment, resolveUser(normalizedUserId(payment.userId()), usersById)))
                 .filter(payment -> status == null || payment.status() == status)
                 .filter(payment -> planId == null || payment.planId() == planId)
                 .toList();
@@ -411,10 +419,11 @@ public class AdminService {
         List<InternalSubscriptionDto> subscriptions = listSubscriptionsInternal();
         Map<String, PlanDataDto> plansById = listPlansInternal().stream()
                 .collect(Collectors.toMap(PlanDataDto::planId, plan -> plan, (left, right) -> left));
-        Map<String, InternalUserDto> usersById = userMap();
+        Map<String, InternalUserDto> usersById = new java.util.HashMap<>(userMap());
 
         List<AdminSubscriptionRow> rows = subscriptions.stream()
-                .map(subscription -> mapSubscription(subscription, plansById.get(subscription.planId()), usersById.get(subscription.userId())))
+                .filter(subscription -> !"free".equalsIgnoreCase(subscription.planId()))
+                .map(subscription -> mapSubscription(subscription, plansById.get(subscription.planId()), resolveUser(normalizedUserId(subscription.userId()), usersById)))
                 .toList();
 
         return new AdminSubscriptionsData(rows);
@@ -440,10 +449,10 @@ public class AdminService {
             failures = Collections.emptyList();
         }
 
-        Map<String, InternalUserDto> usersById = userMap();
+        Map<String, InternalUserDto> usersById = new java.util.HashMap<>(userMap());
 
         List<AdminPaymentFailureRow> rows = failures.stream()
-                .map(failure -> mapPaymentFailure(failure, usersById.get(failure.userId())))
+                .map(failure -> mapPaymentFailure(failure, resolveUser(normalizedUserId(failure.userId()), usersById)))
                 .toList();
 
         return new AdminPaymentFailuresData(rows);
@@ -523,6 +532,34 @@ public class AdminService {
                 .toList();
     }
 
+    private Map<String, String> resolveUserPlans() {
+        Map<String, String> plansByUser = listSubscriptionsInternal().stream()
+                .filter(subscription -> subscription.status() == null
+                        || "ACTIVE".equals(subscription.status())
+                        || "FREE".equals(subscription.status()))
+                .collect(Collectors.toMap(
+                        InternalSubscriptionDto::userId,
+                        InternalSubscriptionDto::planId,
+                        this::preferHigherPlan
+                ));
+
+        List<InternalPaymentDto> payments = commerceRestClient.get()
+                .uri("/internal/v1/billing/payments")
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<InternalPaymentDto>>() {});
+
+        if (payments != null) {
+            payments.stream()
+                    .filter(payment -> payment.userId() != null)
+                    .filter(payment -> payment.planId() != null)
+                    .filter(payment -> payment.failureReason() == null || payment.failureReason().isBlank())
+                    .filter(payment -> "SUCCEEDED".equals(payment.status()) || "SUCCESS".equals(payment.status()))
+                    .forEach(payment -> plansByUser.merge(payment.userId(), payment.planId(), this::preferHigherPlan));
+        }
+
+        return plansByUser;
+    }
+
     private AdminUserRow mapUserRow(InternalUserDto user, String rawPlanId) {
         PlanId planId = toPlanId(rawPlanId);
         ManagedUserStatus userStatus = toManagedStatus(user.status());
@@ -546,11 +583,12 @@ public class AdminService {
     }
 
     private AdminPaymentRow mapPayment(InternalPaymentDto payment, InternalUserDto user) {
+        String userId = normalizedUserId(payment.userId());
         return new AdminPaymentRow(
                 payment.paymentId(),
                 payment.transactionId(),
-                payment.userId(),
-                displayName(user, payment.userId()),
+                userId,
+                displayName(user, userId),
                 toPlanId(payment.planId()),
                 payment.amount(),
                 payment.currency(),
@@ -561,11 +599,12 @@ public class AdminService {
     }
 
     private AdminSubscriptionRow mapSubscription(InternalSubscriptionDto subscription, PlanDataDto plan, InternalUserDto user) {
-        String userName = displayName(user, subscription.userId());
+        String userId = normalizedUserId(subscription.userId());
+        String userName = displayName(user, userId);
         String initial = userName.isBlank() ? "U" : userName.substring(0, 1);
         return new AdminSubscriptionRow(
                 subscription.subscriptionId(),
-                subscription.userId(),
+                userId,
                 userName,
                 initial,
                 toPlanId(subscription.planId()),
@@ -577,10 +616,11 @@ public class AdminService {
     }
 
     private AdminPaymentFailureRow mapPaymentFailure(InternalPaymentFailureDto failure, InternalUserDto user) {
+        String userId = normalizedUserId(failure.userId());
         return new AdminPaymentFailureRow(
                 failure.paymentId(),
-                failure.userId(),
-                displayName(user, failure.userId()),
+                userId,
+                displayName(user, userId),
                 toPlanId(failure.planId()),
                 failure.amount(),
                 failure.currency(),
@@ -613,8 +653,22 @@ public class AdminService {
                 ticket.assigneeAdminUserId(),
                 ticket.assigneeAdminName(),
                 ticket.urgent(),
-                valueOr(ticket.body(), "")
+                valueOr(ticket.body(), ""),
+                ticket.replyContent(),
+                ticket.repliedAt() != null ? ticket.repliedAt().atZone(ZoneId.systemDefault()).toOffsetDateTime() : null
         );
+    }
+
+    private String preferHigherPlan(String left, String right) {
+        return planRank(right) > planRank(left) ? right : left;
+    }
+
+    private int planRank(String planId) {
+        return switch (toPlanId(planId)) {
+            case max -> 3;
+            case pro -> 2;
+            case free -> 1;
+        };
     }
 
     private Map<String, InternalUserDto> userMap() {
@@ -628,6 +682,29 @@ public class AdminService {
         }
 
         return users.stream().collect(Collectors.toMap(InternalUserDto::userId, user -> user, (left, right) -> left));
+    }
+
+    private InternalUserDto resolveUser(String userId, Map<String, InternalUserDto> usersById) {
+        String normalized = normalizedUserId(userId);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        InternalUserDto cached = usersById.get(normalized);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            InternalUserDto fetched = userRestClient.get()
+                    .uri("/internal/v1/users/{userId}", normalized)
+                    .retrieve()
+                    .body(InternalUserDto.class);
+            if (fetched != null) {
+                usersById.put(normalized, fetched);
+            }
+            return fetched;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private int countActiveUsers() {
@@ -703,13 +780,39 @@ public class AdminService {
         if (user == null) {
             return fallbackId;
         }
-        if (user.nickname() != null && !user.nickname().isBlank()) {
+        if (user.nickname() != null && !user.nickname().isBlank() && !looksLikeSystemNickname(user.nickname())) {
             return user.nickname();
         }
         if (user.email() != null && !user.email().isBlank()) {
-            return user.email();
+            String localPart = user.email().contains("@") ? user.email().substring(0, user.email().indexOf('@')) : user.email();
+            if (!localPart.isBlank()) {
+                return localPart;
+            }
         }
         return fallbackId;
+    }
+
+    private String normalizedUserId(String rawUserId) {
+        if (rawUserId == null || rawUserId.isBlank()) {
+            return "";
+        }
+        if (rawUserId.startsWith("AuthenticatedUser[userId=") && rawUserId.endsWith("]")) {
+            return rawUserId.substring("AuthenticatedUser[userId=".length(), rawUserId.length() - 1);
+        }
+        if (rawUserId.startsWith("UsernamePasswordAuthenticationToken[") && rawUserId.contains("principal=")) {
+            int start = rawUserId.indexOf("principal=") + "principal=".length();
+            int end = rawUserId.indexOf(",", start);
+            if (end > start) {
+                return rawUserId.substring(start, end);
+            }
+        }
+        return rawUserId;
+    }
+
+    private boolean looksLikeSystemNickname(String value) {
+        return value.startsWith("AuthenticatedUser[")
+                || value.startsWith("UsernamePasswordAuthenticationToken[")
+                || value.contains("userId=");
     }
 
     private OffsetDateTime toOffset(LocalDateTime value, OffsetDateTime fallback) {
