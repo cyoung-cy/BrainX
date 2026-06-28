@@ -62,6 +62,10 @@ BrainX/
 
 `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 개발 기준에서 제외합니다. 백엔드 개발은 아래 MSA 서비스 경계를 기준으로 진행합니다.
 
+### 로컬 Kafka
+
+`brainX_back/docker-compose.yml`에는 로컬 Kafka broker가 들어 있습니다. 호스트에서는 `localhost:9092`, 컨테이너 내부에서는 `kafka:9092`로 접근합니다. 1차 Kafka 범위에서는 기존 동기 흐름을 그대로 유지하고, 이벤트 발행은 서비스 플래그로 켜는 방식입니다. `BRAINX_EVENTS_OUTBOX_ENABLED=true`이면 Workspace-Service와 Commerce-Service가 outbox row를 Kafka로 흘리고, `BRAINX_EVENTS_PRODUCER_ENABLED=true`이면 Ingestion-Service가 `IntegrationConnected`, `ImportJobCompleted`, `ImportJobFailed`를 발행합니다. `BRAINX_EVENTS_CONSUMER_ENABLED=true`이면 Intelligence-Service가 workspace note 이벤트, `CaptureReceived`, note link 이벤트, folder 이벤트, `UserDeletionRequested`를 소비합니다. 작업 요약은 [`brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md`](brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md)에 둡니다. `ImportJobRequested`는 앞으로의 async worker 흐름에서 다룹니다.
+
 ## Frontend: brainx-next
 
 `brainx-next`는 BrainX의 현재 주력 프론트엔드입니다. Next.js App Router 기반이며, 실제 백엔드 연결 전에도 localStorage와 mock seed data로 주요 사용 흐름을 체험할 수 있게 구성되어 있습니다.
@@ -156,7 +160,7 @@ BrainX/
 | --- | --- | --- | --- |
 | User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계 | 구현 중 (포트 8080) |
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | API shell 구현 중 (포트 8085) |
-| AI-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 미구현 |
+| Intelligence-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 구현 중 (포트 8086) |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
@@ -531,17 +535,17 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 - `brainX_front`는 이전 Vite/React 구현으로 보이며, 신규 개발 기준은 `brainx-next`를 우선합니다.
 - `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 문서와 개발 계획에서는 제외합니다.
 - DB는 PostgreSQL 16.x를 기준으로 하지만, 현재 `User-Service`에는 H2/MySQL/PostgreSQL runtime dependency가 함께 들어 있습니다. 서비스별 운영 DB 확정 시 정리합니다.
-- **Ingestion-Service SSOT 불일치 현황 (2026-06-19 기준)**:
+- **Ingestion-Service SSOT/구현 정합성 현황 (2026-06-28 기준)**:
   - 실제 구현 prefix는 `/api/v1/`로 SSOT와 일치 (컨트롤러 `@RequestMapping("/api/v1/imports")` 직접 확인).
   - `GET /api/v1/imports/notion/pages` 엔드포인트가 SSOT에 없었으나 추가 구현됨 → SSOT에 반영 완료.
-  - Import job이 SSOT 계약상 async이나 현재 동기 처리 중. Kafka 이벤트(ImportJobRequested, ImportJobCompleted, IntegrationConnected) 미발행.
+  - Import job은 현재 구현 기준으로 동기 처리 중이며, `BRAINX_EVENTS_PRODUCER_ENABLED=true`일 때 완료/실패 결과를 `ImportJobCompleted`/`ImportJobFailed` Kafka 이벤트로도 발행합니다. `IntegrationConnected`도 Notion OAuth 저장 commit 이후 발행됩니다. `ImportJobRequested`는 async worker 기반 import로 전환할 때 도입합니다.
   - 노트 생성이 `bulkCreateNotesInternal` 대신 신규 `Workspace-Service`의 `POST /api/v1/notes`를 직접 호출 중 (구 `knowledge-workspace-service`가 아님). 정식 internal API 전환 필요.
   - `brainx-next` import 화면은 `lib/ingestion-api.ts`로 실제 API와 연동되어 있습니다 (더 이상 mock 아님). Notion OAuth는 팝업 + `postMessage` 방식.
   - **(2026-06-23 수정)** Notion 가져오기 완료 후 노트가 `/editor-lab`(테스트 전용 데모)에만 추가되고 실제 `/notes` 화면에는 보이지 않던 배선 문제를 고쳤습니다. `components/utility/import-screen.tsx`가 가져온 노트를 `/notes/{noteId}`로 바로 라우팅하도록 변경했고, `app/(app)/notes/layout.tsx`의 초기 탭 판별 로직이 mock 시드 데이터(`getNoteById`)에만 의존하던 것을 `NEXT_PUBLIC_NOTES_USE_MOCK=false`(실 백엔드 모드)에서는 URL의 noteId를 그대로 신뢰하도록 고쳐, `NotesWorkspace`의 `listNotes()` 결과로 막 가져온 노트도 정상적으로 열립니다.
   - **TEMP**: 실제 로그인 연동 전까지 `/api/v1/imports/notion/**`, `/api/v1/imports/{importJobId}`(GET)를 인증 없이 허용하고(`SecurityConfig` permitAll), 인증이 없으면 고정 `dev-test-user`로 동작하도록 임시 우회되어 있습니다. 코드에 `TEMP` 주석으로 표시. 실제 로그인 연동 완료 후 제거 필요.
   - **(2026-06-23 추가 수정, 계약 변경 없음)**: Notion 텍스트 멘션(`@페이지`)이 마크다운 변환 시 통째로 누락되던 버그를 고쳐 `[[제목]]` 위키링크로 변환되게 함(`NotionApiService.richText`). 하위 페이지 백링크 등록(`POST /api/v1/notes/{id}/links`)이 SSOT에 이미 required로 정의된 `createIfMissing` 필드를 빠뜨려 매번 400으로 실패하던 버그 수정(`WorkspaceApiClient.createNoteLink`) — SSOT는 원래부터 맞았고 구현만 따라가지 못했던 경우. Notion OAuth 콜백이 React Strict Mode로 중복 호출되어 같은 code로 토큰 교환을 두 번 시도하던 레이스 컨디션 수정(`app/notion-callback/page.tsx`). 가져온 노트가 `/notes` 화면에 새로고침 없이는 반영되지 않던 문제를 `brainx:notes-refresh` 커스텀 이벤트로 해결(`NotesWorkspace.tsx`, `import-screen.tsx`).
   - **(2026-06-23 신규 구현, SSOT 계약 변경 포함)**: `/import` 화면의 "콘텐츠 가져오기"(ZIP 드래그&드롭)와 "파일 기반 가져오기"(CSV/PDF/Text/Markdown/HTML/Word 버튼)가 그동안 프런트엔드 `setTimeout` 가짜 진행률만 보여주고 실제로는 아무것도 가져오지 않던 문제를 실제 동작하도록 구현했습니다.
-    - 백엔드(Ingestion-Service): `Asset` 엔티티/로컬 디스크 스토리지(`AssetStorageService`, `ASSET_STORAGE_DIR` 환경변수)와 `AssetController`(`POST /api/v1/assets/upload-sessions`, `PUT .../binary`, `POST .../complete`)를 신규 구현. `ContentConverter`가 TXT/MD/HTML(Jsoup)/CSV(commons-csv → 마크다운 표)/PDF(PDFBox)/DOCX(POI)를 마크다운/텍스트로 변환하고, ZIP은 내부 항목을 모두 풀어 각각 노트로 만듭니다. `ImportJob.SourceType`에 `FILE` 추가, 신규 `POST /api/v1/imports/file/jobs` 추가(단일 파일 → 노트 1개, 또는 ZIP이면 항목별 노트). 기존 `POST /api/v1/imports/obsidian/jobs`는 "Job을 PENDING으로 저장만 하고 끝"이던 스텁을 실제 ZIP 추출 로직으로 교체(Obsidian vault 한정이 아니라 범용 ZIP을 지원하도록 일반화). 모두 Notion 가져오기와 동일하게 동기 처리(Kafka 이벤트 미발행)입니다.
+    - 백엔드(Ingestion-Service): `Asset` 엔티티/로컬 디스크 스토리지(`AssetStorageService`, `ASSET_STORAGE_DIR` 환경변수)와 `AssetController`(`POST /api/v1/assets/upload-sessions`, `PUT .../binary`, `POST .../complete`)를 신규 구현. `ContentConverter`가 TXT/MD/HTML(Jsoup)/CSV(commons-csv → 마크다운 표)/PDF(PDFBox)/DOCX(POI)를 마크다운/텍스트로 변환하고, ZIP은 내부 항목을 모두 풀어 각각 노트로 만듭니다. `ImportJob.SourceType`에 `FILE` 추가, 신규 `POST /api/v1/imports/file/jobs` 추가(단일 파일 → 노트 1개, 또는 ZIP이면 항목별 노트). 기존 `POST /api/v1/imports/obsidian/jobs`는 "Job을 PENDING으로 저장만 하고 끝"이던 스텁을 실제 ZIP 추출 로직으로 교체(Obsidian vault 한정이 아니라 범용 ZIP을 지원하도록 일반화). 모두 Notion 가져오기와 동일하게 동기 처리하며, Kafka producer 활성화 시 완료/실패 이벤트를 추가 발행합니다.
     - SSOT(`brainx-openapi.ssot.yaml`): `createAssetUploadSession`/`completeAssetUpload`의 `x-implementation-status: not-implemented`를 제거하고 실제 동작을 설명하는 `x-implementation-note`로 교체. 사전 서명 URL을 위한 외부 스토리지(S3 등)가 아직 없어 `uploadUrl`이 자체 바이너리 업로드 경로를 가리키므로, 신규 `PUT /api/v1/assets/upload-sessions/{uploadSessionId}/binary` 엔드포인트를 SSOT에 추가했습니다. 신규 `POST /api/v1/imports/file/jobs` + `FileImportJobCreateRequest` 스키마 추가. `InternalNoteBulkCreateRequest.source` enum에 `FILE_IMPORT` 추가. `brainx-asyncapi.ssot.yaml`의 `ImportJobRequestedPayload.source` enum에 `FILE` 추가.
     - 프런트엔드(`brainx-next`): `lib/ingestion-api.ts`에 `uploadAndImportFile()`(업로드 세션 생성 → 바이너리 업로드 → 완료 처리 → ZIP이면 obsidian job, 아니면 file job 호출 → 완료까지 폴링)를 추가하고, `components/utility/import-screen.tsx`의 드롭존/파일 타입 버튼이 실제로 이 함수를 호출해 결과 노트로 라우팅하도록 수정. 데모 세션(`isNotionDemoSession()`)은 실제 자산 업로드 백엔드가 없으므로 기존 가짜 진행률 시뮬레이션을 그대로 유지합니다.
     - `getAsset`(`GET /api/v1/assets/{assetId}`)은 이후 PDF 뷰어 작업(바로 아래 항목)에서 구현되었습니다. `/api/v1/conversions*`는 여전히 범위 밖이라 `x-implementation-status: not-implemented`로 남아 있습니다.

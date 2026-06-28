@@ -10,12 +10,12 @@
 - `vaults/durable/INDEX.md`: 반복되는 agent-process correction과 재사용 가능한 개선 규칙을 기록합니다. 같은 지적이 반복되거나 repo-local 운영 규칙으로 남길 내용이 생겼을 때 읽습니다.
 - `src/main/resources/contracts/README.md`: provider OpenAPI, consumed OpenAPI, AsyncAPI 슬라이스의 역할과 재생성 command를 설명합니다. 이 서비스가 호출하거나 소비하는 외부 계약을 확인할 때 읽습니다.
 - `docs/domain/knowledge-intelligence-domain-flow.md`: 사람을 위한 도메인 문서입니다. 도메인 스토리텔링, 이벤트 스토밍, 컨텍스트 맵 관점으로 서비스 흐름을 설명할 때 참고합니다.
-- `docs/domain/consumed-events-domain-map.md`: `AI-Service`가 consumer로 받는 AsyncAPI 이벤트와 Intelligence 도메인 기능 연결을 설명할 때 참고합니다.
+- `docs/domain/consumed-events-domain-map.md`: `Intelligence-Service`가 consumer로 받는 AsyncAPI 이벤트와 Intelligence 도메인 기능 연결을 설명할 때 참고합니다.
 - `docs/domain/style-profile-input-direction.md`: 사람을 위한 UX/도메인 문서입니다. 사용자 문체 설정 입력 방식, `StyleProfile` 정규화 방향, 대화 말투와 결과물 문체 분리를 논의할 때 참고합니다.
 - `docs/technical/conditional-on-bean.md`: Spring Boot `@ConditionalOnBean`의 의미와 Qdrant adapter 적용 맥락을 확인할 때 참고합니다.
 - `docs/technical/ai-model-pricing-and-usage.md`: AI 모델 catalog 비용 필드, availability 결합, token usage/cost estimate 기록 정책을 확인할 때 참고합니다.
 - `docs/technical/consumed-event-contract-alignment.md`: 구현된 consumed event handler와 AsyncAPI SSOT의 topic/payload 일치 수준을 확인할 때 참고합니다.
-- `docs/technical/consumed-events-implementation-checkpoints.md`: `AI-Service`가 consumer로 받는 이벤트별 구현 체크포인트를 확인할 때 참고합니다.
+- `docs/technical/consumed-events-implementation-checkpoints.md`: `Intelligence-Service`가 consumer로 받는 이벤트별 구현 체크포인트를 확인할 때 참고합니다.
 - `docs/technical/connection-api.md`: public 노트 연결 추천 API, 내부 `NoteAutoLinkUseCase` 재사용 방식, `default` document group 제한, usage/event 발행 경계를 확인할 때 참고합니다.
 - `docs/technical/external-search.md`: OpenAI Responses `web_search` 기반 외부 자료 검색 port, CLI 실행 방법, batch quality capture, RAG chat router 연결 방향을 확인할 때 참고합니다.
 - `docs/technical/frontend-ai-context-management.md`: `brainx-next`의 프론트 주도 AI context 관리, `clientContext`/`noteScope` 분리, RightSidebar chat과 editor inline assist context 조립 정책, inline assist quality CLI를 확인할 때 참고합니다.
@@ -47,9 +47,9 @@
 - `brainx-next` 프론트 요구를 기준으로 Intelligence Service API 구현 범위를 확인할 때는 `vaults/agents/frontend-integration.md`를 함께 읽습니다.
 - 기능 구현 순서 질문은 `vaults/agents/domain-implementation-order.md`를 기준으로 답합니다.
 - 도메인 흐름이나 기획자와 공유할 설명은 `docs/domain/knowledge-intelligence-domain-flow.md`를 기준으로 답합니다.
-- AI-Service가 consumer로 받는 이벤트와 도메인 기능 연결은 `docs/domain/consumed-events-domain-map.md`를 기준으로 답합니다.
+- Intelligence-Service가 consumer로 받는 이벤트와 도메인 기능 연결은 `docs/domain/consumed-events-domain-map.md`를 기준으로 답합니다.
 - 구현된 consumed event와 AsyncAPI SSOT의 일치 여부는 `docs/technical/consumed-event-contract-alignment.md`를 기준으로 답합니다.
-- AI-Service consumer 이벤트별 구현 체크포인트는 `docs/technical/consumed-events-implementation-checkpoints.md`를 기준으로 답합니다.
+- Intelligence-Service consumer 이벤트별 구현 체크포인트는 `docs/technical/consumed-events-implementation-checkpoints.md`를 기준으로 답합니다.
 - public 노트 연결 추천 API와 내부 자동 연결 기능의 관계는 `docs/technical/connection-api.md`를 기준으로 답합니다.
 - 문체 설정 UX나 `StyleProfile` 입력 방향은 `docs/domain/style-profile-input-direction.md`를 기준으로 답합니다.
 - Spring Boot conditional bean 등록이나 Qdrant adapter 조건부 등록은 `docs/technical/conditional-on-bean.md`를 기준으로 답합니다.

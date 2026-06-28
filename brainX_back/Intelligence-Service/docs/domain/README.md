@@ -1,13 +1,15 @@
-# Domain Documentation
+# 도메인 문서
 
-이 디렉터리는 Intelligence Service를 기술 구조가 아니라 도메인 흐름으로 이해하기 위한 문서를 둔다.
+이 폴더에는 Intelligence-Service를 작업할 때 계속 볼 가치가 있는 도메인 메모만 남깁니다.
 
-- `knowledge-intelligence-domain-flow.md`: API 명세를 바탕으로 도메인 스토리텔링, 이벤트 스토밍, 컨텍스트 맵 관점에서 기능 흐름과 도메인 관계를 정리한다.
-- `consumed-events-domain-map.md`: `AI-Service`가 consumer로 받는 AsyncAPI 이벤트와 Intelligence 도메인 기능의 연결을 정리한다.
-- `style-profile-input-direction.md`: 사용자 문체 설정을 직관적으로 입력받고 구조화된 `StyleProfile`로 정규화하는 방향을 정리한다.
+## 남겨둘 문서
 
-## 작성 기준
+- `knowledge-intelligence-domain-flow.md`: 도메인 흐름, 스토리, context, event 연결
+- `consumed-events-domain-map.md`: Intelligence-Service가 소비하는 외부 이벤트와 도메인 의미
+- `style-profile-input-direction.md`: 스타일 프로필 입력 방향과 형태
 
-- 데이터베이스, framework, package, class, messaging 구현 같은 기술 세부사항은 다루지 않는다.
-- 사용자가 무엇을 하고, 지식이 어떤 상태로 바뀌며, 다음 도메인 행동이 무엇인지에 집중한다.
-- API 명세의 endpoint는 원천 사양으로만 참고하고, 본문은 가능한 한 비즈니스 언어로 표현한다.
+## Kafka 진행 요약
+
+작업 중인 Kafka 요약 문서는 아래입니다.
+
+- [brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md](../../../KAFKA_IMPLEMENTATION_SUMMARY.md)

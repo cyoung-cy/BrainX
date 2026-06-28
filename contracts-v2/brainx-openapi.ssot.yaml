@@ -4536,6 +4536,11 @@ paths:
       - IntegrationConnected
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: >
+        Current implementation stores the Notion integration account
+        synchronously. When BRAINX_EVENTS_PRODUCER_ENABLED=true,
+        Ingestion-Service publishes IntegrationConnected after the account
+        transaction commits.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4674,7 +4679,8 @@ paths:
         type: frontend
         description: Notion/Obsidian 가져오기 화면
       x-produces-events:
-      - ImportJobRequested
+      - ImportJobCompleted
+      - ImportJobFailed
       x-internal-sync-calls:
       - targetService: knowledge-workspace
         operationId: bulkCreateNotesInternal
@@ -4686,9 +4692,11 @@ paths:
         request thread (not truly async). Notes are created by calling legacy
         knowledge-workspace-service POST /v1/notes individually per page, not
         via bulkCreateNotesInternal. The 202 response already contains the final
-        COMPLETED or FAILED status. Kafka events (ImportJobRequested,
-        ImportJobCompleted) are not yet published. Migration to true async
-        processing and bulkCreateNotesInternal is planned.
+        COMPLETED or FAILED status. When BRAINX_EVENTS_PRODUCER_ENABLED=true,
+        Ingestion-Service publishes ImportJobCompleted or ImportJobFailed after
+        the import job transaction commits. ImportJobRequested is still planned
+        for the future async worker flow. Migration to true async processing and
+        bulkCreateNotesInternal is planned.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4762,7 +4770,8 @@ paths:
         type: frontend
         description: Notion/Obsidian 가져오기 화면
       x-produces-events:
-      - ImportJobRequested
+      - ImportJobCompleted
+      - ImportJobFailed
       x-internal-sync-calls:
       - targetService: knowledge-workspace
         operationId: bulkCreateNotesInternal
@@ -4770,9 +4779,12 @@ paths:
         required: true
       x-async-boundary: true
       x-implementation-note: >
-        현재 구현은 작업 레코드를 저장하고 status PENDING으로 202 응답을 즉시 반환한다.
-        실제 Obsidian ZIP 추출과 노트 생성은 아직 구현되지 않았으므로 작업은 PENDING 상태로 유지된다.
-        Kafka 이벤트(ImportJobRequested)는 발행하지 않는다.
+        Current implementation processes the ZIP import synchronously in the
+        request thread and returns the final COMPLETED or FAILED status. When
+        BRAINX_EVENTS_PRODUCER_ENABLED=true, Ingestion-Service publishes
+        ImportJobCompleted or ImportJobFailed after the import job transaction
+        commits. ImportJobRequested is still planned for the future async worker
+        flow.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:

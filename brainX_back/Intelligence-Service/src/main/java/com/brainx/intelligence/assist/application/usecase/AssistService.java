@@ -32,7 +32,7 @@ public class AssistService implements CreateInlineAssistUseCase, DecideAiSuggest
 
     static final String INLINE_ASSIST_CAPABILITY = "INLINE_ASSIST";
     static final String INLINE_ASSIST_FEATURE_ID = "inline-assist-chat";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String DEFAULT_LANGUAGE = "ko";
     private static final int MIN_SUMMARIZE_CONTEXT_CHARS = 80;
     private static final int MIN_CONTINUE_BEFORE_CHARS = 120;

@@ -59,7 +59,7 @@ public class ConnectionService implements CreateLinkSuggestionsUseCase, CreateBr
     static final String LINK_SUGGESTIONS_CAPABILITY = "LINK_SUGGESTIONS";
     static final String LINK_SUGGESTIONS_FEATURE_ID = "link-suggestions";
     static final String BRIDGE_CONCEPTS_FEATURE_ID = "bridge-concepts";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String STATUS_COMPLETED = "COMPLETED";
     private static final String STATUS_LIMIT_EXCEEDED = "LIMIT_EXCEEDED";
     private static final String STATUS_AI_UNAVAILABLE = "AI_UNAVAILABLE";
