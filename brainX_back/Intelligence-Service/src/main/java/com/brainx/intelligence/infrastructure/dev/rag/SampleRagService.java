@@ -33,7 +33,7 @@ public class SampleRagService {
 
     private static final int CONTEXT_SNIPPET_LENGTH = 1_200;
     private static final String RETRIEVAL_ONLY_MODEL = "none";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String RAG_CHAT_FEATURE_ID = "sample-rag-chat";
 
     private final SampleRagProperties properties;

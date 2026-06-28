@@ -18,6 +18,7 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService userDetailsService;
+    private final brain.web.mvc.service.UserLoginSessionService userLoginSessionService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -26,10 +27,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             String token = authorization.substring(7);
             if (jwtTokenProvider.isValid(token) && "access".equals(jwtTokenProvider.getTokenType(token))) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(jwtTokenProvider.getUserId(token));
+                String userId = jwtTokenProvider.getUserId(token);
+                String sessionId = jwtTokenProvider.getSessionId(token);
+                UserDetails userDetails = userDetailsService.loadUserByUsername(userId);
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                userLoginSessionService.touchSession(userId, sessionId, request);
             }
         }
         filterChain.doFilter(request, response);

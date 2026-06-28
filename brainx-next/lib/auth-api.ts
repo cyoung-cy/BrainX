@@ -102,6 +102,51 @@ export const DEMO_AUTH_SESSION: AuthSession = {
   next: "HOME"
 };
 
+let clientLocationPromise: Promise<string | null> | null = null;
+
+async function resolveClientLocation() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (!clientLocationPromise) {
+    clientLocationPromise = new Promise((resolve) => {
+      const fallback = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+      const finish = (value: string | null) => resolve(value || fallback);
+
+      if (!navigator.geolocation) {
+        finish(null);
+        return;
+      }
+
+      const timeout = window.setTimeout(() => finish(null), 1200);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          window.clearTimeout(timeout);
+          const { latitude, longitude } = position.coords;
+          finish(`${latitude.toFixed(5)},${longitude.toFixed(5)}`);
+        },
+        () => {
+          window.clearTimeout(timeout);
+          finish(null);
+        },
+        { enableHighAccuracy: false, timeout: 1000, maximumAge: 5 * 60 * 1000 }
+      );
+    });
+  }
+
+  return clientLocationPromise;
+}
+
+async function buildAuthHeaders() {
+  const clientLocation = await resolveClientLocation();
+  const headers: Record<string, string> = {};
+  if (clientLocation) {
+    headers["X-Client-Location"] = clientLocation;
+  }
+  return headers;
+}
+
 function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
   return response.message ?? response.error?.message ?? fallback;
 }
@@ -257,9 +302,10 @@ export async function signupWithEmail(payload: {
   consents: SignupConsents;
 }) {
   const data = await request<AuthSession>("/api/v1/auth/signup/email", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
+      method: "POST",
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
   const session = { ...data, provider: "email" as const };
   saveAuthSession(session);
   await claimGuestDraftsAfterAuth(session);
@@ -268,9 +314,10 @@ export async function signupWithEmail(payload: {
 
 export async function loginLocal(email: string, password: string) {
   const data = await request<AuthSession>("/api/v1/auth/login/local", {
-    method: "POST",
-    body: JSON.stringify({ email, password })
-  });
+      method: "POST",
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ email, password })
+    });
   const session = { ...data, provider: "email" as const };
   saveAuthSession(session);
   await claimGuestDraftsAfterAuth(session);
@@ -284,9 +331,10 @@ export async function logout() {
     return;
   }
   await request<null>("/api/v1/auth/logout", {
-    method: "POST",
-    body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
-  });
+      method: "POST",
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
+    });
   clearAuthSession();
 }
 
@@ -298,9 +346,10 @@ export async function refreshToken() {
     return demoSession;
   }
   const data = await request<AuthSession>("/api/v1/auth/token/refresh", {
-    method: "POST",
-    body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
-  });
+      method: "POST",
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ refreshToken: session?.refreshToken ?? "" })
+    });
   saveAuthSession({ ...session, ...data });
   return data;
 }
@@ -313,9 +362,10 @@ export async function getOAuthAuthorization(provider: OAuthProvider) {
 
 export async function completeOAuthLogin(provider: OAuthProvider, code: string, state: string) {
   const data = await request<OAuthCallbackData>(`/api/v1/auth/oauth/${provider}/callback`, {
-    method: "POST",
-    body: JSON.stringify({ code, state })
-  });
+      method: "POST",
+      headers: await buildAuthHeaders(),
+      body: JSON.stringify({ code, state })
+    });
   const session = { ...data, provider };
   saveAuthSession(session);
   await claimGuestDraftsAfterAuth(session);
@@ -331,6 +381,7 @@ export async function completeOnboarding(payload: {
 }) {
   const data = await request<AuthSession>("/api/v1/auth/onboarding/complete", {
     method: "POST",
+    headers: await buildAuthHeaders(),
     body: JSON.stringify(payload)
   });
   const session = { ...data, provider: "email" as const };

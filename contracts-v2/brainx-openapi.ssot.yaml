@@ -4551,6 +4551,11 @@ paths:
       - IntegrationConnected
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: >
+        Current implementation stores the Notion integration account
+        synchronously. When BRAINX_EVENTS_PRODUCER_ENABLED=true,
+        Ingestion-Service publishes IntegrationConnected after the account
+        transaction commits.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4689,7 +4694,8 @@ paths:
         type: frontend
         description: Notion/Obsidian 가져오기 화면
       x-produces-events:
-      - ImportJobRequested
+      - ImportJobCompleted
+      - ImportJobFailed
       x-internal-sync-calls:
       - targetService: knowledge-workspace
         operationId: bulkCreateNotesInternal
@@ -4701,9 +4707,11 @@ paths:
         request thread (not truly async). Notes are created by calling legacy
         knowledge-workspace-service POST /v1/notes individually per page, not
         via bulkCreateNotesInternal. The 202 response already contains the final
-        COMPLETED or FAILED status. Kafka events (ImportJobRequested,
-        ImportJobCompleted) are not yet published. Migration to true async
-        processing and bulkCreateNotesInternal is planned.
+        COMPLETED or FAILED status. When BRAINX_EVENTS_PRODUCER_ENABLED=true,
+        Ingestion-Service publishes ImportJobCompleted or ImportJobFailed after
+        the import job transaction commits. ImportJobRequested is still planned
+        for the future async worker flow. Migration to true async processing and
+        bulkCreateNotesInternal is planned.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4777,7 +4785,8 @@ paths:
         type: frontend
         description: Notion/Obsidian 가져오기 화면
       x-produces-events:
-      - ImportJobRequested
+      - ImportJobCompleted
+      - ImportJobFailed
       x-internal-sync-calls:
       - targetService: knowledge-workspace
         operationId: bulkCreateNotesInternal
@@ -4785,9 +4794,12 @@ paths:
         required: true
       x-async-boundary: true
       x-implementation-note: >
-        현재 구현은 작업 레코드를 저장하고 status PENDING으로 202 응답을 즉시 반환한다.
-        실제 Obsidian ZIP 추출과 노트 생성은 아직 구현되지 않았으므로 작업은 PENDING 상태로 유지된다.
-        Kafka 이벤트(ImportJobRequested)는 발행하지 않는다.
+        Current implementation processes the ZIP import synchronously in the
+        request thread and returns the final COMPLETED or FAILED status. When
+        BRAINX_EVENTS_PRODUCER_ENABLED=true, Ingestion-Service publishes
+        ImportJobCompleted or ImportJobFailed after the import job transaction
+        commits. ImportJobRequested is still planned for the future async worker
+        flow.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -8347,13 +8359,16 @@ paths:
       - id: web.admin.users
         type: frontend
         description: BrainX-Admin user detail drawer
-      x-internal-sync-calls:
-      - operationId: getUserAccountSnapshotInternal
-        targetService: User-Service
-        reason: account and latest login sessions
-      - operationId: getUserWorkspaceStatsInternal
-        targetService: Workspace-Service
-        reason: note count, storage usage and recent user activities
+        x-internal-sync-calls:
+        - operationId: getUserAccountSnapshotInternal
+          targetService: User-Service
+          reason: account and latest login summary
+        - operationId: getUserLoginSessionsInternal
+          targetService: User-Service
+          reason: Redis-backed login session history with IP, device and location
+        - operationId: getUserWorkspaceStatsInternal
+          targetService: Workspace-Service
+          reason: note count, storage usage and recent user activities
       - operationId: getUserSubscriptionSnapshotInternal
         targetService: Commerce-Service
         reason: current plan and subscription status
@@ -10073,6 +10088,56 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - serviceTokenAuth: []
+  /internal/v1/users/{userId}/login-sessions:
+    get:
+      operationId: getUserLoginSessionsInternal
+      summary: '[Internal] ?ъ슜??濡쒓렇??SSOT ?쒖쓽??議고쉶'
+      tags:
+      - Internal Service APIs
+      x-producer-service: identity-access
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-operations
+        type: internal-service
+        description: Admin-Service user detail drawer login session history
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: ?깃났
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InternalUserLoginSessionData'
+        '401':
+          description: ?몄쬆 ?꾩슂
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 李얠쓣 ???놁쓬
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: ?쒕쾭 ?대? ?ㅻ쪟
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
   /internal/v1/users/{userId}/status:
     patch:
       operationId: changeUserStatusInternal
@@ -11742,6 +11807,15 @@ components:
         hasNewReply:
           type: boolean
           nullable: true
+        replyContent:
+          type: string
+          nullable: true
+          description: Admin reply content. Included for admin ticket views and omitted or null on unresolved tickets.
+        repliedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when the admin reply was completed.
       required:
       - ticketId
       - status
@@ -14360,7 +14434,6 @@ components:
           nullable: true
         ipAddress:
           type: string
-          nullable: true
         userAgentHash:
           type: string
           nullable: true
@@ -14372,6 +14445,7 @@ components:
       required:
       - sessionId
       - device
+      - ipAddress
       - lastSeenAt
       - current
       additionalProperties: false
@@ -14681,15 +14755,20 @@ components:
       additionalProperties: false
     AdminBillingSummaryData:
       type: object
+      description: Monthly billing summary computed from Commerce-Service ledger data.
       properties:
         monthlyRevenue:
           type: number
+          description: Successful checkout revenue for the current month.
         activeSubscriptions:
           type: integer
+          description: Active paid subscriptions only. Free-tier subscriptions are excluded.
         mrr:
           type: number
+          description: Monthly recurring revenue from active paid subscriptions.
         failedPaymentCount:
           type: integer
+          description: Failed checkout sessions in the current month.
       required:
       - monthlyRevenue
       - activeSubscriptions
@@ -14715,6 +14794,7 @@ components:
           type: string
         method:
           type: string
+          description: User-selected payment method resolved from the payment provider response, such as 간편결제, 신용카드, or 체크카드. This is not the provider name.
         status:
           $ref: '#/components/schemas/AdminPaymentStatus'
         paidAt:
@@ -14771,6 +14851,7 @@ components:
       additionalProperties: false
     AdminSubscriptionRow:
       type: object
+      description: Paid subscription rows shown in the admin console subscription tab. Free-tier records are excluded.
       properties:
         subscriptionId:
           type: string
@@ -14778,6 +14859,7 @@ components:
           type: string
         userName:
           type: string
+          description: User display name shown in the admin console. System-generated identifiers must not be surfaced here.
         initial:
           type: string
         planId:
@@ -15136,6 +15218,28 @@ components:
         deletionReason:
           type: string
           nullable: true
+        lastLoginSessionId:
+          type: string
+          nullable: true
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastLoginDevice:
+          type: string
+          nullable: true
+        lastLoginLocation:
+          type: string
+          nullable: true
+        lastLoginIpAddress:
+          type: string
+          nullable: true
+        lastLoginUserAgentHash:
+          type: string
+          nullable: true
+        lastLoginCurrent:
+          type: boolean
+          nullable: true
       required:
       - userId
       - email
@@ -15143,6 +15247,33 @@ components:
       - status
       - createdAt
       - updatedAt
+      additionalProperties: false
+    InternalUserLoginSessionData:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        device:
+          type: string
+        location:
+          type: string
+          nullable: true
+        ipAddress:
+          type: string
+        userAgentHash:
+          type: string
+          nullable: true
+        lastSeenAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      required:
+      - sessionId
+      - device
+      - ipAddress
+      - lastSeenAt
+      - current
       additionalProperties: false
     InternalUserStatusChangeRequest:
       type: object
@@ -15280,6 +15411,7 @@ components:
           type: string
         method:
           type: string
+          description: User-selected payment method resolved from the payment provider response, such as 간편결제, 신용카드, or 체크카드. This is not the provider name.
         status:
           type: string
         paidAt:

@@ -49,6 +49,8 @@ public class CheckoutSession {
     private Status status;
     private String paymentKey;
     private String paymentId;
+    @Column(length = 80)
+    private String paymentMethod;
     private String failureReason;
     @Column(nullable = false)
     private Instant createdAt;
@@ -73,10 +75,11 @@ public class CheckoutSession {
         return now.isAfter(expiresAt);
     }
 
-    public void markSucceeded(String paymentKey, String paymentId, Instant now) {
+    public void markSucceeded(String paymentKey, String paymentId, String paymentMethod, Instant now) {
         this.status = Status.SUCCEEDED;
         this.paymentKey = paymentKey;
         this.paymentId = paymentId;
+        this.paymentMethod = paymentMethod;
         this.confirmedAt = now;
     }
 

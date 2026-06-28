@@ -25,6 +25,7 @@ import brain.web.mvc.repository.UserOnboardingProfileRepository;
 import brain.web.mvc.repository.UserRepository;
 import brain.web.mvc.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -64,6 +65,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final EmailVerificationService emailVerificationService;
+    private final UserLoginSessionService userLoginSessionService;
     private final RestClient.Builder restClientBuilder;
 
     private final Map<String, String> oauthStates = new ConcurrentHashMap<>();
@@ -130,7 +132,7 @@ public class AuthService {
     private String appleUserInfoUri;
 
     @Transactional
-    public AuthTokenResponse signup(EmailSignupRequest request) {
+    public AuthTokenResponse signup(EmailSignupRequest request, HttpServletRequest httpRequest) {
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "이미 가입된 이메일입니다.");
@@ -152,7 +154,7 @@ public class AuthService {
                 .build());
 
         saveConsents(user, request.consents());
-        return issueAuthTokenResponse(user, null);
+        return issueFreshAuthTokenResponse(user, null, httpRequest);
     }
 
     @Transactional(readOnly = true)
@@ -165,7 +167,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthTokenResponse login(LoginRequest request) {
+    public AuthTokenResponse login(LoginRequest request, HttpServletRequest httpRequest) {
         String email = normalizeEmail(request.email());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "존재하지 않는 이메일입니다."));
@@ -183,7 +185,7 @@ public class AuthService {
                     .build();
         }
 
-        return issueAuthTokenResponse(user, null);
+        return issueFreshAuthTokenResponse(user, null, httpRequest);
     }
 
     @Transactional
@@ -208,14 +210,18 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(String refreshToken) {
+    public void logout(String refreshToken, HttpServletRequest httpRequest) {
         RefreshToken token = refreshTokenRepository.findByToken(refreshToken)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Refresh Token이 올바르지 않습니다."));
+        String sessionId = jwtTokenProvider.getSessionId(refreshToken);
+        if (StringUtils.hasText(sessionId)) {
+            userLoginSessionService.endSession(token.getUser().getUserId(), sessionId, httpRequest);
+        }
         token.revoke();
     }
 
     @Transactional
-    public TokenRefreshResponse refresh(String refreshToken) {
+    public TokenRefreshResponse refresh(String refreshToken, HttpServletRequest httpRequest) {
         RefreshToken storedToken = refreshTokenRepository.findByToken(refreshToken)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Refresh Token이 만료되었습니다."));
 
@@ -224,9 +230,14 @@ public class AuthService {
         }
 
         storedToken.revoke();
-        RefreshToken nextRefreshToken = saveRefreshToken(storedToken.getUser(), jwtTokenProvider.createRefreshToken(storedToken.getUser()));
+        String sessionId = jwtTokenProvider.getSessionId(refreshToken);
+        if (!StringUtils.hasText(sessionId)) {
+            sessionId = createSessionId();
+        }
+        RefreshToken nextRefreshToken = saveRefreshToken(storedToken.getUser(), jwtTokenProvider.createRefreshToken(storedToken.getUser(), sessionId));
+        userLoginSessionService.touchSession(storedToken.getUser().getUserId(), sessionId, httpRequest);
         return TokenRefreshResponse.builder()
-                .accessToken(jwtTokenProvider.createAccessToken(storedToken.getUser()))
+                .accessToken(jwtTokenProvider.createAccessToken(storedToken.getUser(), sessionId))
                 .refreshToken(nextRefreshToken.getToken())
                 .tokenType("Bearer")
                 .build();
@@ -260,7 +271,7 @@ public class AuthService {
     }
 
     @Transactional
-    public OAuthCallbackResponse completeOAuth(String rawProvider, String code, String state) {
+    public OAuthCallbackResponse completeOAuth(String rawProvider, String code, String state, HttpServletRequest httpRequest) {
         String provider = normalizeProvider(rawProvider);
         String stateProvider = oauthStates.remove(state);
         if (!provider.equals(stateProvider)) {
@@ -273,7 +284,7 @@ public class AuthService {
                 .orElse(null);
 
         if (account != null) {
-            AuthTokenResponse token = issueAuthTokenResponse(account.getUser(), null);
+            AuthTokenResponse token = issueFreshAuthTokenResponse(account.getUser(), null, httpRequest);
             return OAuthCallbackResponse.builder()
                     .userId(account.getUser().getUserId())
                     .email(account.getUser().getEmail())
@@ -296,7 +307,7 @@ public class AuthService {
                     .providerUserId(profile.providerUserId())
                     .build());
 
-            AuthTokenResponse token = issueAuthTokenResponse(existingUser, null);
+            AuthTokenResponse token = issueFreshAuthTokenResponse(existingUser, null, httpRequest);
             return OAuthCallbackResponse.builder()
                     .userId(existingUser.getUserId())
                     .email(existingUser.getEmail())
@@ -330,7 +341,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthTokenResponse completeOnboarding(OnboardingCompleteRequest request) {
+    public AuthTokenResponse completeOnboarding(OnboardingCompleteRequest request, HttpServletRequest httpRequest) {
         PendingOAuthSignup pending = pendingOAuthSignups.remove(request.onboardingToken());
         if (pending == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "온보딩 정보가 만료되었습니다. 소셜 로그인을 다시 시도해 주세요.");
@@ -368,7 +379,7 @@ public class AuthService {
                 .interests(request.interests() == null ? List.of() : request.interests())
                 .build());
 
-        return issueAuthTokenResponse(user, null);
+        return issueFreshAuthTokenResponse(user, null, httpRequest);
     }
 
     public OAuthAccountInfo resolveOAuthAccount(String rawProvider, String code) {
@@ -377,9 +388,15 @@ public class AuthService {
         return new OAuthAccountInfo(provider, profile.providerUserId());
     }
 
-    private AuthTokenResponse issueAuthTokenResponse(User user, String next) {
-        String accessToken = jwtTokenProvider.createAccessToken(user);
-        RefreshToken refreshToken = saveRefreshToken(user, jwtTokenProvider.createRefreshToken(user));
+    private AuthTokenResponse issueFreshAuthTokenResponse(User user, String next, HttpServletRequest httpRequest) {
+        String sessionId = createSessionId();
+        String accessToken = jwtTokenProvider.createAccessToken(user, sessionId);
+        RefreshToken refreshToken = saveRefreshToken(user, jwtTokenProvider.createRefreshToken(user, sessionId));
+        userLoginSessionService.recordLoginSession(user.getUserId(), sessionId, httpRequest);
+        return buildAuthTokenResponse(user, next, accessToken, refreshToken);
+    }
+
+    private AuthTokenResponse buildAuthTokenResponse(User user, String next, String accessToken, RefreshToken refreshToken) {
         return AuthTokenResponse.builder()
                 .userId(user.getUserId())
                 .email(user.getEmail())
@@ -392,6 +409,10 @@ public class AuthService {
                 .requires2fa(false)
                 .next(next)
                 .build();
+    }
+
+    private String createSessionId() {
+        return "sess_" + UUID.randomUUID().toString().replace("-", "");
     }
 
     private RefreshToken saveRefreshToken(User user, String token) {

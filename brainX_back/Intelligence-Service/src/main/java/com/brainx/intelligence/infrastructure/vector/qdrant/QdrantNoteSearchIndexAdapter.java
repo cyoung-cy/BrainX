@@ -52,7 +52,7 @@ public class QdrantNoteSearchIndexAdapter implements NoteSearchIndexPort, NoteCh
     private static final String DOC_CONTENT = "doc_content";
     private static final String SOURCE_PATH = "sourcePath";
     private static final String SOURCE_FILENAME = "sourceFilename";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String INDEX_EMBEDDING_FEATURE_ID = "note-search-index-embedding";
     private static final String QUERY_EMBEDDING_FEATURE_ID = "note-search-query-embedding";
     private static final int MIN_SEARCH_TOP_K = 10;

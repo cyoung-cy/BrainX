@@ -141,7 +141,9 @@ public final class AdminDtos {
             String assigneeAdminUserId,
             String assigneeAdminName,
             boolean urgent,
-            String body
+            String body,
+            String replyContent,
+            OffsetDateTime repliedAt
     ) {}
     public record AdminSupportTicketsData(List<SupportTicketData> tickets) {}
     public record AdminSupportTicketData(SupportTicketData ticket) {}

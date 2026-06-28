@@ -39,7 +39,7 @@ import {
   type ConsentPayload,
   type MyProfile
 } from "@/lib/user-api";
-import { createSupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketPayload } from "@/lib/support-api";
+import { createSupportTicket, getMySupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketDetail, type SupportTicketPayload } from "@/lib/support-api";
 import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
@@ -1224,7 +1224,7 @@ function SupportPanel() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [inquiries, setInquiries] = useState<SupportTicket[]>([]);
-  const [selectedInquiry, setSelectedInquiry] = useState<SupportTicket | null>(null);
+  const [selectedInquiry, setSelectedInquiry] = useState<SupportTicketDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1256,7 +1256,6 @@ function SupportPanel() {
     try {
       const created = await createSupportTicket({ category, subject: nextTitle, body: nextContent });
       setInquiries((current) => [created, ...current]);
-      setSelectedInquiry(created);
       setTitle("");
       setContent("");
       pushToast("문의가 접수되었습니다.", "ok");
@@ -1274,8 +1273,18 @@ function SupportPanel() {
     return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
   };
 
+  const openInquiryDetail = async (ticket: SupportTicket) => {
+    try {
+      setSelectedInquiry(await getMySupportTicket(ticket.ticketId));
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : "문의 상세를 불러오지 못했습니다.", "err");
+    }
+  };
+
   if (selectedInquiry) {
     const status = statusLabel[selectedInquiry.status] ?? statusLabel.OPEN;
+    const userMessage = selectedInquiry.messages.find((message) => message.senderType === "USER");
+    const adminMessage = selectedInquiry.messages.find((message) => message.senderType === "ADMIN");
     return (
       <>
         <header className="mb-7">
@@ -1300,18 +1309,25 @@ function SupportPanel() {
 
         <section className="mb-7 rounded-[12px] border border-[#e5e0d8] px-5 py-5">
           <SectionLabel>문의 내용</SectionLabel>
-          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">문의가 정상적으로 접수되었습니다.</p>
+          <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#4d4944]">{userMessage?.content ?? "문의 내용을 불러오지 못했습니다."}</p>
         </section>
 
         <section className="rounded-[12px] border border-[#e5e0d8] px-5 py-5">
           <SectionLabel>관리자 답변</SectionLabel>
-          <div className="rounded-[10px] bg-[#f8f6f2] px-4 py-5 text-center">
-            <div className="mx-auto mb-3 grid h-9 w-9 place-items-center rounded-full bg-[#eeeafe] text-[#6c55f6]">
-              <Icon name="chat" size={17} />
+          {adminMessage ? (
+            <div className="rounded-[10px] bg-[#f0fdf4] px-4 py-4">
+              <div className="mb-2 text-[11px] font-bold text-[#168a4f]">{formatDate(adminMessage.createdAt)} 답변 완료</div>
+              <p className="whitespace-pre-wrap text-[13px] leading-6 text-[#36332f]">{adminMessage.content}</p>
             </div>
-            <p className="text-[13px] font-bold text-[#36332f]">아직 등록된 답변이 없습니다</p>
-            <p className="mt-1 text-[12px] text-[#8c877f]">추후 관리자 답글이 등록되면 이 영역에 표시됩니다.</p>
-          </div>
+          ) : (
+            <div className="rounded-[10px] bg-[#f8f6f2] px-4 py-5 text-center">
+              <div className="mx-auto mb-3 grid h-9 w-9 place-items-center rounded-full bg-[#eeeafe] text-[#6c55f6]">
+                <Icon name="chat" size={17} />
+              </div>
+              <p className="text-[13px] font-bold text-[#36332f]">아직 등록된 답변이 없습니다</p>
+              <p className="mt-1 text-[12px] text-[#8c877f]">추후 관리자 답글이 등록되면 이 영역에 표시됩니다.</p>
+            </div>
+          )}
         </section>
       </>
     );
@@ -1380,7 +1396,7 @@ function SupportPanel() {
                 <button
                   key={item.ticketId}
                   type="button"
-                  onClick={() => setSelectedInquiry(item)}
+                  onClick={() => openInquiryDetail(item)}
                   className="block w-full rounded-[12px] border border-[#e5e0d8] px-4 py-4 text-left transition hover:border-[#cfc7bb] hover:bg-[#fbfaf8]"
                 >
                   <div className="mb-2 flex items-start justify-between gap-3">
