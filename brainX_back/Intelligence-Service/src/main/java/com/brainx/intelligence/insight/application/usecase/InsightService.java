@@ -50,7 +50,7 @@ public class InsightService implements RequestInsightReportUseCase, GetInsightRe
 
     static final String INSIGHT_REPORT_CAPABILITY = "INSIGHT_REPORT";
     static final String INSIGHT_REPORT_FEATURE_ID = "insight-report-chat";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final int HARD_MAX_NOTES = 50;
     private static final int HARD_MAX_RECOMMENDATIONS = 20;
 

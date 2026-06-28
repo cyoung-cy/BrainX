@@ -54,14 +54,15 @@ public class TossPaymentsClient {
             ResponseEntity<Map> response = restTemplate.postForEntity(confirmUrl, new HttpEntity<>(body, headers), Map.class);
             Map<String, Object> data = response.getBody();
             String status = data == null ? null : (String) data.get("status");
-            return new TossConfirmResult(true, status, null, null);
+            String paymentMethod = resolvePaymentMethod(data);
+            return new TossConfirmResult(true, status, paymentMethod, null, null);
         } catch (HttpClientErrorException e) {
             String responseBody = e.getResponseBodyAsString();
             log.warn("Toss 결제 승인 실패: orderId={}, status={}, body={}", orderId, e.getStatusCode(), responseBody);
             Map<String, Object> errorBody = parseErrorBody(responseBody);
             String code = (String) errorBody.getOrDefault("code", "TOSS_CONFIRM_FAILED");
             String message = (String) errorBody.getOrDefault("message", "결제 승인에 실패했습니다.");
-            return new TossConfirmResult(false, null, code, message);
+            return new TossConfirmResult(false, null, null, code, message);
         } catch (Exception e) {
             log.error("Toss 결제 승인 호출 중 오류: orderId={}, error={}", orderId, e.getMessage());
             throw CommerceException.paymentFailed("결제 승인 서버 호출에 실패했습니다: " + e.getMessage());
@@ -80,16 +81,53 @@ public class TossPaymentsClient {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private String resolvePaymentMethod(Map<String, Object> data) {
+        if (data == null) {
+            return "TOSS";
+        }
+
+        Object method = data.get("method");
+        if ("간편결제".equals(method)) {
+            Object easyPay = data.get("easyPay");
+            if (easyPay instanceof Map<?, ?> easyPayMap) {
+                Object provider = easyPayMap.get("provider");
+                if (provider instanceof String providerName && !providerName.isBlank()) {
+                    return "간편결제(" + providerName + ")";
+                }
+            }
+            return "간편결제";
+        }
+
+        Object card = data.get("card");
+        if (card instanceof Map<?, ?> cardMap) {
+            Object cardType = cardMap.get("cardType");
+            if ("체크".equals(cardType)) {
+                return "체크카드";
+            }
+            if ("신용".equals(cardType)) {
+                return "신용카드";
+            }
+        }
+
+        if (method instanceof String methodName && !methodName.isBlank()) {
+            return methodName;
+        }
+        return "TOSS";
+    }
+
     @Getter
     public static class TossConfirmResult {
         private final boolean approved;
         private final String status;
+        private final String paymentMethod;
         private final String errorCode;
         private final String errorMessage;
 
-        public TossConfirmResult(boolean approved, String status, String errorCode, String errorMessage) {
+        public TossConfirmResult(boolean approved, String status, String paymentMethod, String errorCode, String errorMessage) {
             this.approved = approved;
             this.status = status;
+            this.paymentMethod = paymentMethod;
             this.errorCode = errorCode;
             this.errorMessage = errorMessage;
         }

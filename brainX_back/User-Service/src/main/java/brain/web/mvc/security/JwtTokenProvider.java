@@ -35,12 +35,12 @@ public class JwtTokenProvider {
         this.refreshExpirationMillis = refreshExpirationMillis;
     }
 
-    public String createAccessToken(User user) {
-        return createToken(user, accessExpirationMillis, "access");
+    public String createAccessToken(User user, String sessionId) {
+        return createToken(user, accessExpirationMillis, "access", sessionId);
     }
 
-    public String createRefreshToken(User user) {
-        return createToken(user, refreshExpirationMillis, "refresh");
+    public String createRefreshToken(User user, String sessionId) {
+        return createToken(user, refreshExpirationMillis, "refresh", sessionId);
     }
 
     public long refreshExpirationMillis() {
@@ -65,7 +65,12 @@ public class JwtTokenProvider {
         return (String) claims(token).get("typ");
     }
 
-    private String createToken(User user, long expirationMillis, String type) {
+    public String getSessionId(String token) {
+        Object sessionId = claims(token).get("sid");
+        return sessionId == null ? null : String.valueOf(sessionId);
+    }
+
+    private String createToken(User user, long expirationMillis, String type, String sessionId) {
         try {
             Instant now = Instant.now();
             Map<String, Object> header = Map.of("alg", "HS256", "typ", "JWT");
@@ -74,6 +79,9 @@ public class JwtTokenProvider {
             payload.put("email", user.getEmail());
             payload.put("role", user.getRole().name());
             payload.put("typ", type);
+            if (sessionId != null) {
+                payload.put("sid", sessionId);
+            }
             payload.put("iat", now.getEpochSecond());
             payload.put("exp", now.plusMillis(expirationMillis).getEpochSecond());
 

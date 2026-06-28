@@ -13,6 +13,13 @@ public class BrainxEventConsumerProperties {
     private boolean enabled;
     private String groupId = "intelligence-service";
     private List<String> topics = new ArrayList<>(List.of(
+        "brainx.content.ingestion.publishing.capture-received.v1",
+        "brainx.knowledge.workspace.note-link-created.v1",
+        "brainx.knowledge.workspace.note-link-deleted.v1",
+        "brainx.knowledge.workspace.folder-created.v1",
+        "brainx.knowledge.workspace.folder-changed.v1",
+        "brainx.knowledge.workspace.folder-deleted.v1",
+        "brainx.identity.access.user-deletion-requested.v1",
         "brainx.knowledge.workspace.note-content-saved.v1",
         "brainx.knowledge.workspace.note-created.v1",
         "brainx.knowledge.workspace.note-deleted.v1",

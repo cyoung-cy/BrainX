@@ -1,19 +1,25 @@
-# Technical Documentation
+# 기술 문서
 
-이 디렉터리는 Intelligence Service 구현 중 반복해서 확인해야 하는 framework, infrastructure, local runtime 관련 기술 메모를 둔다.
+이 폴더에는 구현할 때 실제로 참고할 만한 서비스 로컬 문서만 남깁니다.
 
-- `conditional-on-bean.md`: Spring Boot `@ConditionalOnBean`의 의미, 주의점, Qdrant adapter 적용 맥락을 설명한다.
-- `ai-model-pricing-and-usage.md`: AI 모델 catalog 비용 필드, availability 결합, token usage/cost estimate 기록 정책을 설명한다.
-- `consumed-event-contract-alignment.md`: 구현된 consumed event handler와 AsyncAPI SSOT의 topic/payload 일치 수준을 추적한다.
-- `consumed-events-implementation-checkpoints.md`: `AI-Service`가 consumer로 받는 이벤트별 구현 체크포인트를 정리한다.
-- `connection-api.md`: public 노트 연결 추천 API와 내부 `NoteAutoLinkUseCase`, document group 기본값, event/usage 경계를 설명한다.
-- `external-search.md`: OpenAI Responses `web_search` 기반 외부 자료 검색 port, CLI 실행, batch quality capture, usage 기록 정책을 설명한다.
-- `frontend-ai-context-management.md`: `brainx-next`가 노트 AI 작업별로 `clientContext`를 구성하고 Intelligence Service chat/inline assist API에 전달하는 정책을 설명한다.
-- `insight-reports.md`: 고급 인사이트 리포트 v1의 sync-complete job, document group scope, usage/event, persistence 정책을 설명한다.
-- `knowledge-structure-analysis.md`: AI 클러스터링 작업 v1의 sync-complete job, note card 입력, usage/event, persistence 정책을 설명한다.
-- `llm-quality-evaluation-report-2026-06-26.md`: RAG/chat-router/external-search/inline-assist/connection dev 품질 CLI의 실제 provider 평가 결과와 후속 개선점을 정리한다.
-- `llm-quality-evaluations/`: LLM 품질 평가 결과를 영역별로 풀어 쓴 상세 보고서를 둔다.
-- `note-chunking.md`: Workspace note markdown을 chunk 단위 vector index로 변환하는 규칙과 검색 결과 dedupe 정책을 설명한다.
-- `note-auto-linking.md`: 유사 노트 자동 연결 v1의 `VECTOR_LLM`/`LLM_ONLY` 비교, anchor 위치 계산, CLI 실행, usage/cost 기록 정책을 설명한다.
-- `sample-notes-rag-cli.md`: `sample_notes` markdown을 로컬 RAG 품질 테스트용으로 색인/질의하는 CLI 흐름과 retrieval/chat/router quality capture scripts를 설명한다.
-- `vectorstore-embedding-model.md`: Qdrant Java client 직접 연동과 Voyage embedding, usage/cost 기록 정책을 설명한다.
+## 남겨둘 문서
+
+- `conditional-on-bean.md`: Spring Boot `@ConditionalOnBean` 동작과 Qdrant adapter 연결 방식
+- `ai-model-pricing-and-usage.md`: AI 모델 카탈로그 가격과 token usage / cost 추정 메모
+- `connection-api.md`: 연결 추천 공개 API와 event / usage 경계
+- `external-search.md`: OpenAI `web_search` 기반 검색 port와 품질 캡처 메모
+- `frontend-ai-context-management.md`: 프론트엔드 AI context 흐름과 chat / inline assist 전달
+- `insight-reports.md`: insight report job 흐름, persistence, event 동작
+- `knowledge-structure-analysis.md`: knowledge structure analysis job 흐름과 persistence
+- `note-auto-linking.md`: note auto-linking 전략과 CLI 품질 캡처 메모
+- `note-chunking.md`: note chunking과 search/vector indexing 메모
+- `sample-notes-rag-cli.md`: 로컬 RAG 샘플 CLI 메모
+- `vectorstore-embedding-model.md`: Qdrant와 Voyage embedding 메모
+- `consumed-event-contract-alignment.md`: Kafka 계약 정합성 포인터
+- `consumed-events-implementation-checkpoints.md`: Kafka 구현 체크리스트
+
+## Kafka 진행 요약
+
+자세한 Kafka 진행 요약은 아래 문서를 봅니다.
+
+- [brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md](../../../KAFKA_IMPLEMENTATION_SUMMARY.md)

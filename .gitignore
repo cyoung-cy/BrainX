@@ -48,6 +48,16 @@ dist/
 .env
 .env*.local
 
+# BrainX admin Next.js app
+brainx-admin-next/.env
+brainx-admin-next/.env*.local
+brainx-admin-next/node_modules/
+brainx-admin-next/.next/
+brainx-admin-next/out/
+brainx-admin-next/.vercel/
+brainx-admin-next/*.tsbuildinfo
+brainx-admin-next/next-env.d.ts
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

@@ -16,7 +16,7 @@ import yaml
 
 HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 OPENAPI_CONSUMER_ID = "internal.knowledge-intelligence"
-ASYNCAPI_SERVICE_ID = "AI-Service"
+ASYNCAPI_SERVICE_ID = "Intelligence-Service"
 
 
 def default_repo_root() -> Path:
@@ -268,7 +268,7 @@ def build_asyncapi(source: dict[str, Any], service_id: str, conflict_side: str) 
     info["title"] = f"{info.get('title', 'BrainX Async Event SSOT')} - Knowledge Intelligence"
     info["description"] = (
         "AsyncAPI slice for events produced or consumed by Intelligence Service. "
-        "The upstream AsyncAPI SSOT identifies this service as AI-Service."
+        "The upstream AsyncAPI SSOT identifies this service as Intelligence-Service."
     )
 
     selected_body = {"channels": channels, "operations": operations}
@@ -294,8 +294,8 @@ def build_asyncapi(source: dict[str, Any], service_id: str, conflict_side: str) 
         "serviceId": service_id,
         "serviceAliasForThisProject": "knowledge-intelligence",
         "criteria": [
-            "channel.x-producer-service == AI-Service",
-            "channel.x-consumer-services contains AI-Service",
+            "channel.x-producer-service == Intelligence-Service",
+            "channel.x-consumer-services contains Intelligence-Service",
         ],
         "conflictSide": conflict_side,
     }

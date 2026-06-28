@@ -521,14 +521,14 @@ ConversionJobFailedPayload:
 
 | 이벤트 | producer | consumer | 의미 |
 |---|---|---|---|
-| `TokenUsageRecordedRequested` | `AI-Service` | `Commerce-Service` | AI가 토큰 사용량 기록을 요청 |
+| `TokenUsageRecordedRequested` | `Intelligence-Service` | `Commerce-Service` | AI가 토큰 사용량 기록을 요청 |
 | `TokenUsageRecorded` | `Commerce-Service` | `Admin-Service`, `Commerce-Service` | ledger 기록 후 결과 발행 |
 
 흐름:
 
 ```mermaid
 sequenceDiagram
-    participant AI as AI-Service
+    participant AI as Intelligence-Service
     participant Kafka
     participant Commerce as Commerce-Service
     participant Admin as Admin-Service
@@ -586,7 +586,7 @@ TokenUsageRecordedPayload:
 |---|---|
 | `User-Service` | 인증, 회원, 온보딩, 계정 보안, 동의, 마이페이지 |
 | `Admin-Service` | 관리자 콘솔, 사용자 관리, 결제/환불 운영, 모니터링, 통계 |
-| `AI-Service` | semantic search, RAG, LLM orchestration, 추천, 요약, 토큰 사용 이벤트 |
+| `Intelligence-Service` | semantic search, RAG, LLM orchestration, 추천, 요약, 토큰 사용 이벤트 |
 | `Ingestion-Service` | 파일 처리, 변환, import/export, 외부 연동 |
 | `Commerce-Service` | 결제, 플랜, 구독, 과금, entitlement |
 | `Workspace-Service` | 노트, 폴더, 링크, 그래프, workspace ledger |
@@ -661,18 +661,18 @@ TokenUsageRecordedPayload:
 
 | 이벤트 | producer | 의미 |
 |---|---|---|
-| `SemanticSearchPerformed` | `AI-Service` | semantic search 수행 |
-| `AiSuggestionCreated` | `AI-Service` | AI 제안 생성 |
-| `AiSuggestionDecisionRecorded` | `AI-Service` | AI 제안 수락/거절 기록 |
-| `ChatThreadCreated` | `AI-Service` | 채팅 thread 생성 |
-| `ChatMessageCreated` | `AI-Service` | 채팅 메시지 생성 |
-| `AiModelSettingsChanged` | `AI-Service` | AI 모델 설정 변경 |
-| `ClusterJobRequested` | `AI-Service` | 클러스터링 작업 요청 |
-| `ClusterJobCompleted` | `AI-Service` | 클러스터링 작업 완료 |
-| `InsightReportRequested` | `AI-Service` | 인사이트 리포트 요청 |
-| `InsightReportCompleted` | `AI-Service` | 인사이트 리포트 완료 |
-| `UserStyleProfileChanged` | `AI-Service` | 사용자 스타일 프로필 변경 |
-| `TokenUsageRecordedRequested` | `AI-Service` | 토큰 사용량 기록 요청 |
+| `SemanticSearchPerformed` | `Intelligence-Service` | semantic search 수행 |
+| `AiSuggestionCreated` | `Intelligence-Service` | AI 제안 생성 |
+| `AiSuggestionDecisionRecorded` | `Intelligence-Service` | AI 제안 수락/거절 기록 |
+| `ChatThreadCreated` | `Intelligence-Service` | 채팅 thread 생성 |
+| `ChatMessageCreated` | `Intelligence-Service` | 채팅 메시지 생성 |
+| `AiModelSettingsChanged` | `Intelligence-Service` | AI 모델 설정 변경 |
+| `ClusterJobRequested` | `Intelligence-Service` | 클러스터링 작업 요청 |
+| `ClusterJobCompleted` | `Intelligence-Service` | 클러스터링 작업 완료 |
+| `InsightReportRequested` | `Intelligence-Service` | 인사이트 리포트 요청 |
+| `InsightReportCompleted` | `Intelligence-Service` | 인사이트 리포트 완료 |
+| `UserStyleProfileChanged` | `Intelligence-Service` | 사용자 스타일 프로필 변경 |
+| `TokenUsageRecordedRequested` | `Intelligence-Service` | 토큰 사용량 기록 요청 |
 
 ### 8.5 Commerce / Billing / Admin 계열
 

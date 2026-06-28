@@ -124,7 +124,7 @@ public class CommerceService {
         }
 
         String paymentId = Ids.payment();
-        session.markSucceeded(request.getPaymentKey(), paymentId, now);
+        session.markSucceeded(request.getPaymentKey(), paymentId, result.getPaymentMethod(), now);
         checkoutSessionRepository.save(session);
 
         Subscription subscription = findOrCreateSubscription(userId);
