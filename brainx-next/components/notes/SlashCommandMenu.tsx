@@ -40,8 +40,13 @@ const COMMANDS: SlashCommandItem[] = [
     label: "제목 1",
     keywords: ["h1", "heading1", "제목1", "heading"],
     icon: Heading1,
+    // NoteEditor.tsx의 HeadingLevelSync는 heading 노드의 실제 텍스트 앞 "#" 개수로 level을
+    // 되돌려 동기화한다(라이브 마크다운 프리뷰 — "## "를 직접 지우면 평문으로 풀리는 식). 그래서
+    // setNode("heading", {level})만 호출하면 본문에 "#" 글자가 없으니 바로 다음 트랜잭션에서
+    // 평문으로 되돌려져 헤딩이 적용되지 않는 것처럼 보였다. "# "+Space 단축키(MarkdownHeading의
+    // input rule)와 똑같이 "#" 마커 텍스트를 직접 넣어줘야 동기화가 깨지지 않는다.
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run(),
+      editor.chain().focus().deleteRange(range).insertContent("# ").setNode("heading", { level: 1 }).run(),
   },
   {
     id: "heading2",
@@ -49,7 +54,7 @@ const COMMANDS: SlashCommandItem[] = [
     keywords: ["h2", "heading2", "제목2"],
     icon: Heading2,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run(),
+      editor.chain().focus().deleteRange(range).insertContent("## ").setNode("heading", { level: 2 }).run(),
   },
   {
     id: "heading3",
@@ -57,7 +62,7 @@ const COMMANDS: SlashCommandItem[] = [
     keywords: ["h3", "heading3", "제목3"],
     icon: Heading3,
     run: (editor, range) =>
-      editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run(),
+      editor.chain().focus().deleteRange(range).insertContent("### ").setNode("heading", { level: 3 }).run(),
   },
   {
     id: "bulletList",

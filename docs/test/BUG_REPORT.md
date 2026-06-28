@@ -554,21 +554,22 @@ Instant.parse((String) payload.get("clientSavedAt")), // null이면 DateTimePars
 | 심각도 | MED |
 | 분류 | 시스템 테스트 / 화이트박스 테스트 |
 | 서비스 | Workspace-Service |
-| 파일 | `NoteDraftService.java:108` |
+| 파일 | `NoteDraftService.java:userIdsWithDirtyDrafts()` |
+| 상태 | 해결 완료 (2026-06-28) |
 
 **버그 설명**
 
 `redisTemplate.keys("workspace:note:dirty:user:*")`는 Redis 전체 키스페이스를 O(N) 블로킹 스캔한다. 사용자 수 증가 시 Redis 응답 지연을 유발한다.
 
-**문제 코드**
+**기존 문제 코드**
 
 ```java
 Set<String> dirtyKeys = redisTemplate.keys(DIRTY_KEY_FORMAT.formatted("user", "*"));
 ```
 
-**수정 방향**
+**수정 내용**
 
-`redisTemplate.scan(ScanOptions.scanOptions().match(...).build())`으로 교체하여 논블로킹 점진적 스캔을 사용한다.
+`redisTemplate.scan(ScanOptions.scanOptions().match(...).count(500).build())`으로 교체하여 논블로킹 점진적 스캔을 사용한다. 중복 key는 `LinkedHashSet`으로 제거하고, cursor는 try-with-resources로 닫는다.
 
 ---
 

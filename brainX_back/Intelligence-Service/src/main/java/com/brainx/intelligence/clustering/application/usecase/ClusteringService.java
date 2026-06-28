@@ -53,7 +53,7 @@ public class ClusteringService implements RequestClusterJobUseCase, GetClusterJo
 
     static final String AI_CLUSTERING_CAPABILITY = "AI_CLUSTERING";
     static final String AI_CLUSTERING_FEATURE_ID = "ai-clustering-chat";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final int HARD_MAX_NOTES = 50;
     private static final int HARD_MAX_CLUSTERS = 12;
 

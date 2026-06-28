@@ -119,13 +119,17 @@ Published event types include:
 
 Guests can use Redis draft autosave, but PostgreSQL note creation/content/metadata save is blocked with `403 GUEST_POSTGRES_SAVE_FORBIDDEN`. Guest draft content is persisted to PostgreSQL only through the signup/login claim flow. Gateway must forward `X-Guest-Id` from the `brainx_guest_id` cookie even when the request also has a valid JWT, so Workspace-Service can know both the USER actor and the guest draft owner.
 
+Folder creation has no actor restriction, so a guest can have real PostgreSQL `Folder` rows under their guest id even though they cannot have PostgreSQL notes. `NoteDraftSaveRequest`/`NoteDraftData` carry `folderId` (the note's current folder placement, the whole value each save, not a partial patch) so it survives flush and claim. `POST /api/v1/notes/drafts/claim` reassigns the guest's `Folder.userId` to the new USER (folder id unchanged, so the note's `folderId` reference never breaks) before persisting the claimed drafts, so the guest's folder structure and note-to-folder placement are identical right after signup/login.
+
+`DELETE /api/v1/folders/{folderId}?mode=trash|permanent` cascades: it deletes the folder itself plus every nested subfolder and every note inside that subtree (`mode=trash` soft-deletes the notes, `mode=permanent` removes the rows), and it also deletes any of the calling actor's Redis drafts whose `folderId` falls inside that subtree. It no longer promotes children to the parent folder.
+
 Autosave timing policy:
 
 - Frontend Redis draft debounce: 1.5 seconds after typing stops.
 - PostgreSQL flush scan interval: `WORKSPACE_DRAFT_FLUSH_INTERVAL_SECONDS=30`.
 - PostgreSQL flush idle threshold: `WORKSPACE_DRAFT_FLUSH_IDLE_SECONDS=10`.
 
-Only USER drafts are flushed by the scheduler. GUEST drafts remain Redis-only until they are claimed after signup/login.
+Only USER drafts are flushed by the scheduler. GUEST drafts remain Redis-only until they are claimed after signup/login. The scheduler discovers USER dirty draft owners with Redis `SCAN MATCH workspace:note:dirty:user:* COUNT 500` instead of the blocking `KEYS` command.
 
 ## Local Docker
 

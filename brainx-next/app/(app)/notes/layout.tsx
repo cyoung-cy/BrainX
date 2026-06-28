@@ -34,7 +34,7 @@ export default function NotesLayout({ children }: { children: ReactNode }) {
       <NotesWorkspace
         initialTab={initialTab}
         persistKey="brainx_notes_workspace_v1"
-        onActiveNoteChange={(noteId) => router.replace(`/notes/${noteId}`)}
+        onActiveNoteChange={(noteId) => router.replace(noteId ? `/notes/${noteId}` : "/notes")}
       />
       {children}
     </>

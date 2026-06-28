@@ -9,12 +9,16 @@ import type { EditMode, AiActionType } from "./NoteEditor";
 import { MOCK_NOTES, MOCK_FOLDERS } from "@/lib/notes/mockNotes";
 import {
   USE_MOCK_NOTES,
+  createWorkspaceFolder,
   createWorkspaceNote,
+  deleteWorkspaceFolder,
+  deleteWorkspaceNote,
   getWorkspaceNoteDraft,
   issueWorkspaceNoteDraftId,
   listFolders,
   listNotes,
   listWorkspaceNoteDrafts,
+  patchWorkspaceFolder,
   saveWorkspaceNoteDraft,
   updateWorkspaceNoteContent,
   updateWorkspaceNoteMetadata,
@@ -28,6 +32,7 @@ import {
   closeNode,
   countLeaves,
   findFirstLeafId,
+  setNoteOnLeaf,
   DropZone,
 } from "@/lib/notes/paneUtils";
 import { AUTO_THEME } from "./theme";
@@ -177,14 +182,14 @@ interface NotesWorkspaceProps {
   /** 지정 시 localStorage에 세션(분할/탭/노트/폴더)을 영속화한다. 데모(split-demo)는 비워서 매번 초기화. */
   persistKey?: string;
   /** 대표 활성 노트가 바뀔 때 호출 — 페이지에서 URL을 갱신하는 데 사용 */
-  onActiveNoteChange?: (noteId: string) => void;
+  onActiveNoteChange?: (noteId: string | null) => void;
 }
 
 /* 패널 트리 + 탭 상태를 함께 초기화 (동일한 paneId로 묶기 위해 한번에 생성). initialTab이 "start"면
    탭을 만들지 않는다(탭 배열이 빈 상태) — 워크스페이스가 이를 보고 Welcome 보드를 보여준다. */
 function createInitialPaneState(initialTab: InitialTab) {
   const rootId = uid();
-  const leafNoteId = initialTab.kind === "note" ? initialTab.noteId : MOCK_NOTES[0].id;
+  const leafNoteId = initialTab.kind === "note" ? initialTab.noteId : "";
   const tabs: Tab[] = initialTab.kind === "note" ? [{ id: uid(), kind: "note", noteId: initialTab.noteId }] : [];
   return {
     root: { type: "leaf", id: rootId, noteId: leafNoteId } as PaneNode,
@@ -192,6 +197,37 @@ function createInitialPaneState(initialTab: InitialTab) {
     paneTabs: {
       [rootId]: { tabs, activeTabId: tabs[0]?.id ?? "" },
     } as Record<string, PaneTabsState>,
+  };
+}
+
+/* 트리에 실제로 존재하는 leaf paneId만 모은다 — paneTabs 객체에는 과거 버그/레이스로 생긴 고아
+   항목(트리에서는 이미 사라졌지만 키만 남은 패널)이 섞여 있을 수 있어, "탭이 0개인지" 판정은
+   항상 이 함수로 얻은 실제 leaf 기준으로만 해야 한다(고아 항목이 있다는 이유로 Welcome 판정이
+   깨지면 안 됨). */
+function collectLeafIds(node: PaneNode, acc: string[] = []): string[] {
+  if (node.type === "leaf") {
+    acc.push(node.id);
+    return acc;
+  }
+  node.children.forEach((child) => collectLeafIds(child, acc));
+  return acc;
+}
+
+function normalizeEmptyWorkspaceSession(session: NotesWorkspaceSession): NotesWorkspaceSession {
+  const hasAnyTabs = collectLeafIds(session.root).some(
+    (leafId) => (session.paneTabs[leafId]?.tabs.length ?? 0) > 0
+  );
+  if (hasAnyTabs) {
+    return session;
+  }
+
+  const fresh = createInitialPaneState({ kind: "start" });
+  return {
+    root: fresh.root,
+    activeId: fresh.activeId,
+    paneTabs: fresh.paneTabs,
+    notes: session.notes,
+    folders: session.folders,
   };
 }
 
@@ -231,6 +267,23 @@ function replaceNoteIdInTabs(tabsByPane: Record<string, PaneTabsState>, oldId: s
       },
     ])
   ) as Record<string, PaneTabsState>;
+}
+
+function isLeafInTree(node: PaneNode, leafId: string): boolean {
+  if (node.type === "leaf") {
+    return node.id === leafId;
+  }
+  return node.children.some((child) => isLeafInTree(child, leafId));
+}
+
+function resolveVisiblePaneId(root: PaneNode, activeId: string): string {
+  if (root.type === "leaf") {
+    return root.id;
+  }
+  if (isLeafInTree(root, activeId)) {
+    return activeId;
+  }
+  return findFirstLeafId(root) ?? activeId;
 }
 
 export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteChange }: NotesWorkspaceProps) {
@@ -370,6 +423,20 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   });
 
   const panelCount = countLeaves(state.root);
+  const hasSplitPanels = panelCount > 1;
+  const primaryPaneId = useMemo(() => resolveVisiblePaneId(state.root, state.activeId), [state.root, state.activeId]);
+  const canSplitPane = useCallback(
+    (paneId: string) => hasSplitPanels || (paneTabs[paneId]?.tabs.length ?? 0) > 1,
+    [hasSplitPanels, paneTabs]
+  );
+  /* 워크스페이스 전체 기준으로 열린 노트가 0개인지 — 실제 트리에 있는 leaf만 기준으로 판정한다.
+     paneTabs 객체 자체를 기준으로 하면(예전 구현) 트리에서는 이미 제거됐지만 paneTabs에는 키만
+     남은 고아 항목 때문에 "탭이 있다"고 잘못 판정해 Welcome 보드 대신 빈 패널이 보이는 문제가
+     있었다 — Welcome 보드는 탭이 아니라 이 empty state를 직접 그린다(탭 배열에 들어가지 않음). */
+  const isWorkspaceEmpty = useMemo(
+    () => collectLeafIds(state.root).every((leafId) => (paneTabs[leafId]?.tabs.length ?? 0) === 0),
+    [state.root, paneTabs]
+  );
 
   /* 활성 패널의 활성 탭 → 현재 노트 (우측 컨텍스트 패널 기준). start 탭이면 null. */
   const activeTabsState = paneTabs[state.activeId];
@@ -397,7 +464,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       );
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: current.activeTabId } };
     });
-    setState((prev) => ({ ...prev, activeId: paneId }));
+    setState((prev) => ({
+      ...prev,
+      activeId: paneId,
+      root: setNoteOnLeaf(prev.root, paneId, noteId),
+    }));
   }, []);
 
   /* 사이드바 노트를 탭바 영역에 드롭 → 해당 패널에 새 탭으로 추가 (이미 열려있으면 그 탭 활성화).
@@ -422,7 +493,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       newTabs.splice(insertAt, 0, newTab);
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTabId } };
     });
-    setState((prev) => ({ ...prev, activeId: paneId }));
+    setState((prev) => ({
+      ...prev,
+      activeId: paneId,
+      root: setNoteOnLeaf(prev.root, paneId, noteId),
+    }));
   }, []);
 
   /* 패널에 노트를 여는 공통 정책 — "교체"는 그 패널이 비어있을 때만 적용되고, 실제 내용이 있는
@@ -443,8 +518,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 사이드바에서 노트 클릭 → 현재 활성 패널에 openNoteInPane 정책 적용 */
   const handleNoteClick = useCallback((noteId: string) => {
-    openNoteInPane(state.activeId, noteId);
-  }, [state.activeId, openNoteInPane]);
+    openNoteInPane(primaryPaneId, noteId);
+  }, [primaryPaneId, openNoteInPane]);
 
   /* 노트 탐색기 위로 OS 파일을 드래그&드롭하면 /import 화면과 동일한
      uploadAndImportFile() 경로로 가져오기를 수행한다(현재 선택된 폴더로 들어감).
@@ -532,7 +607,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       return;
     }
     setPaneTabs((prev) => ({ ...prev, [paneId]: { tabs: [], activeTabId: "" } }));
-    setState((prev) => ({ ...prev, activeId: paneId }));
+    setState((prev) => ({
+      ...prev,
+      activeId: paneId,
+      root: prev.root.type === "leaf" && prev.root.id === paneId ? { ...prev.root, noteId: "" } : prev.root,
+    }));
   }, [panelCount, handleClose]);
 
   /* 탭을 다른 패널로 "이동"한다(복제가 아님) — Obsidian처럼 같은 패널/다른 패널/분할 구조 어디서든
@@ -603,8 +682,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     );
   }, []);
 
-  /* D&D drop → 항상 분할, 새 패널에 탭 1개로 초기화 */
+  /* D&D drop → 분할이 허용된 상태에서만 새 패널에 탭 1개로 초기화한다.
+     단일 탭/단일 패널 상태에서는 EditorPanel 쪽에서 replace로 흘려보내고 여기로 오지 않는다. */
   const handleDrop = useCallback((paneId: string, zone: DropZone, noteId: string) => {
+    if (!canSplitPane(paneId)) return;
     const newLeafId = uid();
     const newTabId = uid();
     const direction: "horizontal" | "vertical" =
@@ -619,10 +700,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       ...prev,
       [newLeafId]: { tabs: [{ id: newTabId, kind: "note", noteId }], activeTabId: newTabId },
     }));
-  }, []);
+  }, [canSplitPane]);
 
   /* 탭을 드래그해서 다른 패널의 "본문"(zone)에 떨어뜨려 분할을 만들 때의 이동 버전 — handleDrop과
-     달리 새 분할을 만든 뒤 원본 패널에서 그 탭을 제거한다(복제 방지). 원본이 마지막 탭이었으면
+     달리 새 분할을 만든 뒤 원본 패널에서 그 탭을 제거한다(복제 방지). 분할이 금지된
+     단일 탭/단일 패널 상태에서는 호출되지 않는다. 원본이 마지막 탭이었으면
      closePaneOrClearTabs로 원본 패널을 정리한다(분할 취소 또는 빈 탭 상태 복귀).
      sourcePaneId === targetPaneId(패널이 1개뿐일 때 자기 자신의 본문에 드롭해 처음으로 분할하는
      가장 흔한 경우)를 막지 않는다 — splitNodeAt은 원본 leaf를 그대로 한쪽 children으로 보존하고
@@ -636,6 +718,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     targetPaneId: string,
     zone: DropZone
   ) => {
+    if (!canSplitPane(targetPaneId)) return;
     const newLeafId = uid();
     const newTabId = uid();
     const direction: "horizontal" | "vertical" =
@@ -669,16 +752,22 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       }
       return { ...prev, [sourcePaneId]: { tabs: newTabs, activeTabId: newActiveTabId } };
     });
-  }, [paneTabs, closePaneOrClearTabs]);
+  }, [paneTabs, closePaneOrClearTabs, canSplitPane]);
 
   /* 탭 활성화 (같은 패널 내 탭 전환) */
   const handleTabActivate = useCallback((paneId: string, tabId: string) => {
+    const nextTab = paneTabs[paneId]?.tabs.find((tab) => tab.id === tabId);
     setPaneTabs((prev) => {
       const current = prev[paneId];
       if (!current) return prev;
       return { ...prev, [paneId]: { ...current, activeTabId: tabId } };
     });
-  }, []);
+    setState((prev) => ({
+      ...prev,
+      activeId: paneId,
+      root: nextTab?.kind === "note" ? setNoteOnLeaf(prev.root, paneId, nextTab.noteId) : prev.root,
+    }));
+  }, [paneTabs]);
 
   /* 탭 닫기 — 활성 탭을 닫으면 인접 탭으로 이동. 마지막 탭이면 closePaneOrClearTabs 정책을 따른다
      (화면분할이면 패널 제거, 단일 패널이면 빈 시작 화면으로 복귀) — 더 이상 닫기를 막지 않는다. */
@@ -689,6 +778,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       closePaneOrClearTabs(paneId);
       return;
     }
+    let nextActiveTabNoteId: string | null = null;
     setPaneTabs((prev) => {
       const cur = prev[paneId];
       if (!cur) return prev;
@@ -698,8 +788,17 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       if (cur.activeTabId === tabId) {
         newActiveTabId = (newTabs[idx] ?? newTabs[idx - 1] ?? newTabs[0]).id;
       }
+      const nextActiveTab = newTabs.find((tab) => tab.id === newActiveTabId);
+      nextActiveTabNoteId = nextActiveTab?.kind === "note" ? nextActiveTab.noteId : null;
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newActiveTabId } };
     });
+    if (nextActiveTabNoteId) {
+      setState((prev) => ({
+        ...prev,
+        activeId: paneId,
+        root: setNoteOnLeaf(prev.root, paneId, nextActiveTabNoteId as string),
+      }));
+    }
   }, [paneTabs, closePaneOrClearTabs]);
 
   /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성), 지정한 패널의 새 탭으로 연다.
@@ -746,8 +845,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 사이드바 "+ 새 노트" 버튼 → 현재 선택된 폴더 안에, 활성 패널의 새 탭으로 생성 */
   const handleNewNote = useCallback((folderId?: string) => {
-    createNote(folderId, state.activeId);
-  }, [createNote, state.activeId]);
+    createNote(folderId, primaryPaneId);
+  }, [createNote, primaryPaneId]);
 
   /* "새 파일 생성하기" / Ctrl+N — 항상 새 탭으로 추가한다. 탭이 0개(Welcome 상태)인 패널이면
      createNote가 빈 탭 배열에 첫 탭을 넣는 것과 동일하게 동작해 자연스럽게 Welcome을 해제한다. */
@@ -791,8 +890,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     });
   }, []);
 
-  /* 우클릭 메뉴의 "우측 분할"/"하단 분할" — 해당 탭의 노트를 새 패널에 그대로 연다 */
+  /* 우클릭 메뉴의 "우측 분할"/"하단 분할" — 분할이 허용된 상태에서만 해당 탭의 노트를
+     새 패널에 그대로 연다 */
   const handleSplitTab = useCallback((paneId: string, tabId: string, direction: "horizontal" | "vertical") => {
+    if (!canSplitPane(paneId)) return;
     const current = paneTabs[paneId];
     const tab = current?.tabs.find((t) => t.id === tabId);
     if (!tab || tab.kind !== "note") return;
@@ -806,7 +907,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       ...prev,
       [newLeafId]: { tabs: [{ id: newTabId, kind: "note", noteId: tab.noteId }], activeTabId: newTabId },
     }));
-  }, [paneTabs]);
+  }, [paneTabs, canSplitPane]);
 
   /* 사이드바 노트 드래그 시작/종료 — 본문 드롭=교체, 탭바 드롭=탭추가로 구분된다 (EditorPanel/TabBar 참고) */
   const handleSidebarDragStart = useCallback((noteId: string) => setDragPayload({ kind: "note", noteId }), []);
@@ -844,20 +945,43 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       // Welcome 상태(탭 0개)에서 연 Quick Switcher — 그 패널에 첫 탭으로 연다.
       handleReplaceActiveTab(paneId, noteId);
     } else {
-      handleNoteClick(noteId);
+      openNoteInPane(paneId, noteId);
     }
     setQuickSwitcher(null);
-  }, [quickSwitcher, paneTabs, handleReplaceActiveTab, handleNoteClick]);
+  }, [quickSwitcher, paneTabs, handleReplaceActiveTab, openNoteInPane]);
 
   /* 폴더 생성 — 루트(parentFolderId=null) 또는 특정 폴더 하위에 인라인으로 추가 */
+  /* 폴더 생성/이름변경/이동/삭제는 모두 백엔드 /api/v1/folders에 실제로 반영해야 한다 — 노트와
+     달리 폴더는 actor 제약이 없어 guest도 만들 수 있고, 그래서 게스트 폴더가 회원가입 후에도
+     승계되려면(claim 시 workspaceService.reassignGuestFolders) 처음부터 Postgres에 있어야
+     한다. 실패하면 토스트만 띄우고 로컬 상태는 그대로 둔다(화면에서만 사라지는 일 방지). */
   const handleCreateFolder = useCallback((parentFolderId: string | null, name: string) => {
-    const newFolder: MockFolder = { id: `folder-${uid()}`, name, parentFolderId };
-    setFolders((prev) => [...prev, newFolder]);
-  }, []);
+    if (USE_MOCK_NOTES) {
+      setFolders((prev) => [...prev, { id: `folder-${uid()}`, name, parentFolderId }]);
+      return;
+    }
+    void createWorkspaceFolder(name, parentFolderId)
+      .then((created) => {
+        setFolders((prev) => [...prev, workspaceFolderToMock(created)]);
+      })
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "폴더를 만들지 못했습니다.", "err");
+      });
+  }, [pushToast]);
 
   const handleRenameFolder = useCallback((folderId: string, newName: string) => {
-    setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f)));
-  }, []);
+    if (USE_MOCK_NOTES) {
+      setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f)));
+      return;
+    }
+    void patchWorkspaceFolder(folderId, { name: newName })
+      .then(() => {
+        setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f)));
+      })
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "폴더 이름을 바꾸지 못했습니다.", "err");
+      });
+  }, [pushToast]);
 
   const handleChangeFolderColor = useCallback((folderId: string, color: string) => {
     setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, color } : f)));
@@ -869,45 +993,30 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     );
   }, []);
 
-  /* 폴더 삭제 — 하위 폴더/노트는 삭제된 폴더의 부모로 승격(데이터 손실 방지) */
-  const handleDeleteFolder = useCallback((folderId: string) => {
-    setFolders((prev) => {
-      const target = prev.find((f) => f.id === folderId);
-      if (!target) return prev;
-      return prev
-        .filter((f) => f.id !== folderId)
-        .map((f) => (f.parentFolderId === folderId ? { ...f, parentFolderId: target.parentFolderId } : f));
-    });
-    setNotes((prev) => {
-      const target = folders.find((f) => f.id === folderId);
-      return prev.map((n) =>
-        n.folderId === folderId ? { ...n, folderId: target?.parentFolderId ?? undefined } : n
-      );
-    });
-    setSelectedFolderId((prev) => (prev === folderId ? null : prev));
-  }, [folders]);
-
-  /* 노트 삭제 — 같은 노트가 여러 패널에 중복으로 열려 있을 수 있으므로(의도된 기능) 모든 패널을
-     훑어 해당 노트를 가리키는 탭을 전부 제거한다. 탭 제거로 0개가 된 패널은: 분할의 일부면
-     closeNode로 트리에서 제거(분할 취소), 유일하게 남은 leaf면 tabs:[]로 비워 Welcome 보드가
-     보이게 한다(closePaneOrClearTabs와 동일한 정책, 다만 한 번에 여러 패널을 처리해야 해서
-     별도로 구현). */
-  const handleDeleteNote = useCallback((noteId: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  /* 노트 삭제(들) — 같은 노트가 여러 패널에 중복으로 열려 있을 수 있으므로(의도된 기능) 모든
+     패널을 훑어 해당 노트를 가리키는 탭을 전부 제거한다. 탭 제거로 0개가 된 패널은: 분할의
+     일부면 closeNode로 트리에서 제거(분할 취소), 유일하게 남은 leaf면 tabs:[]로 비워 Welcome
+     보드가 보이게 한다(closePaneOrClearTabs와 동일한 정책). 폴더 cascade 삭제처럼 여러 노트를
+     한 번에 지울 때 이 함수를 노트마다 따로 호출하면 매 호출이 같은(stale) paneTabs/state
+     클로저를 봐서 두 번째 호출부터 첫 번째 호출의 변경을 못 보는 문제가 있어, 항상 noteId
+     집합 전체를 한 번에 받아 한 번의 일관된 계산으로 처리한다. */
+  const applyLocalNotesDeletion = useCallback((noteIds: Set<string>) => {
+    if (noteIds.size === 0) return;
+    setNotes((prev) => prev.filter((n) => !noteIds.has(n.id)));
 
     const affectedPaneIds = Object.keys(paneTabs).filter((paneId) =>
-      paneTabs[paneId].tabs.some((t) => t.noteId === noteId)
+      paneTabs[paneId].tabs.some((t) => noteIds.has(t.noteId))
     );
     if (affectedPaneIds.length === 0) return;
 
     const removingTabIds = affectedPaneIds.flatMap((paneId) =>
-      paneTabs[paneId].tabs.filter((t) => t.noteId === noteId).map((t) => t.id)
+      paneTabs[paneId].tabs.filter((t) => noteIds.has(t.noteId)).map((t) => t.id)
     );
 
     let nextRoot = state.root;
     const removedPaneIds = new Set<string>();
     for (const paneId of affectedPaneIds) {
-      const remainingTabs = paneTabs[paneId].tabs.filter((t) => t.noteId !== noteId);
+      const remainingTabs = paneTabs[paneId].tabs.filter((t) => !noteIds.has(t.noteId));
       if (remainingTabs.length > 0) continue;
       if (countLeaves(nextRoot) > 1) {
         const removed = closeNode(nextRoot, paneId);
@@ -915,6 +1024,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           nextRoot = removed;
           removedPaneIds.add(paneId);
         }
+      } else {
+        // 유일하게 남은 leaf라 닫을 수 없는 경우 — 삭제된 노트를 계속 가리키지 않도록 비워둔다
+        // (Welcome 보드 전환은 paneTabs 기준이라 여기서 비우지 않아도 화면엔 문제없지만, 다음
+        // 새로고침까지 root에 죽은 noteId가 남아있는 상태를 막는다).
+        nextRoot = setNoteOnLeaf(nextRoot, paneId, "");
       }
     }
     if (nextRoot !== state.root) {
@@ -932,7 +1046,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           continue;
         }
         const current = next[paneId];
-        const newTabs = current.tabs.filter((t) => t.noteId !== noteId);
+        const newTabs = current.tabs.filter((t) => !noteIds.has(t.noteId));
         const newActiveTabId = newTabs.some((t) => t.id === current.activeTabId)
           ? current.activeTabId
           : newTabs[0]?.id ?? "";
@@ -947,6 +1061,64 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       return next;
     });
   }, [paneTabs, state]);
+
+  const applyLocalNoteDeletion = useCallback((noteId: string) => {
+    applyLocalNotesDeletion(new Set([noteId]));
+  }, [applyLocalNotesDeletion]);
+
+  /* 노트 삭제 — 백엔드 DELETE /api/v1/notes/{noteId}?mode=trash를 먼저 호출하고, 성공해야만
+     탭/패널/notes를 정리한다. 서버에 한 번도 닿지 않은 순수 로컬 노트(아직 draft id도 발급받지
+     못한 "note-"로 시작하는 임시 id)는 호출할 게 없으니 바로 정리한다. 실패하면 토스트만
+     띄우고 화면은 그대로 둔다(실패해도 화면에서만 사라지는 일 방지). */
+  const handleDeleteNote = useCallback((noteId: string) => {
+    if (USE_MOCK_NOTES || !noteId.startsWith("note_")) {
+      applyLocalNoteDeletion(noteId);
+      return;
+    }
+    void deleteWorkspaceNote(noteId, "trash")
+      .then(() => applyLocalNoteDeletion(noteId))
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "노트를 삭제하지 못했습니다.", "err");
+      });
+  }, [applyLocalNoteDeletion, pushToast]);
+
+  /* 폴더 삭제 — 하위 폴더/노트를 부모로 승격하지 않고 전부 cascade로 삭제한다(orphan folder/
+     note를 만들지 않기 위한 정책). 백엔드가 Postgres 쪽(폴더 자체 + 이미 flush된 노트)을
+     cascade 삭제해 권위 있는 처리를 하고, 그 응답으로 받은 폴더 id 집합을 기준으로 프론트가
+     로컬 notes/folders/탭에서도(아직 draft 단계라 백엔드가 모르는 노트까지 포함) 정리한다. */
+  const handleDeleteFolder = useCallback((folderId: string) => {
+    const target = folders.find((f) => f.id === folderId);
+    if (!target) return;
+
+    const descendantFolderIds = new Set<string>([folderId]);
+    let frontier = [folderId];
+    while (frontier.length > 0) {
+      const next = folders
+        .filter((f) => f.parentFolderId && frontier.includes(f.parentFolderId) && !descendantFolderIds.has(f.id))
+        .map((f) => f.id);
+      next.forEach((id) => descendantFolderIds.add(id));
+      frontier = next;
+    }
+    const noteIdsToDelete = new Set(
+      notes.filter((n) => n.folderId && descendantFolderIds.has(n.folderId)).map((n) => n.id)
+    );
+
+    const applyLocally = () => {
+      applyLocalNotesDeletion(noteIdsToDelete);
+      setFolders((prev) => prev.filter((f) => !descendantFolderIds.has(f.id)));
+      setSelectedFolderId((prev) => (prev && descendantFolderIds.has(prev) ? null : prev));
+    };
+
+    if (USE_MOCK_NOTES) {
+      applyLocally();
+      return;
+    }
+    void deleteWorkspaceFolder(folderId, "trash")
+      .then(() => applyLocally())
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "폴더를 삭제하지 못했습니다.", "err");
+      });
+  }, [folders, notes, applyLocalNotesDeletion, pushToast]);
 
   const handleSelectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);
@@ -963,8 +1135,20 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 폴더 이동 — 자기 자신/하위 폴더로의 이동은 folderDnd의 canFolderMoveUnder가 차단(null 반환 시 무시) */
   const handleMoveFolderToParent = useCallback((folderId: string, targetParentId: string | null) => {
-    setFolders((prev) => moveFolderUnder(prev, folderId, targetParentId) ?? prev);
-  }, []);
+    const next = moveFolderUnder(folders, folderId, targetParentId);
+    if (!next) return;
+    if (USE_MOCK_NOTES) {
+      setFolders(next);
+      return;
+    }
+    // 백엔드 FolderPatchRequest는 parentFolderId가 null이면 "변경 없음"으로 보고, 빈 문자열이면
+    // "루트로 이동(null)"으로 정규화한다 — 그래서 루트로 옮길 때는 null이 아니라 ""를 보내야 한다.
+    void patchWorkspaceFolder(folderId, { parentFolderId: targetParentId ?? "" })
+      .then(() => setFolders(next))
+      .catch((error) => {
+        pushToast(error instanceof Error ? error.message : "폴더를 이동하지 못했습니다.", "err");
+      });
+  }, [folders, pushToast]);
 
   const handleReorderFolder = useCallback((folderId: string, referenceFolderId: string, position: "before" | "after") => {
     setFolders((prev) => reorderFolderRelativeTo(prev, folderId, referenceFolderId, position) ?? prev);
@@ -998,16 +1182,39 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       // "note"가 아닌 탭은 걸러내고 activeTabId가 사라진 탭을 가리키면 첫 탭으로 재조정한다.
       let nextPaneTabs: Record<string, PaneTabsState> = Object.fromEntries(
         Object.entries(saved.paneTabs).map(([paneId, tabsState]) => {
-          const tabs = tabsState.tabs.filter((t) => t.kind === "note");
+          const tabs = tabsState.tabs.filter((t) => t.kind === "note" && t.noteId.trim().length > 0);
           const activeTabId = tabs.some((t) => t.id === tabsState.activeTabId)
             ? tabsState.activeTabId
             : tabs[0]?.id ?? "";
           return [paneId, { tabs, activeTabId }];
         })
       );
+      // saved.paneTabs에는 트리에 없는 고아 항목이 섞여 있을 수 있으므로(과거 레이스로 생긴 것
+      // 포함), "정말 비어있는 세션인지"는 saved.root에 실제로 있는 leaf만 기준으로 판정한다 —
+      // isWorkspaceEmpty와 동일한 기준(collectLeafIds)을 써야 두 판정이 어긋나지 않는다.
+      const hasAnyRealTabs = collectLeafIds(saved.root).some(
+        (leafId) => (nextPaneTabs[leafId]?.tabs.length ?? 0) > 0
+      );
+      if (!hasAnyRealTabs) {
+        const fresh = createInitialPaneState({ kind: "start" });
+        setState({ root: fresh.root, activeId: fresh.activeId });
+        setPaneTabs(fresh.paneTabs);
+        if (USE_MOCK_NOTES) {
+          setNotes(saved.notes);
+          setFolders(saved.folders);
+        }
+        hydratedRef.current = true;
+        return;
+      }
       // 복원된 세션 위에서, initialTab이 note를 가리키면 그 노트를 활성 패널의 탭으로 연다.
       // (handleNoteClick은 마운트 시점의 stale state를 참조하므로 여기서 saved 값으로 직접 계산한다.)
-      const nextActiveId = saved.activeId;
+      // 후보는 항상 saved.root에 실제로 있는 leaf 중에서만 고른다 — 고아 paneTabs 키를 활성
+      // 패널로 고르면 트리에 없는 paneId가 activeId가 되어버린다.
+      const realLeafIds = collectLeafIds(saved.root);
+      const nextActiveId =
+        realLeafIds.includes(saved.activeId) && (nextPaneTabs[saved.activeId]?.tabs.length ?? 0) > 0
+          ? saved.activeId
+          : realLeafIds.find((leafId) => (nextPaneTabs[leafId]?.tabs.length ?? 0) > 0) ?? saved.activeId;
       if (initialTab.kind === "note") {
         const noteId = initialTab.noteId;
         const current = nextPaneTabs[nextActiveId];
@@ -1058,6 +1265,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
               ...persisted,
               title: draft.title?.trim() || persisted.title,
               content: draft.markdown ?? "",
+              // draft가 더 최신 폴더 배치를 들고 있을 수 있다(아직 flush 전 — 예: 방금 폴더를
+              // 옮긴 직후). draft.folderId는 항상 "현재 배치 전체"를 담아 보내므로(부분 patch
+              // 아님) undefined가 아니라 null도 유효한 값(루트)으로 그대로 반영한다.
+              folderId: draft.folderId ?? undefined,
               updatedAt: draftSavedAt,
               version: draft.baseVersion ?? persisted.version,
               persisted: true,
@@ -1072,12 +1283,19 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           setNotes(nextNotes);
           setFolders(nextFolders);
 
+          // state.activeId는 이 effect가 마운트 시점에 캡처한 값이라(아래 deps: []), 그 사이
+          // 세션 복원(useEffect, 위쪽) 등으로 실제 트리의 paneId가 바뀌어도 갱신되지 않는다. 이
+          // 네트워크 응답은 마운트 이후 한참 뒤(라운드트립)에 도착하므로, 항상 최신 상태를 들고
+          // 있는 latestSessionRef에서 "지금 실제로 보이는 패널"을 다시 계산해야 한다 — 그렇지
+          // 않으면 트리에 없는 옛 paneId로 노트를 열어, 화면엔 반영되지 않고 고아 paneTabs
+          // 항목만 남는 버그가 생긴다(라우팅으로 연 노트가 안 보이고 Welcome처럼 보이던 원인).
+          const livePaneId = resolveVisiblePaneId(latestSessionRef.current.root, latestSessionRef.current.activeId);
           if (targetNoteId && nextNotes.some((note) => note.id === targetNoteId)) {
-            handleReplaceActiveTab(state.activeId, targetNoteId);
+            handleReplaceActiveTab(livePaneId, targetNoteId);
             return;
           }
           if (!openNoteId && initialTab.kind === "note" && nextNotes.length > 0) {
-            handleReplaceActiveTab(state.activeId, nextNotes[0].id);
+            handleReplaceActiveTab(livePaneId, nextNotes[0].id);
           }
         })
         .catch((error) => {
@@ -1099,8 +1317,22 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     // 라우트 전환에도 리마운트되지 않아(레이아웃에서 한 번만 마운트) mount 시점 fetch만으로는 새
     // 노트를 못 본다. 외부에서 이 이벤트를 쏘면 목록을 다시 불러오고, 지정한 노트를 바로 연다.
     function handleExternalRefresh(event: Event) {
-      const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
-      void loadFromServer(noteId);
+      const detail = (event as CustomEvent<{ noteId?: string; resetWorkspace?: boolean }>).detail;
+      // 로그인/회원가입/로그아웃으로 actor(guest/user)가 바뀐 경우(auth-api.ts의
+      // claimGuestDraftsAfterAuth)에는 resetWorkspace:true로 호출된다 — 이전 actor가 열어둔
+      // 탭/패널 구조를 새 actor 화면에 그대로 남겨두면, 게스트 때 클라이언트에서만 지운 노트가
+      // 되살아난 것처럼 보이거나(탭은 남아있지만 그 노트가 새 actor에는 없어 빈 패널로 보임)
+      // 다른 사람 화면이 섞인 것처럼 보일 수 있다 — Welcome 상태로 먼저 비운 뒤 새로 불러온다.
+      if (detail?.resetWorkspace) {
+        const fresh = createInitialPaneState({ kind: "start" });
+        setState({ root: fresh.root, activeId: fresh.activeId });
+        setPaneTabs(fresh.paneTabs);
+        setTabMode({});
+        setNotes([]);
+        setFolders([]);
+        draftDirtyNoteIdsRef.current.clear();
+      }
+      void loadFromServer(detail?.noteId);
     }
     window.addEventListener("brainx:notes-refresh", handleExternalRefresh);
 
@@ -1126,7 +1358,9 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       .then((draft) => {
         if (!draft) return;
         setNotes((prev) => prev.some((note) => note.id === draft.noteId) ? prev : [workspaceDraftToMock(draft), ...prev]);
-        handleReplaceActiveTab(state.activeId, draft.noteId);
+        // 같은 이유로 state.activeId 대신 항상 최신값을 들고 있는 latestSessionRef 기준으로 푼다.
+        const livePaneId = resolveVisiblePaneId(latestSessionRef.current.root, latestSessionRef.current.activeId);
+        handleReplaceActiveTab(livePaneId, draft.noteId);
       })
       .catch((error) => {
         setLoadError(error instanceof Error ? error.message : "임시저장 노트를 불러오지 못했습니다.");
@@ -1134,22 +1368,35 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab.kind === "note" ? initialTab.noteId : "start"]);
 
-  // 변경 사항을 디바운스 저장 (백그라운드 자동저장 — 실패해도 조용히 무시, 수동 저장이 실패 상태를 노출)
+  // 변경 사항을 디바운스 저장 (백그라운드 자동저장 — 실패해도 조용히 무시, 수동 저장이 실패 상태를 노출).
+  // 다만 "모든 탭을 닫아 Welcome으로 돌아간" 전환만은 디바운스 없이 즉시 기록한다 — 350ms 안에
+  // 새로고침하면 그 직전(탭이 남아있던) 세션이 그대로 복원되어 닫은 탭/분할이 되살아나는
+  // 버그가 있었다(타이핑 중 자동저장과 달리 구조 변경은 지연시킬 이유가 없다).
   useEffect(() => {
     if (!effectivePersistKey || !hydratedRef.current) return;
+    const delay = isWorkspaceEmpty ? 0 : 350;
     const handle = window.setTimeout(() => {
       try {
-        writeSession(effectivePersistKey, { root: state.root, activeId: state.activeId, paneTabs, notes, folders });
+        writeSession(
+          effectivePersistKey,
+          normalizeEmptyWorkspaceSession({ root: state.root, activeId: state.activeId, paneTabs, notes, folders })
+        );
       } catch {
         // 백그라운드 자동저장 실패는 무시
       }
-    }, 350);
+    }, delay);
     return () => window.clearTimeout(handle);
   }, [effectivePersistKey, state, paneTabs, notes, folders]);
 
   // Ctrl+S가 항상 최신 세션을 즉시 기록할 수 있도록 매 변경마다 ref에 스냅샷 보관
   useEffect(() => {
-    latestSessionRef.current = { root: state.root, activeId: state.activeId, paneTabs, notes, folders };
+    latestSessionRef.current = normalizeEmptyWorkspaceSession({
+      root: state.root,
+      activeId: state.activeId,
+      paneTabs,
+      notes,
+      folders,
+    });
   }, [state, paneTabs, notes, folders]);
 
   useEffect(() => {
@@ -1181,10 +1428,9 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   // 대표 활성 노트가 바뀌면 URL 갱신 콜백 호출
   useEffect(() => {
-    if (!activeNoteId) return;
     if (prevActiveNoteIdRef.current === activeNoteId) return;
     prevActiveNoteIdRef.current = activeNoteId;
-    onActiveNoteChange?.(activeNoteId);
+    onActiveNoteChange?.(activeNoteId ?? null);
   }, [activeNoteId, onActiveNoteChange]);
 
   /* Ctrl+S 수동 저장 — 활성 에디터에 디바운스 중인 본문/제목을 즉시 반영하도록 신호를 보낸 뒤,
@@ -1316,12 +1562,12 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       const key = e.key.toLowerCase();
       if (key === "n") {
         e.preventDefault();
-        requestNewNote(state.activeId);
+        requestNewNote(primaryPaneId);
       } else if (key === "o") {
         e.preventDefault();
-        const tabsState = paneTabs[state.activeId];
+        const tabsState = paneTabs[primaryPaneId];
         const tabId = tabsState?.activeTabId;
-        if (tabId) requestQuickSwitcher(state.activeId, tabId);
+        if (tabId) requestQuickSwitcher(primaryPaneId, tabId);
       } else if (key === "s") {
         e.preventDefault();
         handleManualSave();
@@ -1329,7 +1575,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [state.activeId, paneTabs, requestNewNote, requestQuickSwitcher, handleManualSave]);
+  }, [primaryPaneId, paneTabs, requestNewNote, requestQuickSwitcher, handleManualSave]);
 
   // 위키링크([[노트]]) 기능에 필요한 컨텍스트 — 노트 목록 조회/존재 확인/이동/생성을 에디터
   // 깊숙이(NoteEditor → CodeBlockView 같은 중첩 단계 없이도) 어디서든 쓸 수 있게 한다.
@@ -1343,10 +1589,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
         if (found) handleNoteClick(found.id);
       },
       onCreate: (title) => {
-        createNote(undefined, state.activeId, title);
+        createNote(undefined, primaryPaneId, title);
       },
     }),
-    [wikiLinkNoteRefs, handleNoteClick, createNote, state.activeId]
+    [wikiLinkNoteRefs, handleNoteClick, createNote, primaryPaneId]
   );
 
   // 노트/탭/패널 데이터 초기화가 끝나기 전에는 워크스페이스 전체를 로딩 상태로 대체한다 —
@@ -1390,17 +1636,13 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       onCloseAllTabs={handleCloseAllTabs}
       onTogglePinTab={handleTogglePinTab}
       onSplitTab={handleSplitTab}
+      hasSplitPanels={hasSplitPanels}
       contextOpen={contextOpen}
       onContextToggle={() => setContextOpen((prev) => !prev)}
     />
   );
 
-  /* 워크스페이스 전체 기준으로 열린 노트가 0개인지 — root가 분할 없는 단일 leaf이고 그 leaf의
-     탭이 비어있을 때만 true. Welcome 보드는 탭이 아니라 이 empty state를 직접 그린다(탭 배열에
-     들어가지 않음) — 분할 중에는 closePaneOrClearTabs가 마지막까지 패널을 1개로 줄여놓고 나서야
-     이 상태에 도달하므로, "전체 기준 노트 0개"일 때만 자연히 발동한다. */
-  const isWorkspaceEmpty = state.root.type === "leaf" && (paneTabs[state.root.id]?.tabs.length ?? 0) === 0;
-  const welcomeQuickSwitcherOpen = quickSwitcher?.paneId === state.activeId;
+  const welcomeQuickSwitcherOpen = quickSwitcher?.paneId === primaryPaneId;
    const mainContent = isWorkspaceEmpty ? (
     <div
       className="relative h-full"
@@ -1412,7 +1654,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       onDrop={(e) => {
         if (dragPayload?.kind !== "note") return;
         e.preventDefault();
-        handleReplaceActiveTab(state.activeId, dragPayload.noteId);
+        handleReplaceActiveTab(primaryPaneId, dragPayload.noteId);
       }}
     >
       {welcomeQuickSwitcherOpen ? (
@@ -1423,8 +1665,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
         />
       ) : (
         <EmptyNoteStartPage
-          onCreateNote={() => requestNewNote(state.activeId)}
-          onGoToFile={() => requestQuickSwitcher(state.activeId, "")}
+          onCreateNote={() => requestNewNote(primaryPaneId)}
+          onGoToFile={() => requestQuickSwitcher(primaryPaneId, "")}
         />
       )}
     </div>

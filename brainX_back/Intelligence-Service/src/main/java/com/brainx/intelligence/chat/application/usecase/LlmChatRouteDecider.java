@@ -26,7 +26,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class LlmChatRouteDecider implements ChatRouteDecider {
 
     static final String CHAT_ROUTER_FEATURE_ID = "chat-router-classifier";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
 
     private final ChatRouterProperties properties;
     private final AiChatPort aiChatPort;

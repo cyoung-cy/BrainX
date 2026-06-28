@@ -152,8 +152,9 @@ public class AdminController {
 
     @PostMapping("/support/tickets/{ticketId}/replies")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<SupportReplyData> replyTicket(@PathVariable String ticketId, @Valid @RequestBody SupportReplyCreateRequest request) {
-        return ApiResponse.success(adminService.replyTicket(ticketId, request));
+    public ApiResponse<SupportReplyData> replyTicket(Authentication auth, @PathVariable String ticketId, @Valid @RequestBody SupportReplyCreateRequest request) {
+        AdminMeData admin = adminAuthService.getMe(auth.getName());
+        return ApiResponse.success(adminService.replyTicket(ticketId, request, admin.adminUserId(), admin.name()));
     }
 
     @DeleteMapping("/support/tickets/{ticketId}")

@@ -106,6 +106,8 @@ public class SupportInquiry {
     public void reply(String replyContent, String adminUserId, String adminName) {
         this.replyContent = replyContent;
         this.repliedAdminUserId = adminUserId;
+        this.assigneeAdminUserId = adminUserId;
+        this.assigneeAdminName = adminName;
         this.repliedAt = LocalDateTime.now();
         this.status = InquiryStatus.ANSWERED;
         this.updatedAt = LocalDateTime.now();

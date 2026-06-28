@@ -8,6 +8,11 @@ spring:
     - optional:file:../env/commerce-service.env[.properties]
   application:
     name: Commerce-Service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
   datasource:
     url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${COMMERCE_DB_NAME:brainx_commerce}}
     username: ${POSTGRES_USER:postgres}
@@ -26,6 +31,10 @@ brainx:
     secret: ${JWT_SECRET:replace_with_at_least_32_byte_secret}
   service-token: ${SERVICE_TOKEN:local-service-token}
   public-base-url: ${PUBLIC_BASE_URL:http://localhost:3000}
+  events:
+    outbox:
+      enabled: ${BRAINX_EVENTS_OUTBOX_ENABLED:false}
+      relay-delay-ms: ${BRAINX_EVENTS_OUTBOX_RELAY_DELAY_MS:2000}
 
 toss:
   client-key: ${TOSS_CLIENT_KEY:your_toss_client_key}
