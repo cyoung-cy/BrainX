@@ -13,6 +13,11 @@ spring:
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: ${REDIS_TIMEOUT:2s}
   jpa:
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}
@@ -49,6 +54,9 @@ brainx:
   email:
     verification-expiration-minutes: ${EMAIL_VERIFICATION_EXPIRATION_MINUTES:30}
     from: ${MAIL_FROM:${spring.mail.username}}
+  auth:
+    session-history-ttl-seconds: ${AUTH_SESSION_HISTORY_TTL_SECONDS:2592000}
+    session-history-max-items: ${AUTH_SESSION_HISTORY_MAX_ITEMS:20}
   oauth:
     google:
       client-id: ${GOOGLE_CLIENT_ID:your_google_client_id}

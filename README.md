@@ -158,7 +158,7 @@ BrainX/
 
 | Service | 담당 | 책임 | 상태 |
 | --- | --- | --- | --- |
-| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계 | 구현 중 (포트 8080) |
+| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계, 로그인 세션 Redis 기록 | 구현 중 (포트 8080) |
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | API shell 구현 중 (포트 8085) |
 | Intelligence-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 구현 중 (포트 8086) |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
@@ -372,6 +372,8 @@ Workspace-Service는 내부 식별 헤더를 `CurrentActor`로 해석합니다.
 
 비회원 노트/폴더/링크/그래프 데이터는 체험용 임시 데이터로 취급합니다. Redis in-memory 저장소가 도입되면 guest actor의 Workspace 데이터는 Redis에 저장하고 TTL 만료 또는 세션 종료로 사라지게 합니다. 회원 데이터는 계속 Workspace-Service의 PostgreSQL 원장에 저장합니다.
 
+User-Service도 같은 Redis를 사용합니다. 인증 토큰 자체는 PostgreSQL `RefreshToken` 원장과 JWT에 남기고, 실제 로그인 세션 이력은 Redis에 저장해 관리자 페이지와 내부 API가 읽습니다.
+
 ```powershell
 cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 .\gradlew.bat bootRun
@@ -407,6 +409,15 @@ cd C:\Edu\Final\brainX_back\User-Service
 cd C:\Edu\Final\brainX_back\User-Service
 .\gradlew.bat test
 ```
+
+User-Service의 Redis 역할은 다음과 같습니다.
+
+- 로그인 성공 시 실제 세션 기록 저장
+- JWT `sid` 기준으로 세션의 마지막 활동 시간 갱신
+- 로그아웃/세션 종료 시 세션 상태 종료 표시
+- 관리자 상세 조회용 실제 로그인 세션, IP, 기기, 위치 이력 제공
+
+관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다.
 
 ### Backend: Ingestion-Service (포트 8083)
 

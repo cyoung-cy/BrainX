@@ -24,7 +24,8 @@ import {
   loadAdminBootstrap,
   type AdminBootstrap,
   type AdminMonitoringSnapshot,
-  type AdminServiceHealthSnapshot
+  type AdminServiceHealthSnapshot,
+  type AdminUserDetail
 } from "@/lib/admin-api";
 import {
   type AdminInquiry,
@@ -867,7 +868,7 @@ function UsersPanel({ users, onReload, onToast }: { users: AdminUser[]; onReload
   const [status, setStatus] = useState<UserStatus | "all">("all");
   const [year, setYear] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
+  const [detailUser, setDetailUser] = useState<AdminUserDetail | null>(null);
 
   const years = Array.from(new Set(users.map((user) => user.joined.slice(0, 4)))).sort((a, b) => b.localeCompare(a));
   const rows = users.filter((user) => {
@@ -952,7 +953,7 @@ function UsersPanel({ users, onReload, onToast }: { users: AdminUser[]; onReload
           </thead>
           <tbody>
             {rows.map((user) => (
-              <tr key={user.id} className={selectedIds.includes(user.id) ? "selected-row" : ""} onClick={() => setDetailUser(user)}>
+              <tr key={user.id} className={selectedIds.includes(user.id) ? "selected-row" : ""} onClick={() => setDetailUser(user as AdminUserDetail)}>
                 <td onClick={(event) => event.stopPropagation()}>
                   <input type="checkbox" checked={selectedIds.includes(user.id)} onChange={() => toggleOne(user.id)} aria-label={`${user.name} ?좏깮`} />
                 </td>
@@ -972,7 +973,7 @@ function UsersPanel({ users, onReload, onToast }: { users: AdminUser[]; onReload
                 <td>{user.lastActive}</td>
                 <td style={{ textAlign: "right" }}>
                   <div className="row-icons" onClick={(event) => event.stopPropagation()}>
-                    <button aria-label={`${user.name} 상세 보기`} onClick={() => setDetailUser(user)}><Eye size={15} /></button>
+                    <button aria-label={`${user.name} 상세 보기`} onClick={() => setDetailUser(user as AdminUserDetail)}><Eye size={15} /></button>
                     <button aria-label={`${user.name} 플랜 변경`} onClick={() => onToast(`${user.name}의 플랜 변경을 준비했어요`)}><Repeat2 size={15} /></button>
                     <button aria-label={`${user.name} 계정 정지`} onClick={async () => {
                       await adminApi.changeUserStatus(user.id, "suspended");
@@ -1001,10 +1002,21 @@ function Avatar({ user, size = 38 }: { user: AdminUser; size?: number }) {
   );
 }
 
-function loginSessions(user: AdminUser) {
+function loginSessions(user: AdminUserDetail | AdminUser) {
   const fallbackDevices = ["Safari / iOS", "Chrome / Windows", "Edge / Windows", "Chrome / Android"];
   const fallbackLocations = ["서울", "부산", "대전", "수원"];
   const index = Math.abs(user.id.charCodeAt(user.id.length - 1) - 48) % fallbackDevices.length;
+
+  if ("sessions" in user && user.sessions && user.sessions.length > 0) {
+    return user.sessions.map((session) => ({
+      id: session.sessionId,
+      device: session.device,
+      location: session.location,
+      lastSeen: session.lastSeenAt.slice(0, 16).replace("T", " "),
+      ip: session.ipAddress,
+      current: session.current
+    }));
+  }
 
   return [
     {
@@ -1026,12 +1038,40 @@ function loginSessions(user: AdminUser) {
   ];
 }
 
-function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUser; onReload: () => Promise<void>; onClose: () => void; onToast: (message: string) => void }) {
-  const sessions = loginSessions(user);
-  const [planModalOpen, setPlanModalOpen] = useState(false);
+function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUserDetail; onReload: () => Promise<void>; onClose: () => void; onToast: (message: string) => void }) {
+    const [detail, setDetail] = useState<AdminUserDetail>(user);
+    const [planModalOpen, setPlanModalOpen] = useState(false);
 
-  return (
-    <div className="drawer-backdrop" onClick={onClose}>
+    useEffect(() => {
+      let cancelled = false;
+
+      const refresh = async () => {
+        try {
+          const data = await adminApi.getUserDetail(user.id);
+          if (!cancelled) {
+            setDetail(data);
+          }
+        } catch {
+          if (!cancelled) {
+            setDetail(user);
+          }
+        }
+      };
+
+      setDetail(user);
+      void refresh();
+      const timer = window.setInterval(refresh, 5000);
+
+      return () => {
+        cancelled = true;
+        window.clearInterval(timer);
+      };
+    }, [user.id]);
+
+    const sessions = loginSessions(detail);
+
+    return (
+      <div className="drawer-backdrop" onClick={onClose}>
       <aside className="user-drawer" onClick={(event) => event.stopPropagation()}>
         <div className="drawer-head">
           <b>사용자 상세</b>
@@ -1039,18 +1079,18 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
         </div>
         <div className="drawer-body">
           <div className="drawer-profile">
-            <Avatar user={user} size={56} />
+            <Avatar user={detail} size={56} />
             <div>
-              <h2>{user.name}</h2>
-              <div className="mono drawer-email">{user.email}</div>
+              <h2>{detail.name}</h2>
+              <div className="mono drawer-email">{detail.email}</div>
             </div>
           </div>
-          <div className="drawer-status"><Tag meta={userStatus[user.status]}>{userStatus[user.status].label}</Tag></div>
+          <div className="drawer-status"><Tag meta={userStatus[detail.status]}>{userStatus[detail.status].label}</Tag></div>
           <div className="detail-grid">
-            <DetailStat label="메모 수" value={user.notes.toLocaleString("ko-KR")} />
-            <DetailStat label="현재 플랜" value={planLabel[user.plan]} tag={user.plan} />
-            <DetailStat label="가입일" value={user.joined} />
-            <DetailStat label="최근 활동" value={user.lastActive} />
+            <DetailStat label="메모 수" value={detail.notes.toLocaleString("ko-KR")} />
+            <DetailStat label="현재 플랜" value={planLabel[detail.plan]} tag={detail.plan} />
+            <DetailStat label="가입일" value={detail.joined} />
+            <DetailStat label="최근 활동" value={detail.lastActive} />
           </div>
           <button className="plan-change-button" onClick={() => setPlanModalOpen(true)}>플랜 변경</button>
           <section className="device-section">
@@ -1073,7 +1113,7 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
           </section>
           <section className="activity-section">
             <h3>활동 내역</h3>
-            {user.activities.map((activity) => (
+            {detail.activities.map((activity) => (
               <div className="activity-item" key={`${activity.text}-${activity.time}`}>
                 <span className="dot" style={{ background: "#0d9488" }} />
                 <div>
@@ -1089,12 +1129,12 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
               <button className="danger-secondary" onClick={async () => {
                 await adminApi.changeUserStatus(user.id, "suspended");
                 await onReload();
-                onToast(`${user.name} 계정을 정지했어요`);
+                onToast(`${detail.name} 계정을 정지했어요`);
               }}>계정 정지</button>
               <button className="danger-primary" onClick={async () => {
                 await adminApi.withdrawUser(user.id);
                 await onReload();
-                onToast(`${user.name} 탈퇴 처리를 요청했어요`);
+                onToast(`${detail.name} 탈퇴 처리를 요청했어요`);
               }}>탈퇴 처리</button>
             </div>
           </section>
@@ -1102,12 +1142,12 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
       </aside>
       {planModalOpen ? (
         <PlanChangeModal
-          user={user}
+          user={detail}
           onClose={() => setPlanModalOpen(false)}
           onApply={async (plan) => {
             await adminApi.changeUserPlan(user.id, plan);
             await onReload();
-            onToast(`${user.name}의 플랜을 ${planLabel[plan]}으로 변경했어요`);
+            onToast(`${detail.name}의 플랜을 ${planLabel[plan]}으로 변경했어요`);
             setPlanModalOpen(false);
           }}
         />

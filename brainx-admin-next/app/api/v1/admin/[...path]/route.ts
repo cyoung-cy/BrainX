@@ -10,19 +10,32 @@ async function dispatch(request: Request, context: RouteContext) {
   const params = await context.params;
   const mockEnabled = process.env.ADMIN_MOCK_ENABLED === "true";
   const adminServiceUrl = process.env.ADMIN_SERVICE_URL ?? "http://localhost:8085";
+  const pathSegments = params.path ?? [];
 
-  if (!mockEnabled) {
+  const proxyToAdminService = async () => {
     const sourceUrl = new URL(request.url);
-    const targetUrl = new URL(`/api/v1/admin/${(params.path ?? []).join("/")}${sourceUrl.search}`, adminServiceUrl);
+    const targetUrl = new URL(`/api/v1/admin/${pathSegments.join("/")}${sourceUrl.search}`, adminServiceUrl);
     return fetch(targetUrl, {
       method: request.method,
       headers: request.headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store"
     });
+  };
+
+  const shouldPreferRealService = !mockEnabled || (request.method === "GET" && pathSegments[0] === "users");
+
+  if (shouldPreferRealService) {
+    try {
+      return await proxyToAdminService();
+    } catch (error) {
+      if (!mockEnabled) {
+        throw error;
+      }
+    }
   }
 
-  return handleAdminMockRequest(request, params.path ?? []);
+  return handleAdminMockRequest(request, pathSegments);
 }
 
 export async function GET(request: Request, context: RouteContext) {

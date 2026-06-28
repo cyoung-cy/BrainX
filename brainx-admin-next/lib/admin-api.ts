@@ -47,11 +47,29 @@ type ApiUserRow = {
   joinedAt: string;
   lastActiveAt?: string | null;
   lastLogin?: {
+    sessionId?: string;
     device: string;
     location?: string | null;
+    ipAddress?: string | null;
+    userAgentHash?: string | null;
     lastSeenAt: string;
+    current?: boolean;
   } | null;
   activities?: Array<{ message: string; occurredAt: string }>;
+};
+
+type ApiLoginSession = {
+  sessionId: string;
+  device: string;
+  location?: string | null;
+  ipAddress?: string | null;
+  userAgentHash?: string | null;
+  lastSeenAt: string;
+  current: boolean;
+};
+
+type ApiUserDetail = ApiUserRow & {
+  sessions: ApiLoginSession[];
 };
 
 type ApiTicket = {
@@ -161,6 +179,20 @@ export type AdminBootstrap = {
   adminProfile: AdminProfile;
 };
 
+export type AdminLoginSession = {
+  sessionId: string;
+  device: string;
+  location: string;
+  ipAddress: string;
+  userAgentHash?: string | null;
+  lastSeenAt: string;
+  current: boolean;
+};
+
+export type AdminUserDetail = AdminUser & {
+  sessions: AdminLoginSession[];
+};
+
 export const fallbackAdminBootstrap: AdminBootstrap = {
   kpis,
   services,
@@ -258,6 +290,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(path, {
     ...init,
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -346,6 +379,18 @@ function mapUser(row: ApiUserRow, effectivePlan?: Plan): AdminUser {
       text: activity.message,
       time: relativeTime(activity.occurredAt)
     }))
+  };
+}
+
+function mapSession(session: ApiLoginSession): AdminLoginSession {
+  return {
+    sessionId: session.sessionId,
+    device: session.device,
+    location: session.location ?? "Unknown",
+    ipAddress: session.ipAddress ?? "127.0.0.1",
+    userAgentHash: session.userAgentHash ?? null,
+    lastSeenAt: session.lastSeenAt,
+    current: session.current
   };
 }
 
@@ -545,6 +590,11 @@ export const adminApi = {
   getHealthSnapshots: () => apiFetch<AdminServiceHealthSnapshot[]>("/api/v1/admin/monitoring/health"),
   deleteHealthSnapshot: (id: string) =>
     apiFetch<void>("/api/v1/admin/monitoring/health/" + id, { method: "DELETE" }),
+  getUserDetail: (userId: string) =>
+    apiFetch<ApiUserDetail>("/api/v1/admin/users/" + userId).then((row) => ({
+      ...mapUser(row),
+      sessions: (row.sessions ?? []).map(mapSession)
+    })),
   deleteTicket: (ticketId: string) =>
     apiFetch<void>("/api/v1/admin/support/tickets/" + ticketId, { method: "DELETE" }),
   deletePayment: (paymentId: string) =>

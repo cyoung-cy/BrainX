@@ -90,15 +90,15 @@ public class AdminService {
         ));
 
         List<KpiData> kpis = List.of(
-                new KpiData("이번 달 매출", formatMoney(summary.monthlyRevenue()), "live", "good", "Commerce-Service 집계"),
-                new KpiData("활성 구독", String.valueOf(summary.activeSubscriptions()), "live", "good", "현재 유료 구독"),
-                new KpiData("MRR", formatMoney(summary.mrr()), "live", "good", "월 반복 매출"),
+                new KpiData("?대쾲 ??留ㅼ텧", formatMoney(summary.monthlyRevenue()), "live", "good", "Commerce-Service 吏묎퀎"),
+                new KpiData("?쒖꽦 援щ룆", String.valueOf(summary.activeSubscriptions()), "live", "good", "?꾩옱 ?좊즺 援щ룆"),
+                new KpiData("MRR", formatMoney(summary.mrr()), "live", "good", "??諛섎났 留ㅼ텧"),
                 new KpiData(
-                        "결제 실패",
+                        "寃곗젣 ?ㅽ뙣",
                         String.valueOf(summary.failedPaymentCount()),
                         summary.failedPaymentCount() > 0 ? "action" : "stable",
                         summary.failedPaymentCount() > 0 ? "bad" : "good",
-                        "재시도 또는 안내 필요"
+                        "?ъ떆???먮뒗 ?덈궡 ?꾩슂"
                 )
         );
 
@@ -186,6 +186,7 @@ public class AdminService {
         }
 
         String userPlan = resolveUserPlans().getOrDefault(userId, "free");
+        List<AdminUserLoginSession> sessions = loadLoginSessions(userId, user);
 
         AdminUserRow row = mapUserRow(user, userPlan);
         return new AdminUserDetailData(
@@ -199,7 +200,7 @@ public class AdminService {
                 row.joinedAt(),
                 row.lastActiveAt(),
                 row.lastLogin(),
-                List.of(row.lastLogin()),
+                sessions,
                 row.activities()
         );
     }
@@ -756,7 +757,7 @@ public class AdminService {
     }
 
     private String formatMoney(BigDecimal value) {
-        return "₩" + value.divide(BigDecimal.valueOf(1_000_000), 1, RoundingMode.HALF_UP) + "M";
+        return "KRW " + value.divide(BigDecimal.valueOf(1_000_000), 1, RoundingMode.HALF_UP) + "M";
     }
 
     private String buildLogMessage(AdminOperationEvent event) {
@@ -870,10 +871,66 @@ public class AdminService {
         };
     }
 
+    private List<AdminUserLoginSession> loadLoginSessions(String userId, InternalUserDto user) {
+        List<InternalUserLoginSessionDto> sessions = userRestClient.get()
+                .uri("/internal/v1/users/{userId}/login-sessions", userId)
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<InternalUserLoginSessionDto>>() {});
+
+        if (sessions == null || sessions.isEmpty()) {
+            return List.of(buildLoginSession(user, toOffset(user.updatedAt(), BASE)));
+        }
+
+        return sessions.stream()
+                .map(this::mapLoginSession)
+                .toList();
+    }
+
+    private AdminUserLoginSession mapLoginSession(InternalUserLoginSessionDto session) {
+        return new AdminUserLoginSession(
+                session.sessionId(),
+                valueOr(session.device(), "Unknown / Unknown"),
+                valueOr(session.location(), "Unknown"),
+                valueOr(session.ipAddress(), "127.0.0.1"),
+                session.userAgentHash(),
+                session.lastSeenAt() != null ? session.lastSeenAt().atZone(ZoneId.systemDefault()).toOffsetDateTime() : BASE,
+                session.current()
+        );
+    }
+
+    private AdminUserLoginSession buildLoginSession(InternalUserDto user, OffsetDateTime lastSeenAt) {
+        if (user.lastLoginSessionId() != null && !user.lastLoginSessionId().isBlank() && user.lastLoginAt() != null) {
+            return new AdminUserLoginSession(
+                    user.lastLoginSessionId(),
+                    valueOr(user.lastLoginDevice(), "Unknown / Unknown"),
+                    valueOr(user.lastLoginLocation(), "Unknown"),
+                    valueOr(user.lastLoginIpAddress(), "127.0.0.1"),
+                    user.lastLoginUserAgentHash(),
+                    toOffset(user.lastLoginAt(), lastSeenAt),
+                    Boolean.TRUE.equals(user.lastLoginCurrent())
+            );
+        }
+
+        int seed = Math.abs(user.userId().hashCode());
+        String[] devices = {"Chrome / Windows", "Safari / iOS", "Chrome / Android", "Edge / Windows"};
+        String[] locations = {"Seoul", "Busan", "Daejeon", "Suwon"};
+        int idx = seed % devices.length;
+
+        return new AdminUserLoginSession(
+                user.userId() + "-session",
+                devices[idx],
+                locations[idx],
+                "121.168." + (20 + idx) + "." + (100 + idx),
+                "ua-" + Integer.toHexString(seed),
+                lastSeenAt,
+                true
+        );
+    }
+
     private AdminUserLoginSession buildLoginSession(String userId, OffsetDateTime lastSeenAt) {
         int seed = Math.abs(userId.hashCode());
         String[] devices = {"Chrome / Windows", "Safari / iOS", "Chrome / Android", "Edge / Windows"};
-        String[] locations = {"서울", "부산", "대전", "수원"};
+        String[] locations = {"Seoul", "Busan", "Daejeon", "Suwon"};
         int idx = seed % devices.length;
 
         return new AdminUserLoginSession(
@@ -890,13 +947,13 @@ public class AdminService {
     private List<AdminUserActivity> buildActivities(InternalUserDto user, PlanId planId, ManagedUserStatus status, OffsetDateTime occurredAt) {
         List<AdminUserActivity> activities = new ArrayList<>();
         activities.add(new AdminUserActivity(user.userId() + "-profile", "USER_SYNC", "사용자 정보 동기화", occurredAt));
-        activities.add(new AdminUserActivity(user.userId() + "-plan", "SUBSCRIPTION", "현재 플랜: " + planId.name(), occurredAt));
-        activities.add(new AdminUserActivity(user.userId() + "-status", "ACCOUNT_STATUS", "계정 상태: " + status.name(), occurredAt));
+        activities.add(new AdminUserActivity(user.userId() + "-plan", "SUBSCRIPTION", "?꾩옱 ?뚮옖: " + planId.name(), occurredAt));
+        activities.add(new AdminUserActivity(user.userId() + "-status", "ACCOUNT_STATUS", "怨꾩젙 ?곹깭: " + status.name(), occurredAt));
         if (user.deletionScheduledAt() != null) {
             activities.add(new AdminUserActivity(
                     user.userId() + "-deletion",
                     "DELETION_REQUEST",
-                    "탈퇴 예정일: " + user.deletionScheduledAt().toLocalDate(),
+                    "?덊눜 ?덉젙?? " + user.deletionScheduledAt().toLocalDate(),
                     toOffset(user.deletionScheduledAt(), occurredAt)
             ));
         }
@@ -904,9 +961,9 @@ public class AdminService {
     }
 
     private static String planDescription(String planId) {
-        if ("free".equals(planId)) return "노트 100개 · 기본 AI 요약";
-        if ("pro".equals(planId)) return "무제한 노트 · 고급 AI · 대화";
-        if ("max".equals(planId)) return "협업 · 권한 관리 · 우선 지원";
+        if ("free".equals(planId)) return "무료 100MB · 기본 AI 요약";
+        if ("pro".equals(planId)) return "무제한 노트 · 고급 AI · 협업";
+        if ("max".equals(planId)) return "작업 · 권한 관리 · 고급 분석";
         return "";
     }
 
@@ -927,7 +984,24 @@ public class AdminService {
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
             LocalDateTime deletionScheduledAt,
-            String deletionReason
+            String deletionReason,
+            String lastLoginSessionId,
+            LocalDateTime lastLoginAt,
+            String lastLoginDevice,
+            String lastLoginLocation,
+            String lastLoginIpAddress,
+            String lastLoginUserAgentHash,
+            Boolean lastLoginCurrent
+    ) {}
+
+    public record InternalUserLoginSessionDto(
+            String sessionId,
+            String device,
+            String location,
+            String ipAddress,
+            String userAgentHash,
+            LocalDateTime lastSeenAt,
+            boolean current
     ) {}
 
     public enum UserStatusType {

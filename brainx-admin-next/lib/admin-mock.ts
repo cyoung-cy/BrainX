@@ -123,6 +123,26 @@ function apiUser(user: typeof users[number]) {
       lastSeenAt: lastActiveToDateTime(user.lastActive) ?? now,
       current: user.status === "active"
     },
+    sessions: [
+      {
+        sessionId: `${user.id}-session-current`,
+        device: user.device,
+        location: user.location,
+        ipAddress: "121.168.32.104",
+        userAgentHash: "mock-user-agent-hash",
+        lastSeenAt: lastActiveToDateTime(user.lastActive) ?? now,
+        current: user.status === "active"
+      },
+      {
+        sessionId: `${user.id}-session-previous`,
+        device: user.device,
+        location: user.location,
+        ipAddress: "211.45.18.72",
+        userAgentHash: "mock-user-agent-hash-prev",
+        lastSeenAt: now,
+        current: false
+      }
+    ],
     activities: user.activities.map((activity, index) => ({
       activityId: `${user.id}-activity-${index}`,
       type: "USER_ACTIVITY",

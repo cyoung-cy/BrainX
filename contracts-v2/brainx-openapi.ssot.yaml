@@ -8344,13 +8344,16 @@ paths:
       - id: web.admin.users
         type: frontend
         description: BrainX-Admin user detail drawer
-      x-internal-sync-calls:
-      - operationId: getUserAccountSnapshotInternal
-        targetService: User-Service
-        reason: account and latest login sessions
-      - operationId: getUserWorkspaceStatsInternal
-        targetService: Workspace-Service
-        reason: note count, storage usage and recent user activities
+        x-internal-sync-calls:
+        - operationId: getUserAccountSnapshotInternal
+          targetService: User-Service
+          reason: account and latest login summary
+        - operationId: getUserLoginSessionsInternal
+          targetService: User-Service
+          reason: Redis-backed login session history with IP, device and location
+        - operationId: getUserWorkspaceStatsInternal
+          targetService: Workspace-Service
+          reason: note count, storage usage and recent user activities
       - operationId: getUserSubscriptionSnapshotInternal
         targetService: Commerce-Service
         reason: current plan and subscription status
@@ -10064,6 +10067,56 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+  /internal/v1/users/{userId}/login-sessions:
+    get:
+      operationId: getUserLoginSessionsInternal
+      summary: '[Internal] ?ъ슜??濡쒓렇??SSOT ?쒖쓽??議고쉶'
+      tags:
+      - Internal Service APIs
+      x-producer-service: identity-access
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-operations
+        type: internal-service
+        description: Admin-Service user detail drawer login session history
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: ?깃났
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InternalUserLoginSessionData'
+        '401':
+          description: ?몄쬆 ?꾩슂
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 李얠쓣 ???놁쓬
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: ?쒕쾭 ?대? ?ㅻ쪟
           content:
             application/json:
               schema:
@@ -14347,7 +14400,6 @@ components:
           nullable: true
         ipAddress:
           type: string
-          nullable: true
         userAgentHash:
           type: string
           nullable: true
@@ -14359,6 +14411,7 @@ components:
       required:
       - sessionId
       - device
+      - ipAddress
       - lastSeenAt
       - current
       additionalProperties: false
@@ -15131,6 +15184,28 @@ components:
         deletionReason:
           type: string
           nullable: true
+        lastLoginSessionId:
+          type: string
+          nullable: true
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastLoginDevice:
+          type: string
+          nullable: true
+        lastLoginLocation:
+          type: string
+          nullable: true
+        lastLoginIpAddress:
+          type: string
+          nullable: true
+        lastLoginUserAgentHash:
+          type: string
+          nullable: true
+        lastLoginCurrent:
+          type: boolean
+          nullable: true
       required:
       - userId
       - email
@@ -15138,6 +15213,33 @@ components:
       - status
       - createdAt
       - updatedAt
+      additionalProperties: false
+    InternalUserLoginSessionData:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        device:
+          type: string
+        location:
+          type: string
+          nullable: true
+        ipAddress:
+          type: string
+        userAgentHash:
+          type: string
+          nullable: true
+        lastSeenAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      required:
+      - sessionId
+      - device
+      - ipAddress
+      - lastSeenAt
+      - current
       additionalProperties: false
     InternalUserStatusChangeRequest:
       type: object
