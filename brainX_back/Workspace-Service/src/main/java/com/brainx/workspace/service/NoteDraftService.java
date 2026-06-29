@@ -11,12 +11,18 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -73,11 +79,13 @@ public class NoteDraftService {
                 ? Instant.now().plusSeconds(remainingTtlSeconds)
                 : savedAt.plusSeconds(draftTtlSeconds);
 
+        String folderId = (String) payload.get("folderId");
         return new NoteDraftData(
                 (String) payload.get("noteId"),
                 (String) payload.get("actorType"),
                 (String) payload.getOrDefault("title", "Untitled"),
                 (String) payload.get("markdown"),
+                (folderId == null || folderId.isBlank()) ? null : folderId,
                 ((Number) payload.get("baseVersion")).intValue(),
                 Instant.parse((String) payload.get("clientSavedAt")),
                 savedAt,
@@ -104,18 +112,53 @@ public class NoteDraftService {
         redisTemplate.opsForSet().remove(dirtyKey(actor), noteId);
     }
 
-    public List<String> userIdsWithDirtyDrafts() {
-        Set<String> dirtyKeys = redisTemplate.keys(DIRTY_KEY_FORMAT.formatted(actorTypeSegmentName("USER"), "*"));
-        if (dirtyKeys == null || dirtyKeys.isEmpty()) {
+    /** 폴더(들)가 cascade로 삭제될 때, 그 폴더에 속해 있던 이 actor의 draft-only 노트(아직
+        Postgres에 flush되지 않아 백엔드 폴더 cascade가 못 보는 노트)도 같이 지운다 — orphan
+        draft가 남지 않게 한다. 삭제된 noteId 목록을 돌려준다. */
+    public List<String> deleteDraftsByFolder(Actor actor, Collection<String> folderIds) {
+        if (folderIds == null || folderIds.isEmpty()) {
             return List.of();
         }
+        List<String> deleted = new ArrayList<>();
+        for (NoteDraftData draft : listDrafts(actor).drafts()) {
+            if (draft.folderId() != null && folderIds.contains(draft.folderId())) {
+                deleteDraft(actor, draft.noteId());
+                deleted.add(draft.noteId());
+            }
+        }
+        return deleted;
+    }
+
+    public List<String> userIdsWithDirtyDrafts() {
+        String pattern = DIRTY_KEY_FORMAT.formatted(actorTypeSegmentName("USER"), "*");
         String prefix = DIRTY_KEY_FORMAT.formatted(actorTypeSegmentName("USER"), "");
-        return dirtyKeys.stream()
-                .filter(key -> key.startsWith(prefix))
-                .map(key -> key.substring(prefix.length()))
-                .filter(userId -> !userId.isBlank())
-                .distinct()
-                .toList();
+        ScanOptions scanOptions = ScanOptions.scanOptions()
+                .match(pattern)
+                .count(500)
+                .build();
+        Set<String> userIds = new LinkedHashSet<>();
+
+        try (Cursor<String> cursor = redisTemplate.scan(scanOptions)) {
+            while (cursor.hasNext()) {
+                String userId = parseUserIdFromDirtyKey(cursor.next(), prefix);
+                if (userId != null) {
+                    userIds.add(userId);
+                }
+            }
+        }
+
+        return List.copyOf(userIds);
+    }
+
+    private String parseUserIdFromDirtyKey(String key, String prefix) {
+        if (key == null || !key.startsWith(prefix)) {
+            return null;
+        }
+        String userId = key.substring(prefix.length());
+        if (userId.isBlank() || userId.contains(":")) {
+            return null;
+        }
+        return userId;
     }
 
     String draftKey(Actor actor, String noteId) {
@@ -135,16 +178,18 @@ public class NoteDraftService {
     }
 
     private String draftPayload(Actor actor, String noteId, NoteDraftSaveRequest request, Instant savedAt) {
-        Map<String, Object> payload = Map.of(
-                "actorType", actor.type().name(),
-                "actorId", actor.id(),
-                "noteId", noteId,
-                "title", request.title() == null ? "" : request.title(),
-                "markdown", request.markdown(),
-                "baseVersion", request.baseVersion(),
-                "clientSavedAt", request.clientSavedAt().toString(),
-                "savedAt", savedAt.toString()
-        );
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("actorType", actor.type().name());
+        payload.put("actorId", actor.id());
+        payload.put("noteId", noteId);
+        payload.put("title", request.title() == null ? "" : request.title());
+        payload.put("markdown", request.markdown());
+        // 빈 문자열로 저장해 "루트"와 "필드 없음(과거 draft)"을 구분한다 — getDraft에서 빈
+        // 문자열은 null(루트)로, 키 자체가 없으면(이전 버전 draft) null로 동일하게 처리한다.
+        payload.put("folderId", request.folderId() == null ? "" : request.folderId());
+        payload.put("baseVersion", request.baseVersion());
+        payload.put("clientSavedAt", request.clientSavedAt().toString());
+        payload.put("savedAt", savedAt.toString());
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException exception) {

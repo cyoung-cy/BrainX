@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 @RestController
@@ -56,7 +57,29 @@ public class WorkspaceController {
 
     @DeleteMapping("/api/v1/notes/{noteId}")
     public ApiResponse<DeleteNoteData> deleteNote(@PathVariable String noteId, @RequestParam String mode) {
-        return ApiResponse.success(workspaceService.deleteNote(currentUser.userId(), noteId, mode));
+        if (!"trash".equalsIgnoreCase(mode) && !"permanent".equalsIgnoreCase(mode)) {
+            throw new WorkspaceException(HttpStatus.BAD_REQUEST, "INVALID_DELETE_MODE", "Delete mode must be trash or permanent.");
+        }
+        Actor actor = currentUser.actor();
+        // Redis draft은 USER/GUEST 둘 다 가질 수 있고, 노트가 아직 Postgres로 flush되기 전이거나
+        // (자동 flush는 idle 10초+주기 30초라 그 사이 창이 있음) guest라서 애초에 Postgres에 못
+        // 들어갔을 수 있다 — 어느 쪽이든 draft는 항상 먼저 지운다(없으면 no-op).
+        noteDraftService.deleteDraft(actor, noteId);
+        if (actor.type() == ActorType.GUEST) {
+            // Guest는 Postgres에 노트를 가질 수 없으므로(memberUserId() 정책) 위 draft 삭제만으로
+            // 충분하다 — workspaceService.deleteNote를 호출하면 항상 404로 끝난다.
+            return ApiResponse.success(new DeleteNoteData(noteId, Instant.now(), null));
+        }
+        try {
+            return ApiResponse.success(workspaceService.deleteNote(actor.id(), noteId, mode));
+        } catch (WorkspaceException exception) {
+            if ("NOTE_NOT_FOUND".equals(exception.getCode())) {
+                // 아직 Postgres로 flush되지 않은 draft-only 노트 — 위에서 draft는 이미 지웠으므로
+                // 사용자 입장에서는 정상적으로 삭제된 것이다.
+                return ApiResponse.success(new DeleteNoteData(noteId, Instant.now(), null));
+            }
+            throw exception;
+        }
     }
 
     @PutMapping("/api/v1/notes/{noteId}/content")
@@ -140,8 +163,16 @@ public class WorkspaceController {
     }
 
     @DeleteMapping("/api/v1/folders/{folderId}")
-    public ApiResponse<Void> deleteFolder(@PathVariable String folderId, @Valid @RequestBody FolderDeleteRequest request) {
-        return ApiResponse.success(workspaceService.deleteFolder(currentUser.userId(), folderId, request));
+    public ApiResponse<DeleteFolderData> deleteFolder(
+            @PathVariable String folderId,
+            @RequestParam(defaultValue = "trash") String mode
+    ) {
+        Actor actor = currentUser.actor();
+        DeleteFolderData result = workspaceService.deleteFolder(actor.id(), folderId, mode);
+        // Postgres cascade가 못 보는 draft-only 노트(이 actor가 그 폴더에서 아직 flush 전인 것)도
+        // 같은 폴더 id 집합 기준으로 정리한다 — orphan draft 방지.
+        noteDraftService.deleteDraftsByFolder(actor, result.deletedFolderIds());
+        return ApiResponse.success(result);
     }
 
     @GetMapping("/api/v1/tags/suggestions")

@@ -40,7 +40,7 @@ class KafkaIntelligenceEventAdapterTest {
         adapter.recordTokenUsage(new TokenUsageRecord(
             "usage-1",
             "user-1",
-            "AI-Service",
+            "Intelligence-Service",
             "sample-rag-chat",
             "gpt-test",
             100,
@@ -67,7 +67,7 @@ class KafkaIntelligenceEventAdapterTest {
 
         assertThat(root.get("eventType").asText()).isEqualTo("TokenUsageRecordedRequested");
         assertThat(root.get("eventVersion").asInt()).isEqualTo(1);
-        assertThat(root.get("producer").asText()).isEqualTo("AI-Service");
+        assertThat(root.get("producer").asText()).isEqualTo("Intelligence-Service");
         assertThat(root.get("correlationId").asText()).isEqualTo("cause-1");
         assertThat(root.get("idempotencyKey").asText()).isEqualTo("usage-1");
         assertThat(root.get("payload").get("cachedInputTokens").asInt()).isEqualTo(40);
@@ -380,7 +380,7 @@ class KafkaIntelligenceEventAdapterTest {
 
         assertThat(root.get("eventType").asText()).isEqualTo("InsightReportRequested");
         assertThat(root.get("idempotencyKey").asText()).isEqualTo("report-1");
-        assertThat(root.get("payload").get("reportId").asText()).isEqualTo("report-1");
+        assertThat(root.get("payload").get("reportJobId").asText()).isEqualTo("report-1");
         assertThat(root.get("payload").get("scope").get("documentGroupId").asText()).isEqualTo("group-1");
         assertThat(root.get("payload").get("includeLearningRecommendations").asBoolean()).isTrue();
     }

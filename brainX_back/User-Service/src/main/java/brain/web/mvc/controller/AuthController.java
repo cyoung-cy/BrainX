@@ -22,6 +22,7 @@ import brain.web.mvc.entity.EmailVerification;
 import brain.web.mvc.exception.ApiException;
 import brain.web.mvc.service.AuthService;
 import brain.web.mvc.service.EmailVerificationService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -84,16 +85,16 @@ public class AuthController {
     }
 
     @PostMapping("/signup/email")
-    public ResponseEntity<ApiResponse<AuthTokenResponse>> signup(@Valid @RequestBody EmailSignupRequest request) {
-        AuthTokenResponse response = authService.signup(request);
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> signup(HttpServletRequest httpRequest, @Valid @RequestBody EmailSignupRequest request) {
+        AuthTokenResponse response = authService.signup(request, httpRequest);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "회원가입이 완료되었습니다."));
     }
 
     @PostMapping("/login/local")
-    public ResponseEntity<ApiResponse<AuthTokenResponse>> login(@Valid @RequestBody LoginRequest request) {
-        AuthTokenResponse response = authService.login(request);
+    public ResponseEntity<ApiResponse<AuthTokenResponse>> login(HttpServletRequest httpRequest, @Valid @RequestBody LoginRequest request) {
+        AuthTokenResponse response = authService.login(request, httpRequest);
         String message = response.requires2fa() ? "2단계 인증이 필요합니다." : "로그인 성공";
         return ResponseEntity.ok(ApiResponse.success(response, message));
     }
@@ -107,14 +108,14 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody LogoutRequest request) {
-        authService.logout(request.refreshToken());
+    public ResponseEntity<ApiResponse<Void>> logout(HttpServletRequest httpRequest, @Valid @RequestBody LogoutRequest request) {
+        authService.logout(request.refreshToken(), httpRequest);
         return ResponseEntity.ok(ApiResponse.success(null, "로그아웃되었습니다."));
     }
 
     @PostMapping("/token/refresh")
-    public ResponseEntity<ApiResponse<TokenRefreshResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
-        TokenRefreshResponse response = authService.refresh(request.refreshToken());
+    public ResponseEntity<ApiResponse<TokenRefreshResponse>> refresh(HttpServletRequest httpRequest, @Valid @RequestBody RefreshTokenRequest request) {
+        TokenRefreshResponse response = authService.refresh(request.refreshToken(), httpRequest);
         return ResponseEntity.ok(ApiResponse.success(response, "토큰이 재발급되었습니다."));
     }
 
@@ -127,17 +128,19 @@ public class AuthController {
     @PostMapping("/oauth/{provider}/callback")
     public ResponseEntity<ApiResponse<OAuthCallbackResponse>> completeOAuth(
             @PathVariable String provider,
+            HttpServletRequest httpRequest,
             @Valid @RequestBody OAuthCallbackRequest request
     ) {
-        OAuthCallbackResponse response = authService.completeOAuth(provider, request.code(), request.state());
+        OAuthCallbackResponse response = authService.completeOAuth(provider, request.code(), request.state(), httpRequest);
         return ResponseEntity.ok(ApiResponse.success(response, "소셜 로그인이 완료되었습니다."));
     }
 
     @PostMapping("/onboarding/complete")
     public ResponseEntity<ApiResponse<AuthTokenResponse>> completeOnboarding(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody OnboardingCompleteRequest request
     ) {
-        AuthTokenResponse response = authService.completeOnboarding(request);
+        AuthTokenResponse response = authService.completeOnboarding(request, httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "온보딩이 완료되었습니다."));
     }

@@ -59,7 +59,7 @@ public class NoteAutoLinkService implements NoteAutoLinkUseCase {
     private static final String STATUS_LIMIT_EXCEEDED = "LIMIT_EXCEEDED";
     private static final String STATUS_NO_NOTES = "NO_NOTES";
     private static final String STATUS_AI_UNAVAILABLE = "AI_UNAVAILABLE";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String VECTOR_FEATURE_ID = "note-auto-link-vector-refine-chat";
     private static final String LLM_ONLY_FEATURE_ID = "note-auto-link-llm-only-chat";
     private static final String RELATION_VERIFIER_FEATURE_ID = "note-auto-link-relation-verifier-chat";

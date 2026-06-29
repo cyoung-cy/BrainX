@@ -24,6 +24,7 @@ interface Props {
   onOpenNewWindow: () => void;
   onSplitRight: () => void;
   onSplitDown: () => void;
+  canSplitWorkspace: boolean;
 }
 
 function MenuItem({
@@ -31,19 +32,26 @@ function MenuItem({
   label,
   onClick,
   danger = false,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       className={cx(
         "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition-colors",
-        danger ? "text-red-400 hover:bg-red-500/10 hover:text-red-300" : "text-txt2 hover:bg-surface2/60 hover:text-txt"
+        disabled
+          ? "cursor-not-allowed text-txt3/40"
+          : danger
+            ? "text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            : "text-txt2 hover:bg-surface2/60 hover:text-txt"
       )}
     >
       <span className="shrink-0">{icon}</span>
@@ -64,6 +72,7 @@ export default function TabContextMenu({
   onOpenNewWindow,
   onSplitRight,
   onSplitDown,
+  canSplitWorkspace,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: target.x, top: target.y, visibility: "hidden" as "hidden" | "visible" });
@@ -122,8 +131,8 @@ export default function TabContextMenu({
       <MenuItem icon={<Copy size={13} />} label="탭으로 링크 복사" onClick={run(onCopyLink)} />
       <MenuItem icon={<ExternalLink size={13} />} label="새 창으로 이동" onClick={run(onOpenNewWindow)} />
       <div className="my-1 border-t border-line/30" />
-      <MenuItem icon={<PanelRightOpen size={13} />} label="우측 분할" onClick={run(onSplitRight)} />
-      <MenuItem icon={<PanelBottomOpen size={13} />} label="하단 분할" onClick={run(onSplitDown)} />
+      <MenuItem icon={<PanelRightOpen size={13} />} label="우측 분할" onClick={run(onSplitRight)} disabled={!canSplitWorkspace} />
+      <MenuItem icon={<PanelBottomOpen size={13} />} label="하단 분할" onClick={run(onSplitDown)} disabled={!canSplitWorkspace} />
     </div>,
     document.body
   );

@@ -1,4 +1,31 @@
 services:
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: brainx-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:29092"
+    volumes:
+      - brainx_kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
   gateway-service:
     profiles:
       - apps
@@ -11,6 +38,7 @@ services:
       - ./env/gateway-service.env
     environment:
       SERVER_PORT: "8088"
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-local-service-token}
       USER_SERVICE_URL: http://user-service:8080
       WORKSPACE_SERVICE_URL: http://workspace-service:8082
       INGESTION_SERVICE_URL: http://ingestion-service:8083
@@ -26,8 +54,6 @@ services:
       ingestion-service:
         condition: service_started
       commerce-service:
-        condition: service_started
-      admin-service:
         condition: service_started
 
   user-service:
@@ -129,11 +155,14 @@ services:
       SERVER_PORT: "8085"
       POSTGRES_HOST: postgres
       ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
+      GATEWAY_SERVICE_URL: http://gateway-service:8088
     ports:
       - "8085:8085"
     depends_on:
       postgres:
         condition: service_healthy
+      gateway-service:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health | grep -q UP"]
       interval: 10s
@@ -203,6 +232,7 @@ services:
       retries: 10
 
 volumes:
+  brainx_kafka_data:
   brainx_postgres_data:
   brainx_neo4j_data:
   brainx_neo4j_logs:

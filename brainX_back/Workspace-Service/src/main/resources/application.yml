@@ -11,6 +11,11 @@ spring:
     - optional:file:../env/workspace-service.env[.properties]
   application:
     name: Workspace-Service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
   datasource:
     url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${WORKSPACE_DB_NAME:brainx_workspace}}
     username: ${POSTGRES_USER:postgres}
@@ -47,6 +52,10 @@ brainx:
       username: ${NEO4J_USERNAME:neo4j}
       password: ${NEO4J_PASSWORD:brainx_neo4j_local_password}
       backfill-on-startup: ${NEO4J_BACKFILL_ON_STARTUP:true}
+  events:
+    outbox:
+      enabled: ${BRAINX_EVENTS_OUTBOX_ENABLED:false}
+      relay-delay-ms: ${BRAINX_EVENTS_OUTBOX_RELAY_DELAY_MS:2000}
 logging:
   level:
     com.brainx: DEBUG

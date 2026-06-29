@@ -3,7 +3,7 @@ info:
   title: BrainX Async Event SSOT - Knowledge Intelligence
   version: 1.0.0-revised
   description: AsyncAPI slice for events produced or consumed by Intelligence Service. The upstream AsyncAPI SSOT identifies
-    this service as AI-Service.
+    this service as Intelligence-Service.
 servers:
   localKafka:
     host: localhost:9092
@@ -20,18 +20,18 @@ channels:
     messages:
       AiModelSettingsChanged:
         $ref: '#/components/messages/AiModelSettingsChanged'
-    description: 'Channel for AiModelSettingsChanged. Producer: AI-Service. Consumers: Admin-Service, AI-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for AiModelSettingsChanged. Producer: Intelligence-Service. Consumers: Admin-Service, Intelligence-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   aiSuggestionCreated:
     address: brainx.knowledge.intelligence.ai-suggestion-created.v1
     messages:
       AiSuggestionCreated:
         $ref: '#/components/messages/AiSuggestionCreated'
-    description: 'Channel for AiSuggestionCreated. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for AiSuggestionCreated. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   aiSuggestionDecisionRecorded:
@@ -39,29 +39,29 @@ channels:
     messages:
       AiSuggestionDecisionRecorded:
         $ref: '#/components/messages/AiSuggestionDecisionRecorded'
-    description: 'Channel for AiSuggestionDecisionRecorded. Producer: AI-Service. Consumers: Admin-Service, AI-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for AiSuggestionDecisionRecorded. Producer: Intelligence-Service. Consumers: Admin-Service, Intelligence-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   captureReceived:
     address: brainx.content.ingestion.publishing.capture-received.v1
     messages:
       CaptureReceived:
         $ref: '#/components/messages/CaptureReceived'
-    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service, AI-Service, Admin-Service.'
+    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service, Intelligence-Service, Admin-Service.'
     x-producer-service: Ingestion-Service
     x-consumer-services:
     - Ingestion-Service
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
   chatMessageCreated:
     address: brainx.knowledge.intelligence.chat-message-created.v1
     messages:
       ChatMessageCreated:
         $ref: '#/components/messages/ChatMessageCreated'
-    description: 'Channel for ChatMessageCreated. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for ChatMessageCreated. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   chatThreadCreated:
@@ -69,8 +69,8 @@ channels:
     messages:
       ChatThreadCreated:
         $ref: '#/components/messages/ChatThreadCreated'
-    description: 'Channel for ChatThreadCreated. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for ChatThreadCreated. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   clusterJobCompleted:
@@ -78,8 +78,8 @@ channels:
     messages:
       ClusterJobCompleted:
         $ref: '#/components/messages/ClusterJobCompleted'
-    description: 'Channel for ClusterJobCompleted. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for ClusterJobCompleted. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   clusterJobRequested:
@@ -87,47 +87,47 @@ channels:
     messages:
       ClusterJobRequested:
         $ref: '#/components/messages/ClusterJobRequested'
-    description: 'Channel for ClusterJobRequested. Producer: AI-Service. Consumers: AI-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for ClusterJobRequested. Producer: Intelligence-Service. Consumers: Intelligence-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
   folderChanged:
     address: brainx.knowledge.workspace.folder-changed.v1
     messages:
       FolderChanged:
         $ref: '#/components/messages/FolderChanged'
-    description: 'Channel for FolderChanged. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    description: 'Channel for FolderChanged. Producer: Workspace-Service. Consumers: Admin-Service, Intelligence-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   folderCreated:
     address: brainx.knowledge.workspace.folder-created.v1
     messages:
       FolderCreated:
         $ref: '#/components/messages/FolderCreated'
-    description: 'Channel for FolderCreated. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    description: 'Channel for FolderCreated. Producer: Workspace-Service. Consumers: Admin-Service, Intelligence-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   folderDeleted:
     address: brainx.knowledge.workspace.folder-deleted.v1
     messages:
       FolderDeleted:
         $ref: '#/components/messages/FolderDeleted'
-    description: 'Channel for FolderDeleted. Producer: Workspace-Service. Consumers: Admin-Service, AI-Service.'
+    description: 'Channel for FolderDeleted. Producer: Workspace-Service. Consumers: Admin-Service, Intelligence-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   insightReportCompleted:
     address: brainx.knowledge.intelligence.insight-report-completed.v1
     messages:
       InsightReportCompleted:
         $ref: '#/components/messages/InsightReportCompleted'
-    description: 'Channel for InsightReportCompleted. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for InsightReportCompleted. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   insightReportRequested:
@@ -135,20 +135,20 @@ channels:
     messages:
       InsightReportRequested:
         $ref: '#/components/messages/InsightReportRequested'
-    description: 'Channel for InsightReportRequested. Producer: AI-Service. Consumers: AI-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for InsightReportRequested. Producer: Intelligence-Service. Consumers: Intelligence-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
   noteContentSaved:
     address: brainx.knowledge.workspace.note-content-saved.v1
     messages:
       NoteContentSaved:
         $ref: '#/components/messages/NoteContentSaved'
-    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
       Commerce-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - Commerce-Service
@@ -157,11 +157,11 @@ channels:
     messages:
       NoteCreated:
         $ref: '#/components/messages/NoteCreated'
-    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
       Commerce-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - Commerce-Service
@@ -170,11 +170,11 @@ channels:
     messages:
       NoteDeleted:
         $ref: '#/components/messages/NoteDeleted'
-    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
       User-Service, Ingestion-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - User-Service
@@ -184,10 +184,10 @@ channels:
     messages:
       NoteLinkCreated:
         $ref: '#/components/messages/NoteLinkCreated'
-    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service.'
+    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   noteLinkDeleted:
@@ -195,10 +195,10 @@ channels:
     messages:
       NoteLinkDeleted:
         $ref: '#/components/messages/NoteLinkDeleted'
-    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service.'
+    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   noteMetadataChanged:
@@ -206,11 +206,11 @@ channels:
     messages:
       NoteMetadataChanged:
         $ref: '#/components/messages/NoteMetadataChanged'
-    description: 'Channel for NoteMetadataChanged. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service,
+    description: 'Channel for NoteMetadataChanged. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
       Admin-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   noteTagsChanged:
@@ -218,10 +218,10 @@ channels:
     messages:
       NoteTagsChanged:
         $ref: '#/components/messages/NoteTagsChanged'
-    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service, Workspace-Service.'
+    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service, Workspace-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   noteTrashed:
@@ -229,11 +229,11 @@ channels:
     messages:
       NoteTrashed:
         $ref: '#/components/messages/NoteTrashed'
-    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: AI-Service, Workspace-Service, Admin-Service,
+    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
       User-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - User-Service
@@ -242,10 +242,10 @@ channels:
     messages:
       NotesMoved:
         $ref: '#/components/messages/NotesMoved'
-    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: AI-Service, Admin-Service, Workspace-Service.'
+    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service, Workspace-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   semanticSearchPerformed:
@@ -253,8 +253,8 @@ channels:
     messages:
       SemanticSearchPerformed:
         $ref: '#/components/messages/SemanticSearchPerformed'
-    description: 'Channel for SemanticSearchPerformed. Producer: AI-Service. Consumers: Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for SemanticSearchPerformed. Producer: Intelligence-Service. Consumers: Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   tokenUsageRecordedRequested:
@@ -262,8 +262,8 @@ channels:
     messages:
       TokenUsageRecordedRequested:
         $ref: '#/components/messages/TokenUsageRecordedRequested'
-    description: 'Channel for TokenUsageRecordedRequested. Producer: AI-Service. Consumers: Commerce-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for TokenUsageRecordedRequested. Producer: Intelligence-Service. Consumers: Commerce-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Commerce-Service
   userDeletionRequested:
@@ -272,23 +272,23 @@ channels:
       UserDeletionRequested:
         $ref: '#/components/messages/UserDeletionRequested'
     description: 'Channel for UserDeletionRequested. Producer: User-Service. Consumers: User-Service, User-Service, Commerce-Service,
-      Workspace-Service, Ingestion-Service, AI-Service.'
+      Workspace-Service, Ingestion-Service, Intelligence-Service.'
     x-producer-service: User-Service
     x-consumer-services:
     - User-Service
     - Commerce-Service
     - Workspace-Service
     - Ingestion-Service
-    - AI-Service
+    - Intelligence-Service
   userStyleProfileChanged:
     address: brainx.knowledge.intelligence.user-style-profile-changed.v1
     messages:
       UserStyleProfileChanged:
         $ref: '#/components/messages/UserStyleProfileChanged'
-    description: 'Channel for UserStyleProfileChanged. Producer: AI-Service. Consumers: AI-Service, Admin-Service.'
-    x-producer-service: AI-Service
+    description: 'Channel for UserStyleProfileChanged. Producer: Intelligence-Service. Consumers: Intelligence-Service, Admin-Service.'
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
 operations:
   sendAiModelSettingsChanged:
@@ -297,19 +297,19 @@ operations:
       $ref: '#/channels/aiModelSettingsChanged'
     messages:
     - $ref: '#/channels/aiModelSettingsChanged/messages/AiModelSettingsChanged'
-    summary: AI-Service publishes AiModelSettingsChanged
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes AiModelSettingsChanged
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   sendAiSuggestionCreated:
     action: send
     channel:
       $ref: '#/channels/aiSuggestionCreated'
     messages:
     - $ref: '#/channels/aiSuggestionCreated/messages/AiSuggestionCreated'
-    summary: AI-Service publishes AiSuggestionCreated
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes AiSuggestionCreated
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendAiSuggestionDecisionRecorded:
@@ -318,11 +318,11 @@ operations:
       $ref: '#/channels/aiSuggestionDecisionRecorded'
     messages:
     - $ref: '#/channels/aiSuggestionDecisionRecorded/messages/AiSuggestionDecisionRecorded'
-    summary: AI-Service publishes AiSuggestionDecisionRecorded
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes AiSuggestionDecisionRecorded
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   sendCaptureReceived:
     action: send
     channel:
@@ -333,7 +333,7 @@ operations:
     x-producer-service: Ingestion-Service
     x-consumer-services:
     - Ingestion-Service
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
   sendChatMessageCreated:
     action: send
@@ -341,8 +341,8 @@ operations:
       $ref: '#/channels/chatMessageCreated'
     messages:
     - $ref: '#/channels/chatMessageCreated/messages/ChatMessageCreated'
-    summary: AI-Service publishes ChatMessageCreated
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes ChatMessageCreated
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendChatThreadCreated:
@@ -351,8 +351,8 @@ operations:
       $ref: '#/channels/chatThreadCreated'
     messages:
     - $ref: '#/channels/chatThreadCreated/messages/ChatThreadCreated'
-    summary: AI-Service publishes ChatThreadCreated
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes ChatThreadCreated
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendClusterJobCompleted:
@@ -361,8 +361,8 @@ operations:
       $ref: '#/channels/clusterJobCompleted'
     messages:
     - $ref: '#/channels/clusterJobCompleted/messages/ClusterJobCompleted'
-    summary: AI-Service publishes ClusterJobCompleted
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes ClusterJobCompleted
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendClusterJobRequested:
@@ -371,10 +371,10 @@ operations:
       $ref: '#/channels/clusterJobRequested'
     messages:
     - $ref: '#/channels/clusterJobRequested/messages/ClusterJobRequested'
-    summary: AI-Service publishes ClusterJobRequested
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes ClusterJobRequested
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
   sendFolderChanged:
     action: send
     channel:
@@ -385,7 +385,7 @@ operations:
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   sendFolderCreated:
     action: send
     channel:
@@ -396,7 +396,7 @@ operations:
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   sendFolderDeleted:
     action: send
     channel:
@@ -407,15 +407,15 @@ operations:
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Admin-Service
-    - AI-Service
+    - Intelligence-Service
   sendInsightReportCompleted:
     action: send
     channel:
       $ref: '#/channels/insightReportCompleted'
     messages:
     - $ref: '#/channels/insightReportCompleted/messages/InsightReportCompleted'
-    summary: AI-Service publishes InsightReportCompleted
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes InsightReportCompleted
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendInsightReportRequested:
@@ -424,10 +424,10 @@ operations:
       $ref: '#/channels/insightReportRequested'
     messages:
     - $ref: '#/channels/insightReportRequested/messages/InsightReportRequested'
-    summary: AI-Service publishes InsightReportRequested
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes InsightReportRequested
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
   sendNoteContentSaved:
     action: send
     channel:
@@ -437,7 +437,7 @@ operations:
     summary: Workspace-Service publishes NoteContentSaved
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - Commerce-Service
@@ -450,7 +450,7 @@ operations:
     summary: Workspace-Service publishes NoteCreated
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - Commerce-Service
@@ -463,7 +463,7 @@ operations:
     summary: Workspace-Service publishes NoteDeleted
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - User-Service
@@ -477,7 +477,7 @@ operations:
     summary: Workspace-Service publishes NoteLinkCreated
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   sendNoteLinkDeleted:
@@ -489,7 +489,7 @@ operations:
     summary: Workspace-Service publishes NoteLinkDeleted
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   sendNoteMetadataChanged:
@@ -501,7 +501,7 @@ operations:
     summary: Workspace-Service publishes NoteMetadataChanged
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
   sendNoteTagsChanged:
@@ -513,7 +513,7 @@ operations:
     summary: Workspace-Service publishes NoteTagsChanged
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   sendNoteTrashed:
@@ -525,7 +525,7 @@ operations:
     summary: Workspace-Service publishes NoteTrashed
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - User-Service
@@ -538,7 +538,7 @@ operations:
     summary: Workspace-Service publishes NotesMoved
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   sendSemanticSearchPerformed:
@@ -547,8 +547,8 @@ operations:
       $ref: '#/channels/semanticSearchPerformed'
     messages:
     - $ref: '#/channels/semanticSearchPerformed/messages/SemanticSearchPerformed'
-    summary: AI-Service publishes SemanticSearchPerformed
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes SemanticSearchPerformed
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Admin-Service
   sendTokenUsageRecordedRequested:
@@ -557,8 +557,8 @@ operations:
       $ref: '#/channels/tokenUsageRecordedRequested'
     messages:
     - $ref: '#/channels/tokenUsageRecordedRequested/messages/TokenUsageRecordedRequested'
-    summary: AI-Service publishes TokenUsageRecordedRequested
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes TokenUsageRecordedRequested
+    x-producer-service: Intelligence-Service
     x-consumer-services:
     - Commerce-Service
   sendUserDeletionRequested:
@@ -574,17 +574,17 @@ operations:
     - Commerce-Service
     - Workspace-Service
     - Ingestion-Service
-    - AI-Service
+    - Intelligence-Service
   sendUserStyleProfileChanged:
     action: send
     channel:
       $ref: '#/channels/userStyleProfileChanged'
     messages:
     - $ref: '#/channels/userStyleProfileChanged/messages/UserStyleProfileChanged'
-    summary: AI-Service publishes UserStyleProfileChanged
-    x-producer-service: AI-Service
+    summary: Intelligence-Service publishes UserStyleProfileChanged
+    x-producer-service: Intelligence-Service
     x-consumer-services:
-    - AI-Service
+    - Intelligence-Service
     - Admin-Service
 components:
   messages:
@@ -603,13 +603,13 @@ components:
               const: AiModelSettingsChanged
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/AiModelSettingsChangedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -630,10 +630,10 @@ components:
               const: AiSuggestionCreated
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/AiSuggestionCreatedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -656,13 +656,13 @@ components:
               const: AiSuggestionDecisionRecorded
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/AiSuggestionDecisionRecordedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -689,7 +689,7 @@ components:
       x-producer-service: Ingestion-Service
       x-consumer-services:
       - Ingestion-Service
-      - AI-Service
+      - Intelligence-Service
       - Admin-Service
       x-delivery:
         semantic: at-least-once
@@ -711,10 +711,10 @@ components:
               const: ChatMessageCreated
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/ChatMessageCreatedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -737,10 +737,10 @@ components:
               const: ChatThreadCreated
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/ChatThreadCreatedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -763,10 +763,10 @@ components:
               const: ClusterJobCompleted
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/ClusterJobCompletedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -789,12 +789,12 @@ components:
               const: ClusterJobRequested
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/ClusterJobRequestedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -821,7 +821,7 @@ components:
       x-producer-service: Workspace-Service
       x-consumer-services:
       - Admin-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -848,7 +848,7 @@ components:
       x-producer-service: Workspace-Service
       x-consumer-services:
       - Admin-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -875,7 +875,7 @@ components:
       x-producer-service: Workspace-Service
       x-consumer-services:
       - Admin-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -896,10 +896,10 @@ components:
               const: InsightReportCompleted
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/InsightReportCompletedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -922,12 +922,12 @@ components:
               const: InsightReportRequested
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/InsightReportRequestedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -953,7 +953,7 @@ components:
               $ref: '#/components/schemas/NoteContentSavedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       - Commerce-Service
@@ -982,7 +982,7 @@ components:
               $ref: '#/components/schemas/NoteCreatedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       - Commerce-Service
@@ -1011,7 +1011,7 @@ components:
               $ref: '#/components/schemas/NoteDeletedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       - User-Service
@@ -1041,7 +1041,7 @@ components:
               $ref: '#/components/schemas/NoteLinkCreatedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       x-delivery:
@@ -1069,7 +1069,7 @@ components:
               $ref: '#/components/schemas/NoteLinkDeletedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       x-delivery:
@@ -1097,7 +1097,7 @@ components:
               $ref: '#/components/schemas/NoteMetadataChangedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       x-delivery:
@@ -1125,7 +1125,7 @@ components:
               $ref: '#/components/schemas/NoteTagsChangedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Admin-Service
       - Workspace-Service
       x-delivery:
@@ -1153,7 +1153,7 @@ components:
               $ref: '#/components/schemas/NoteTrashedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Workspace-Service
       - Admin-Service
       - User-Service
@@ -1182,7 +1182,7 @@ components:
               $ref: '#/components/schemas/NotesMovedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Admin-Service
       - Workspace-Service
       x-delivery:
@@ -1205,10 +1205,10 @@ components:
               const: SemanticSearchPerformed
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/SemanticSearchPerformedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Admin-Service
       x-delivery:
@@ -1231,10 +1231,10 @@ components:
               const: TokenUsageRecordedRequested
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/TokenUsageRecordedRequestedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
       - Commerce-Service
       x-delivery:
@@ -1266,7 +1266,7 @@ components:
       - Commerce-Service
       - Workspace-Service
       - Ingestion-Service
-      - AI-Service
+      - Intelligence-Service
       x-delivery:
         semantic: at-least-once
         orderingKey: userId or aggregate id
@@ -1287,12 +1287,12 @@ components:
               const: UserStyleProfileChanged
             producer:
               type: string
-              const: AI-Service
+              const: Intelligence-Service
             payload:
               $ref: '#/components/schemas/UserStyleProfileChangedPayload'
-      x-producer-service: AI-Service
+      x-producer-service: Intelligence-Service
       x-consumer-services:
-      - AI-Service
+      - Intelligence-Service
       - Admin-Service
       x-delivery:
         semantic: at-least-once
@@ -1869,6 +1869,8 @@ components:
           type: string
         knowledgeGapCount:
           type: integer
+        recommendationCount:
+          type: integer
       required:
       - reportId
       - userId
@@ -1959,9 +1961,9 @@ x-ssot:
   - Note read models, search indexes, graph projections, dashboards and wordclouds are eventually consistent.
 x-extracted-from:
   source: contracts-v2/brainx-asyncapi.ssot.yaml
-  serviceId: AI-Service
+  serviceId: Intelligence-Service
   serviceAliasForThisProject: knowledge-intelligence
   criteria:
-  - channel.x-producer-service == AI-Service
-  - channel.x-consumer-services contains AI-Service
+  - channel.x-producer-service == Intelligence-Service
+  - channel.x-consumer-services contains Intelligence-Service
   conflictSide: right
