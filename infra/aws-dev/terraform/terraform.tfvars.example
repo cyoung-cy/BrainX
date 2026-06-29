@@ -1,0 +1,18 @@
+aws_region        = "ap-northeast-2"
+project_name      = "brainx"
+environment       = "dev"
+github_repository = "Final-BrainX/BrainX"
+github_branch     = "main"
+
+# Use an existing account-wide GitHub OIDC provider if one already exists.
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+instance_type           = "r7i.xlarge"
+ec2_root_volume_gb      = 200
+rds_instance_class      = "db.t4g.medium"
+rds_allocated_storage_gb = 50
+
+# Restrict this to your office/home CIDR if possible.
+allowed_http_cidr_blocks = ["0.0.0.0/0"]
+
+ssm_parameter_prefix = "/brainx/dev"

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y ca-certificates curl unzip docker.io python3
+
+if ! command -v aws >/dev/null 2>&1; then
+  curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+  rm -rf /tmp/aws
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install --update
+fi
+
+mkdir -p /usr/local/lib/docker/cli-plugins
+if ! docker compose version >/dev/null 2>&1; then
+  curl -fsSL https://github.com/docker/compose/releases/download/v2.30.3/docker-compose-linux-x86_64 \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+fi
+
+systemctl enable --now docker
+systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service || systemctl enable --now amazon-ssm-agent || true
+
+if [ ! -f /swapfile ]; then
+  fallocate -l ${swap_size_gb}G /swapfile || dd if=/dev/zero of=/swapfile bs=1G count=${swap_size_gb}
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+mkdir -p ${app_dir}/current ${app_dir}/env ${app_dir}/state ${app_dir}/releases
+chmod 700 ${app_dir}/env
+chown -R ubuntu:ubuntu ${app_dir}

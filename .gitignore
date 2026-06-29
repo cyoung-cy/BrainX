@@ -68,6 +68,15 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Terraform local state/cache
+**/.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+*.tfvars
+!*.tfvars.example
+
 # OS and editor files
 .DS_Store
 Thumbs.db

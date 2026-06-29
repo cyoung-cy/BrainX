@@ -56,6 +56,7 @@ BrainX/
 │  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
 │  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
 ├─ contracts-v2/          # OpenAPI/AsyncAPI SSOT 계약 문서
+├─ infra/aws-dev/         # AWS 개발환경 Terraform + GitHub Actions 배포 구성
 └─ BrainX-Design/         # Next.js + iframe 기반 디자인 프로토타입 (포트 3000)
                           # Notion 가져오기 UI 구현됨 (BrainX-Design 전용, brainx-next와 별도)
 ```

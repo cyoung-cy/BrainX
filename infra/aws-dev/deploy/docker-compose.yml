@@ -1,0 +1,328 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: brainx-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8081:8081"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - frontend
+      - admin-frontend
+      - gateway-service
+      - intelligence-service
+    mem_limit: 256m
+
+  frontend:
+    image: ${ECR_REGISTRY}/brainx-dev-frontend:${FRONTEND_TAG:-dev-latest}
+    container_name: brainx-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      API_SERVER_URL: http://gateway-service:8088
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_BASE_URL}
+      NEXT_PUBLIC_WORKSPACE_API_BASE_URL: ${PUBLIC_BASE_URL}
+      NEXT_PUBLIC_COMMERCE_API_BASE_URL: ${PUBLIC_BASE_URL}
+      NEXT_PUBLIC_INGESTION_API_BASE_URL: ${PUBLIC_BASE_URL}
+      NEXT_PUBLIC_NOTES_USE_MOCK: "false"
+      NEXT_PUBLIC_GRAPH_USE_MOCK: "false"
+      NEXT_PUBLIC_GRAPH_CLUSTERS_USE_MOCK: "false"
+    expose:
+      - "3000"
+    mem_limit: 1536m
+
+  admin-frontend:
+    image: ${ECR_REGISTRY}/brainx-dev-admin-frontend:${ADMIN_FRONTEND_TAG:-dev-latest}
+    container_name: brainx-admin-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOSTNAME: 0.0.0.0
+      ADMIN_SERVICE_URL: http://admin-service:8085
+    expose:
+      - "3001"
+    mem_limit: 1024m
+
+  gateway-service:
+    image: ${ECR_REGISTRY}/brainx-dev-gateway-service:${GATEWAY_SERVICE_TAG:-dev-latest}
+    container_name: brainx-gateway-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8088"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m -XX:+ExitOnOutOfMemoryError
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      FRONTEND_BASE_URL: ${PUBLIC_BASE_URL}
+      USER_SERVICE_URL: http://user-service:8080
+      WORKSPACE_SERVICE_URL: http://workspace-service:8082
+      INGESTION_SERVICE_URL: http://ingestion-service:8083
+      COMMERCE_SERVICE_URL: http://commerce-service:8084
+      ADMIN_SERVICE_URL: http://admin-service:8085
+    expose:
+      - "8088"
+    depends_on:
+      - user-service
+      - workspace-service
+      - ingestion-service
+      - commerce-service
+      - admin-service
+    mem_limit: 768m
+
+  user-service:
+    image: ${ECR_REGISTRY}/brainx-dev-user-service:${USER_SERVICE_TAG:-dev-latest}
+    container_name: brainx-user-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx768m -XX:+ExitOnOutOfMemoryError
+      POSTGRES_HOST: ${RDS_HOST}
+      POSTGRES_PORT: ${RDS_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      USER_DB_NAME: brainx_user
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      FRONTEND_BASE_URL: ${PUBLIC_BASE_URL}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${PUBLIC_BASE_URL}/oauth/google/callback
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_REDIRECT_URI: ${PUBLIC_BASE_URL}/oauth/kakao/callback
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      NAVER_REDIRECT_URI: ${PUBLIC_BASE_URL}/oauth/naver/callback
+      JPA_DDL_AUTO: update
+    expose:
+      - "8080"
+    depends_on:
+      - redis
+    mem_limit: 1024m
+
+  workspace-service:
+    image: ${ECR_REGISTRY}/brainx-dev-workspace-service:${WORKSPACE_SERVICE_TAG:-dev-latest}
+    container_name: brainx-workspace-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8082"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx1024m -XX:+ExitOnOutOfMemoryError
+      POSTGRES_HOST: ${RDS_HOST}
+      POSTGRES_PORT: ${RDS_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      WORKSPACE_DB_NAME: brainx_workspace
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      NEO4J_ENABLED: "true"
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAINX_EVENTS_OUTBOX_ENABLED: "true"
+      JPA_DDL_AUTO: update
+    expose:
+      - "8082"
+    depends_on:
+      - redis
+      - neo4j
+      - kafka
+    mem_limit: 1536m
+
+  ingestion-service:
+    image: ${ECR_REGISTRY}/brainx-dev-ingestion-service:${INGESTION_SERVICE_TAG:-dev-latest}
+    container_name: brainx-ingestion-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8083"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx1024m -XX:+ExitOnOutOfMemoryError
+      POSTGRES_HOST: ${RDS_HOST}
+      POSTGRES_PORT: ${RDS_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      INGESTION_DB_NAME: brainx_ingestion
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      WORKSPACE_SERVICE_URL: http://workspace-service:8082
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JPA_DDL_AUTO: update
+    expose:
+      - "8083"
+    depends_on:
+      - workspace-service
+      - kafka
+    mem_limit: 1280m
+
+  commerce-service:
+    image: ${ECR_REGISTRY}/brainx-dev-commerce-service:${COMMERCE_SERVICE_TAG:-dev-latest}
+    container_name: brainx-commerce-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8084"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx768m -XX:+ExitOnOutOfMemoryError
+      POSTGRES_HOST: ${RDS_HOST}
+      POSTGRES_PORT: ${RDS_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      COMMERCE_DB_NAME: brainx_commerce
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
+      TOSS_CONFIRM_URL: ${TOSS_CONFIRM_URL:-https://api.tosspayments.com/v1/payments/confirm}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAINX_EVENTS_OUTBOX_ENABLED: "true"
+      JPA_DDL_AUTO: update
+    expose:
+      - "8084"
+    depends_on:
+      - kafka
+    mem_limit: 1024m
+
+  admin-service:
+    image: ${ECR_REGISTRY}/brainx-dev-admin-service:${ADMIN_SERVICE_TAG:-dev-latest}
+    container_name: brainx-admin-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8085"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx768m -XX:+ExitOnOutOfMemoryError
+      POSTGRES_HOST: ${RDS_HOST}
+      POSTGRES_PORT: ${RDS_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ADMIN_DB_NAME: brainx_admin
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      GATEWAY_SERVICE_URL: http://gateway-service:8088
+      SEED_ADMIN_LOGIN_ID: ${SEED_ADMIN_LOGIN_ID:-admin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-BrainX Admin}
+      JPA_DDL_AUTO: update
+    expose:
+      - "8085"
+    mem_limit: 1024m
+
+  intelligence-service:
+    image: ${ECR_REGISTRY}/brainx-dev-intelligence-service:${INTELLIGENCE_SERVICE_TAG:-dev-latest}
+    container_name: brainx-intelligence-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8086"
+      JAVA_TOOL_OPTIONS: -Xms256m -Xmx2048m -XX:+ExitOnOutOfMemoryError
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/brainx_intelligence
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_URL: jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/brainx_intelligence
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      JPA_DDL_AUTO: update
+      JWT_SECRET: ${JWT_SECRET}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SPRING_AI_MODEL_CHAT: openai
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-5.4-mini}
+      OPENAI_WEB_SEARCH_MODEL: ${OPENAI_WEB_SEARCH_MODEL:-gpt-5.5}
+      BRAINX_EXTERNAL_SEARCH_PROVIDER: ${BRAINX_EXTERNAL_SEARCH_PROVIDER:-openai}
+      BRAINX_AI_EMBEDDING_PROVIDER: ${BRAINX_AI_EMBEDDING_PROVIDER:-voyage}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      VOYAGE_EMBEDDING_MODEL: ${VOYAGE_EMBEDDING_MODEL:-voyage-4-lite}
+      VOYAGE_EMBEDDING_DIMENSIONS: ${VOYAGE_EMBEDDING_DIMENSIONS:-1024}
+      QDRANT_HOST: qdrant
+      QDRANT_GRPC_PORT: "6334"
+      QDRANT_COLLECTION: brainx_note_search
+      BRAINX_VECTOR_QDRANT_ENABLED: "true"
+      BRAINX_WORKSPACE_BASE_URL: http://workspace-service:8082
+      BRAINX_WORKSPACE_SERVICE_TOKEN: ${SERVICE_TOKEN}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAINX_EVENTS_CONSUMER_ENABLED: "true"
+      BRAINX_EVENTS_PRODUCER_ENABLED: "true"
+    expose:
+      - "8086"
+    depends_on:
+      - qdrant
+      - kafka
+      - workspace-service
+    mem_limit: 2560m
+
+  redis:
+    image: redis:7-alpine
+    container_name: brainx-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
+    mem_limit: 384m
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: brainx-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: 768m
+      NEO4J_server_memory_heap_max__size: 1536m
+      NEO4J_server_memory_pagecache_size: 768m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    expose:
+      - "7474"
+      - "7687"
+    mem_limit: 3072m
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    container_name: brainx-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    expose:
+      - "6333"
+      - "6334"
+    mem_limit: 3072m
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: brainx-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/tmp/kafka-logs
+    expose:
+      - "9092"
+    mem_limit: 2048m
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:
+  kafka_data:
