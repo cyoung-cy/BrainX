@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
@@ -452,12 +453,16 @@ public class AdminService {
         Map<String, InternalUserDto> usersById = new java.util.HashMap<>(userMap());
         InternalUserDto user = resolveUser(normalizedUserId(payment.userId()), usersById);
 
-        commerceRestClient.post()
-                .uri("/internal/v1/billing/payments/{paymentId}/refund", paymentId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request == null ? new AdminPaymentRefundRequest(null, null) : request)
-                .retrieve()
-                .toBodilessEntity();
+        try {
+            commerceRestClient.post()
+                    .uri("/internal/v1/billing/payments/{paymentId}/refund", paymentId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request == null ? new AdminPaymentRefundRequest(null, null) : request)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException exception) {
+            throw mapCommerceClientException(exception);
+        }
 
         OffsetDateTime refundedAt = OffsetDateTime.now();
         refundNotificationService.sendRefundCompletedMail(
@@ -472,6 +477,36 @@ public class AdminService {
         );
 
         return new AdminPaymentActionData(paymentId, "REFUND_REQUESTED", refundedAt);
+    }
+
+    private RuntimeException mapCommerceClientException(HttpClientErrorException exception) {
+        String responseBody = exception.getResponseBodyAsString();
+        String message = extractErrorMessage(responseBody);
+        int statusCode = exception.getStatusCode().value();
+        if (statusCode == 400) {
+            return com.brainx.admin.exception.AdminAuthException.badRequest(message);
+        }
+        if (statusCode == 404) {
+            return com.brainx.admin.exception.AdminAuthException.notFound(message);
+        }
+        if (statusCode == 409) {
+            return com.brainx.admin.exception.AdminAuthException.conflict(message);
+        }
+        if (statusCode == 403) {
+            return com.brainx.admin.exception.AdminAuthException.forbidden(message);
+        }
+        return new IllegalStateException(message);
+    }
+
+    private String extractErrorMessage(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "결제 환불 처리 중 오류가 발생했습니다.";
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"message\"\\s*:\\s*\"([^\"]+)\"").matcher(responseBody);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return responseBody;
     }
 
     @Transactional

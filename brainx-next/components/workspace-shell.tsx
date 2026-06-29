@@ -412,6 +412,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener("brainx-auth-session-changed", refreshPlan);
     window.addEventListener("brainx-subscription-changed", refreshPlan);
     window.addEventListener("message", handlePaymentMessage);
+    const refreshInterval = window.setInterval(refreshPlan, 30000);
 
     return () => {
       active = false;
@@ -419,6 +420,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
       window.removeEventListener("brainx-auth-session-changed", refreshPlan);
       window.removeEventListener("brainx-subscription-changed", refreshPlan);
       window.removeEventListener("message", handlePaymentMessage);
+      window.clearInterval(refreshInterval);
     };
   }, [session?.accessToken, session?.userId]);
 

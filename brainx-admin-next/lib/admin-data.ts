@@ -52,6 +52,7 @@ export type BillingSubscription = {
   plan: Plan;
   started: string;
   next: string;
+  billingCycle?: "monthly" | "yearly";
   amount: number;
 };
 

@@ -42,8 +42,8 @@ public class AdminRefundNotificationService {
         if (!StringUtils.hasText(email)) {
             return;
         }
-        if (!StringUtils.hasText(mailUsername)) {
-            LOGGER.info(() -> "Mail username is empty. Refund notification skipped for paymentId=" + paymentId + ", email=" + email);
+        if (!StringUtils.hasText(mailUsername) && !StringUtils.hasText(mailFrom)) {
+            LOGGER.info(() -> "Mail sender is not configured. Refund notification skipped for paymentId=" + paymentId + ", email=" + email);
             return;
         }
 
@@ -51,9 +51,7 @@ public class AdminRefundNotificationService {
             MimeMessage message = javaMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
             helper.setTo(email);
-            if (StringUtils.hasText(mailFrom)) {
-                helper.setFrom(mailFrom);
-            }
+            helper.setFrom(StringUtils.hasText(mailFrom) ? mailFrom : mailUsername);
             helper.setSubject("[BrainX] 결제 환불이 완료되었습니다");
             helper.setText(mailContent(userName, paymentId, planId, amount, method, reason, refundedAt), true);
             javaMailSender.send(message);
