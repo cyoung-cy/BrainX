@@ -3,7 +3,7 @@
 import { useId, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
-import { getOAuthAuthorization, type OAuthProvider } from "@/lib/auth-api";
+import { getOAuthAuthorization, stashOAuthReturnTo, type OAuthProvider } from "@/lib/auth-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Icon, ThemeToggle } from "@/components/brainx-ui";
 import { HeroConstellation } from "@/components/public/landing-screen";
@@ -64,9 +64,10 @@ export function Field({
 
 type SocialButtonsProps = {
   recentLogin?: "google" | "kakao" | "naver" | null;
+  returnTo?: string | null;
 };
 
-export function SocialButtons({ recentLogin = null }: SocialButtonsProps) {
+export function SocialButtons({ recentLogin = null, returnTo = null }: SocialButtonsProps) {
   const { pushToast } = useBrainX();
   const providers: Array<{
     name: string;
@@ -114,6 +115,7 @@ export function SocialButtons({ recentLogin = null }: SocialButtonsProps) {
   const handleOAuth = async (provider: OAuthProvider, name: string) => {
     try {
       window.localStorage.removeItem(OAUTH_LINK_INTENT_KEY);
+      stashOAuthReturnTo(returnTo ?? "/home");
       const data = await getOAuthAuthorization(provider);
       window.location.href = data.authorizationUrl;
     } catch (error) {

@@ -2379,6 +2379,9 @@ export interface NoteEditorHandle {
   insertImageFile: (file: File) => void;
   insertImageUrl: (src: string) => void;
   insertTable: (rows: number, cols: number) => void;
+  /** 우측 목차(RightSidebar) 클릭 → 해당 heading으로 스크롤. index는 parseHeadings가 매긴
+      문서 순서(0-based, heading id "h-{index}")와 동일한 기준이라 그대로 재사용할 수 있다. */
+  scrollToHeading: (index: number) => void;
 }
 
 /* ── 커스텀 버블 메뉴 ──────────────────────────────────────────────────
@@ -2823,6 +2826,20 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     insertTable: (rows, cols) => {
       editor?.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
     },
+    scrollToHeading: (index) => {
+      if (!editor) return;
+      // parseHeadings(RightSidebar.tsx)와 같은 문서 순서 기준 — 별도 id/anchor를 새로 만드는
+      // 대신 실제 렌더된 heading 엘리먼트를 순서대로 찾는다(DOM 쿼리가 ProseMirror position
+      // 계산보다 read/edit 모드 양쪽에서 더 단순하고 안정적이다).
+      const target = editor.view.dom.querySelectorAll("h1, h2, h3")[index] as HTMLElement | undefined;
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove("brainx-heading-flash");
+      // 같은 heading을 연속으로 다시 클릭해도 애니메이션이 재생되도록 강제로 리플로우시킨다.
+      void target.offsetWidth;
+      target.classList.add("brainx-heading-flash");
+      window.setTimeout(() => target.classList.remove("brainx-heading-flash"), 900);
+    },
   }), [editor, note.id, onContentChange]);
 
   const requestInlineContinue = useCallback(async () => {
@@ -3009,11 +3026,23 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       if (draft && shellRectForDraft) {
         const pos = Math.min(draft.insertPos, editor.state.doc.content.size);
         const draftCoords = safeCoordsAtPos(editor.view, pos, 1);
+        // coordsAtPos의 top/bottom은 글리프 박스 경계라 줄간격(leading)을 포함하지 않는다 —
+        // bottom + 약간만 띄우면 바로 아래 줄 텍스트와 겹친다. 캐럿이 있는 줄의 실제 line-height
+        // 만큼 통째로 내려서 다음 줄 전체를 비켜가게 하고, 위젯 자체 높이(~32px)만큼 화면 아래
+        // 경계도 같이 보정한다.
+        const computedLineHeight = parseFloat(window.getComputedStyle(editor.view.dom).lineHeight);
+        const lineHeight = Number.isFinite(computedLineHeight) ? computedLineHeight : 26;
         const left = Math.max(
           8,
           Math.min(draftCoords.right - shellRectForDraft.left + 6, shellRectForDraft.width - 280)
         );
-        const top = Math.max(8, draftCoords.bottom - shellRectForDraft.top + 4);
+        const top = Math.max(
+          8,
+          Math.min(
+            draftCoords.top - shellRectForDraft.top + lineHeight + 10,
+            shellRectForDraft.height - 32
+          )
+        );
         setContinueDraftAnchor({ left, top });
       } else {
         setContinueDraftAnchor(null);

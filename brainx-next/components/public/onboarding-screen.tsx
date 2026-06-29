@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { INTERESTS } from "@/lib/brainx-data";
 import { EMPTY_CONSENTS, requiredConsentsAccepted, type ConsentState } from "@/lib/legal";
 import { cx } from "@/lib/utils";
-import { completeOnboarding, readAuthSession } from "@/lib/auth-api";
+import { buildAuthPath, completeOnboarding, readAuthSession, readReturnToParam, resolveAuthReturnTo } from "@/lib/auth-api";
 import { updateMyProfile } from "@/lib/user-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
@@ -26,6 +26,7 @@ export function OnboardingScreen() {
   const [selected, setSelected] = useState<string[]>([]);
   const [consents, setConsents] = useState<ConsentState>(EMPTY_CONSENTS);
   const [submitting, setSubmitting] = useState(false);
+  const [returnTo] = useState(() => readReturnToParam());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const requiresConsentStep = Boolean(onboardingToken);
   const stepSequence = requiresConsentStep ? [0, 1, 2, 3] : [0, 1, 3];
@@ -94,12 +95,12 @@ export function OnboardingScreen() {
         });
       } else {
         pushToast("로그인이 필요합니다.", "err");
-        router.push("/login");
+        router.push(buildAuthPath("/login", returnTo));
         return;
       }
       pushToast("온보딩이 완료되었습니다.", "ok");
       markAsNewUserFirstLogin();
-      router.push("/home");
+      router.push(resolveAuthReturnTo(returnTo));
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "온보딩 완료에 실패했습니다.", "err");
     } finally {

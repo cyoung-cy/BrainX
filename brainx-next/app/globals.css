@@ -461,6 +461,20 @@ html.light .aurora b {
   }
 }
 
+/* 목차 클릭 → heading으로 스크롤 직후 잠깐 띄워주는 강조 효과(NoteEditor.tsx scrollToHeading) */
+@keyframes headingFlash {
+  0% {
+    background-color: rgb(var(--primary) / 0.22);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.brainx-heading-flash {
+  animation: headingFlash 900ms ease-out;
+  border-radius: 0.25rem;
+}
+
 @keyframes ringPulse {
   0% {
     opacity: 1;

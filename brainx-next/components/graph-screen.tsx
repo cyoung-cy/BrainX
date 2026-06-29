@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { Compass, FileUp, PencilLine, Pin, PinOff, Sparkles } from "lucide-react";
 import { readAuthSession } from "@/lib/auth-api";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
-import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
+import { draftsToBrainXNotes, getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
+import { listWorkspaceNoteDrafts } from "@/lib/workspace-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
@@ -917,15 +918,38 @@ function GraphScreenInner() {
 
   useEffect(() => {
     const session = readAuthSession();
-    const hasRealLogin = !!session && session.accessToken !== "demo-access-token";
+    const hasRealLogin = Boolean(session?.accessToken);
+    let active = true;
 
-    if (USE_MOCK_GRAPH && !hasRealLogin) {
+    if (!hasRealLogin) {
+      // Guest 노트는 Postgres에 없고 Redis draft로만 존재한다 — User 전용 getGraph() 대신
+      // draft 목록(actor-aware, 기존 endpoint 재사용)을 연결선 없는 노드로 보여준다.
+      setLiveNotes([]);
+      setLiveEdges([]);
+      listWorkspaceNoteDrafts()
+        .then((data) => {
+          if (!active) return;
+          setLiveNotes(draftsToBrainXNotes(data.drafts));
+          setLiveEdges([]);
+        })
+        .catch((error) => {
+          if (!active) return;
+          setLiveNotes([]);
+          setLiveEdges([]);
+          const message = error instanceof Error ? error.message : "임시 저장된 노트를 불러오지 못했습니다.";
+          pushToast(message, "err");
+        });
+      return () => {
+        active = false;
+      };
+    }
+
+    if (USE_MOCK_GRAPH) {
       setLiveNotes(null);
       setLiveEdges(null);
       return;
     }
 
-    let active = true;
     setLiveNotes([]);
     setLiveEdges([]);
     getGraph()

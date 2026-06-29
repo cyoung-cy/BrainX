@@ -10,6 +10,7 @@ import { AccountSettingsModal } from "@/components/utility/account-settings-moda
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { cx } from "@/lib/utils";
 import {
+  buildAuthPath,
   readAuthSession,
   type AuthSession,
 } from "@/lib/auth-api";
@@ -310,6 +311,7 @@ function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: () => 
 function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { pushToast, t } = useBrainX();
   const router = useRouter();
+  const pathname = usePathname();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [profileName, setProfileName] = useState("");
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
@@ -492,7 +494,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
                   type="button"
                   onClick={() => {
                     setGuestMenuOpen(false);
-                    router.push("/signup");
+                    router.push(buildAuthPath("/signup", pathname));
                   }}
                   className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[13px] font-medium text-txt hover:bg-surface2/60"
                 >
@@ -502,7 +504,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
                   type="button"
                   onClick={() => {
                     setGuestMenuOpen(false);
-                    router.push("/login");
+                    router.push(buildAuthPath("/login", pathname));
                   }}
                   className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[13px] text-txt2 hover:bg-surface2/60 hover:text-txt"
                 >
