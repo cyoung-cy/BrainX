@@ -126,6 +126,21 @@ ensure_tag() {
   fi
 }
 
+quote_env_value() {
+  python3 - "$1" <<'PY'
+import sys
+
+value = sys.argv[1]
+print("'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'")
+PY
+}
+
+write_env() {
+  key="$1"
+  value="$2"
+  printf '%s=%s\n' "$key" "$(quote_env_value "$value")"
+}
+
 for key in \
   GATEWAY_SERVICE_TAG USER_SERVICE_TAG WORKSPACE_SERVICE_TAG INGESTION_SERVICE_TAG \
   COMMERCE_SERVICE_TAG ADMIN_SERVICE_TAG INTELLIGENCE_SERVICE_TAG FRONTEND_TAG ADMIN_FRONTEND_TAG; do
@@ -159,34 +174,34 @@ for service in $services; do
 done
 
 {
-  printf 'AWS_REGION=%s\n' "$AWS_REGION"
-  printf 'ECR_REGISTRY=%s\n' "$ECR_REGISTRY"
-  printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
-  printf 'ADMIN_PUBLIC_BASE_URL=%s\n' "$ADMIN_PUBLIC_BASE_URL"
-  printf 'RDS_HOST=%s\n' "$RDS_HOST"
-  printf 'RDS_PORT=%s\n' "$RDS_PORT"
-  printf 'POSTGRES_USER=%s\n' "$POSTGRES_USER"
-  printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
-  printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
-  printf 'SERVICE_TOKEN=%s\n' "$SERVICE_TOKEN"
-  printf 'NEO4J_PASSWORD=%s\n' "$NEO4J_PASSWORD"
-  printf 'SEED_ADMIN_PASSWORD=%s\n' "$SEED_ADMIN_PASSWORD"
-  printf 'SEED_ADMIN_LOGIN_ID=%s\n' "$SEED_ADMIN_LOGIN_ID"
-  printf 'SEED_ADMIN_NAME=%s\n' "$SEED_ADMIN_NAME"
-  printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY"
-  printf 'VOYAGE_API_KEY=%s\n' "$VOYAGE_API_KEY"
-  printf 'TOSS_CLIENT_KEY=%s\n' "$TOSS_CLIENT_KEY"
-  printf 'TOSS_SECRET_KEY=%s\n' "$TOSS_SECRET_KEY"
-  printf 'TOSS_CONFIRM_URL=%s\n' "$TOSS_CONFIRM_URL"
-  printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
-  printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
-  printf 'KAKAO_CLIENT_ID=%s\n' "$KAKAO_CLIENT_ID"
-  printf 'KAKAO_CLIENT_SECRET=%s\n' "$KAKAO_CLIENT_SECRET"
-  printf 'NAVER_CLIENT_ID=%s\n' "$NAVER_CLIENT_ID"
-  printf 'NAVER_CLIENT_SECRET=%s\n' "$NAVER_CLIENT_SECRET"
-  printf 'MAIL_USERNAME=%s\n' "$MAIL_USERNAME"
-  printf 'MAIL_PASSWORD=%s\n' "$MAIL_PASSWORD"
-  printf 'MAIL_FROM=%s\n' "$MAIL_FROM"
+  write_env AWS_REGION "$AWS_REGION"
+  write_env ECR_REGISTRY "$ECR_REGISTRY"
+  write_env PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
+  write_env ADMIN_PUBLIC_BASE_URL "$ADMIN_PUBLIC_BASE_URL"
+  write_env RDS_HOST "$RDS_HOST"
+  write_env RDS_PORT "$RDS_PORT"
+  write_env POSTGRES_USER "$POSTGRES_USER"
+  write_env POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+  write_env JWT_SECRET "$JWT_SECRET"
+  write_env SERVICE_TOKEN "$SERVICE_TOKEN"
+  write_env NEO4J_PASSWORD "$NEO4J_PASSWORD"
+  write_env SEED_ADMIN_PASSWORD "$SEED_ADMIN_PASSWORD"
+  write_env SEED_ADMIN_LOGIN_ID "$SEED_ADMIN_LOGIN_ID"
+  write_env SEED_ADMIN_NAME "$SEED_ADMIN_NAME"
+  write_env OPENAI_API_KEY "$OPENAI_API_KEY"
+  write_env VOYAGE_API_KEY "$VOYAGE_API_KEY"
+  write_env TOSS_CLIENT_KEY "$TOSS_CLIENT_KEY"
+  write_env TOSS_SECRET_KEY "$TOSS_SECRET_KEY"
+  write_env TOSS_CONFIRM_URL "$TOSS_CONFIRM_URL"
+  write_env GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID"
+  write_env GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET"
+  write_env KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
+  write_env KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
+  write_env NAVER_CLIENT_ID "$NAVER_CLIENT_ID"
+  write_env NAVER_CLIENT_SECRET "$NAVER_CLIENT_SECRET"
+  write_env MAIL_USERNAME "$MAIL_USERNAME"
+  write_env MAIL_PASSWORD "$MAIL_PASSWORD"
+  write_env MAIL_FROM "$MAIL_FROM"
   cat "$TAG_STATE"
 } > "$RUNTIME_ENV"
 chmod 600 "$RUNTIME_ENV"
