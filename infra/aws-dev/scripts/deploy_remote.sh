@@ -148,11 +148,8 @@ for key in \
 done
 
 services="${CHANGED_SERVICES:-}"
-if [ "${DEPLOY_CONFIG_CHANGED:-false}" = "true" ] && [ -z "$services" ]; then
-  services="gateway-service user-service workspace-service ingestion-service commerce-service admin-service intelligence-service frontend admin-frontend caddy"
-fi
 
-if [ -z "$services" ]; then
+if [ -z "$services" ] && [ "${DEPLOY_CONFIG_CHANGED:-false}" != "true" ]; then
   echo "No services requested for deployment."
   exit 0
 fi
