@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -323,7 +323,7 @@ export function SignupScreen() {
   return (
     <div className="grid h-screen overflow-hidden bg-bg">
     <AuthShell>
-      <div className="w-full max-w-[600px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
+      <div className="w-full max-w-[700px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
           <h1 className="mb-1 text-[24px] font-bold tracking-tight text-txt">두뇌를 깨우는 1분</h1>
           <p className="mb-4 text-[14px] text-txt2">무료로 BrainX를 시작하세요.</p>
       <div className="mb-1 flex items-start gap-2">
