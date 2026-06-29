@@ -105,9 +105,9 @@ resource "aws_security_group" "ec2" {
   }
 
   ingress {
-    description = "Admin frontend HTTP"
-    from_port   = 8081
-    to_port     = 8081
+    description = "HTTPS through Caddy"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = var.allowed_http_cidr_blocks
   }
@@ -271,6 +271,14 @@ resource "aws_instance" "app" {
   }
 }
 
+resource "aws_ec2_instance_state" "app" {
+  instance_id = aws_instance.app.id
+  state       = var.ec2_runtime_state
+  force       = true
+
+  depends_on = [aws_eip_association.app]
+}
+
 resource "aws_eip" "app" {
   domain = "vpc"
 
@@ -282,4 +290,18 @@ resource "aws_eip" "app" {
 resource "aws_eip_association" "app" {
   instance_id   = aws_instance.app.id
   allocation_id = aws_eip.app.id
+}
+
+resource "terraform_data" "rds_runtime_state" {
+  triggers_replace = {
+    db_instance_identifier = aws_db_instance.postgres.identifier
+    desired_state          = var.rds_runtime_state
+    operation_nonce        = var.rds_runtime_state_operation_nonce
+  }
+
+  provisioner "local-exec" {
+    command = "python ${path.module}/scripts/rds_runtime_state.py --region ${var.aws_region} --db-instance-identifier ${aws_db_instance.postgres.identifier} --desired-state ${var.rds_runtime_state}"
+  }
+
+  depends_on = [aws_db_instance.postgres]
 }

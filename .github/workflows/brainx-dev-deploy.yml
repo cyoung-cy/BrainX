@@ -33,6 +33,9 @@ env:
   AWS_DEV_SSM_PARAMETER_PREFIX: ${{ vars.AWS_DEV_SSM_PARAMETER_PREFIX }}
   AWS_DEV_PUBLIC_BASE_URL: ${{ vars.AWS_DEV_PUBLIC_BASE_URL }}
   AWS_DEV_ADMIN_PUBLIC_BASE_URL: ${{ vars.AWS_DEV_ADMIN_PUBLIC_BASE_URL }}
+  AWS_DEV_PUBLIC_SITE_ADDRESS: ${{ vars.AWS_DEV_PUBLIC_SITE_ADDRESS }}
+  AWS_DEV_ADMIN_SITE_ADDRESS: ${{ vars.AWS_DEV_ADMIN_SITE_ADDRESS }}
+  AWS_DEV_ACME_EMAIL: ${{ vars.AWS_DEV_ACME_EMAIL }}
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -58,7 +61,9 @@ jobs:
             AWS_DEV_RDS_PORT \
             AWS_DEV_SSM_PARAMETER_PREFIX \
             AWS_DEV_PUBLIC_BASE_URL \
-            AWS_DEV_ADMIN_PUBLIC_BASE_URL; do
+            AWS_DEV_ADMIN_PUBLIC_BASE_URL \
+            AWS_DEV_PUBLIC_SITE_ADDRESS \
+            AWS_DEV_ADMIN_SITE_ADDRESS; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
@@ -266,6 +271,9 @@ jobs:
               "SSM_PARAMETER_PREFIX": os.environ["AWS_DEV_SSM_PARAMETER_PREFIX"],
               "PUBLIC_BASE_URL": os.environ["AWS_DEV_PUBLIC_BASE_URL"],
               "ADMIN_PUBLIC_BASE_URL": os.environ["AWS_DEV_ADMIN_PUBLIC_BASE_URL"],
+              "PUBLIC_SITE_ADDRESS": os.environ["AWS_DEV_PUBLIC_SITE_ADDRESS"],
+              "ADMIN_SITE_ADDRESS": os.environ["AWS_DEV_ADMIN_SITE_ADDRESS"],
+              "ACME_EMAIL": os.environ.get("AWS_DEV_ACME_EMAIL", ""),
               "ARTIFACT_BUCKET": os.environ["AWS_DEV_ARTIFACT_BUCKET"],
               "ARTIFACT_KEY": os.environ["ARTIFACT_KEY"],
               "CHANGED_SERVICES": os.environ.get("CHANGED_SERVICES", ""),

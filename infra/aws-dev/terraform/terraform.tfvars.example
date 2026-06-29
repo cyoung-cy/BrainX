@@ -9,10 +9,20 @@ github_branch     = "main"
 
 instance_type           = "r7i.xlarge"
 ec2_root_volume_gb      = 200
+ec2_runtime_state       = "running"
 rds_instance_class      = "db.t4g.medium"
 rds_allocated_storage_gb = 50
+rds_runtime_state       = "running"
+
+# Bump this when rds_runtime_state is unchanged but the RDS start/stop helper
+# needs to be re-run, for example after AWS auto-starts a stopped DB.
+rds_runtime_state_operation_nonce = "0"
 
 # Restrict this to your office/home CIDR if possible.
 allowed_http_cidr_blocks = ["0.0.0.0/0"]
+
+public_domain_name = "example.com"
+admin_domain_name  = "admin.example.com"
+acme_email         = "admin@example.com"
 
 ssm_parameter_prefix = "/brainx/dev"

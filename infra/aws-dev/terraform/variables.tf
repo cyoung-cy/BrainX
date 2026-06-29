@@ -52,6 +52,17 @@ variable "ec2_root_volume_gb" {
   default     = 200
 }
 
+variable "ec2_runtime_state" {
+  description = "Desired EC2 runtime state for the dev app host. Use stopped to pause instance-hour cost without destroying the instance."
+  type        = string
+  default     = "running"
+
+  validation {
+    condition     = contains(["running", "stopped"], var.ec2_runtime_state)
+    error_message = "ec2_runtime_state must be either running or stopped."
+  }
+}
+
 variable "rds_instance_class" {
   description = "RDS PostgreSQL instance class."
   type        = string
@@ -70,6 +81,23 @@ variable "rds_username" {
   default     = "brainx_admin"
 }
 
+variable "rds_runtime_state" {
+  description = "Desired RDS runtime state for the dev PostgreSQL instance. Use stopped to pause DB instance-hour cost; storage and backups still incur cost."
+  type        = string
+  default     = "running"
+
+  validation {
+    condition     = contains(["running", "stopped"], var.rds_runtime_state)
+    error_message = "rds_runtime_state must be either running or stopped."
+  }
+}
+
+variable "rds_runtime_state_operation_nonce" {
+  description = "Bump this value to re-run the RDS start/stop helper without changing the desired rds_runtime_state."
+  type        = string
+  default     = "0"
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the dev VPC."
   type        = string
@@ -80,6 +108,24 @@ variable "allowed_http_cidr_blocks" {
   description = "CIDR blocks allowed to access the public frontend ports."
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+variable "public_domain_name" {
+  description = "Public application domain name. Leave empty until external DNS is configured."
+  type        = string
+  default     = ""
+}
+
+variable "admin_domain_name" {
+  description = "Admin frontend domain name. Leave empty until external DNS is configured."
+  type        = string
+  default     = ""
+}
+
+variable "acme_email" {
+  description = "Optional contact email for ACME certificate issuance."
+  type        = string
+  default     = ""
 }
 
 variable "ssm_parameter_prefix" {

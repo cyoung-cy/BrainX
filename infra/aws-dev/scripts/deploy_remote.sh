@@ -27,6 +27,8 @@ required_env RDS_PORT
 required_env SSM_PARAMETER_PREFIX
 required_env PUBLIC_BASE_URL
 required_env ADMIN_PUBLIC_BASE_URL
+required_env PUBLIC_SITE_ADDRESS
+required_env ADMIN_SITE_ADDRESS
 
 mkdir -p "$CURRENT_DIR" "$ENV_DIR" "$STATE_DIR"
 chmod 700 "$ENV_DIR"
@@ -175,6 +177,9 @@ done
   write_env ECR_REGISTRY "$ECR_REGISTRY"
   write_env PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
   write_env ADMIN_PUBLIC_BASE_URL "$ADMIN_PUBLIC_BASE_URL"
+  write_env PUBLIC_SITE_ADDRESS "$PUBLIC_SITE_ADDRESS"
+  write_env ADMIN_SITE_ADDRESS "$ADMIN_SITE_ADDRESS"
+  write_env ACME_EMAIL "${ACME_EMAIL:-}"
   write_env RDS_HOST "$RDS_HOST"
   write_env RDS_PORT "$RDS_PORT"
   write_env POSTGRES_USER "$POSTGRES_USER"
@@ -243,6 +248,6 @@ docker compose --env-file "$RUNTIME_ENV" -f "$COMPOSE_FILE" ps
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
 echo "Gateway health:"
-curl -fsS --max-time 10 http://127.0.0.1:80/api/v1/plans >/dev/null || true
-curl -fsS --max-time 10 http://127.0.0.1:80/ >/dev/null || true
-curl -fsS --max-time 10 http://127.0.0.1:8081/ >/dev/null || true
+curl -fsS --max-time 10 -H "Host: $PUBLIC_SITE_ADDRESS" http://127.0.0.1:80/api/v1/plans >/dev/null || true
+curl -fsS --max-time 10 -H "Host: $PUBLIC_SITE_ADDRESS" http://127.0.0.1:80/ >/dev/null || true
+curl -fsS --max-time 10 -H "Host: $ADMIN_SITE_ADDRESS" http://127.0.0.1:80/ >/dev/null || true

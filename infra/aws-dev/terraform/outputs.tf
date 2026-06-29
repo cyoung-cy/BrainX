@@ -10,16 +10,32 @@ output "ec2_instance_id" {
   value = aws_instance.app.id
 }
 
+output "ec2_runtime_state" {
+  value = var.ec2_runtime_state
+}
+
 output "ec2_public_ip" {
   value = aws_eip.app.public_ip
 }
 
 output "main_public_base_url" {
-  value = "http://${aws_eip.app.public_ip}"
+  value = var.public_domain_name != "" ? "https://${var.public_domain_name}" : "http://${aws_eip.app.public_ip}"
 }
 
 output "admin_public_base_url" {
-  value = "http://${aws_eip.app.public_ip}:8081"
+  value = var.admin_domain_name != "" ? "https://${var.admin_domain_name}" : ""
+}
+
+output "public_site_address" {
+  value = var.public_domain_name
+}
+
+output "admin_site_address" {
+  value = var.admin_domain_name
+}
+
+output "acme_email" {
+  value = var.acme_email
 }
 
 output "artifact_bucket_name" {
@@ -42,6 +58,10 @@ output "rds_address" {
 
 output "rds_port" {
   value = aws_db_instance.postgres.port
+}
+
+output "rds_runtime_state" {
+  value = var.rds_runtime_state
 }
 
 output "rds_secret_arn" {

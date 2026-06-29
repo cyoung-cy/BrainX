@@ -5,9 +5,14 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "8081:8081"
+      - "443:443"
+    environment:
+      PUBLIC_SITE_ADDRESS: ${PUBLIC_SITE_ADDRESS}
+      ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - frontend
       - admin-frontend
@@ -324,6 +329,8 @@ services:
     mem_limit: 2048m
 
 volumes:
+  caddy_data:
+  caddy_config:
   neo4j_data:
   neo4j_logs:
   qdrant_data:

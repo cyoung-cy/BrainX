@@ -1,4 +1,4 @@
-:80 {
+{$PUBLIC_SITE_ADDRESS} {
 	@intelligence path /api/v1/ai/* /api/v1/intelligence/* /api/v1/notes/*/summary
 	handle @intelligence {
 		reverse_proxy intelligence-service:8086
@@ -13,6 +13,6 @@
 	}
 }
 
-:8081 {
+{$ADMIN_SITE_ADDRESS} {
 	reverse_proxy admin-frontend:3001
 }

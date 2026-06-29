@@ -12,8 +12,8 @@
   - `frontend`, `admin-frontend`
   - `redis`, `neo4j`, `qdrant`, `kafka`, `caddy`
 - Public entry:
-  - user frontend: `http://<ec2-eip>/`
-  - admin frontend: `http://<ec2-eip>:8081/`
+  - user frontend: `https://<public-domain>/`
+  - admin frontend: `https://<admin-domain>/`
   - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary` route directly to Intelligence-Service through Caddy.
   - other `/api/v1/*` routes go to Gateway-Service.
 
@@ -36,9 +36,31 @@ Terraform state is stored in the S3 backend declared in `terraform/backend.tf`:
 
 The state bucket is bootstrapped outside this stack and has versioning, AES256 server-side encryption, and public access block enabled. Keep `terraform.tfstate` and `tfplan` files local-only; they are intentionally ignored.
 
+### Cost Control
+
+개발환경을 쓰지 않을 때는 Terraform 변수로 EC2와 RDS runtime을 멈출 수 있다.
+
+```powershell
+cd C:\Edu\final-project\BrainX\infra\aws-dev\terraform
+
+# Stop compute/database runtime.
+terraform apply -var="ec2_runtime_state=stopped" -var="rds_runtime_state=stopped"
+
+# Start again.
+terraform apply -var="ec2_runtime_state=running" -var="rds_runtime_state=running"
+```
+
+`ec2_runtime_state`는 Terraform AWS provider의 `aws_ec2_instance_state` 리소스로 관리한다. `stopped` 상태에서는 EC2 instance-hour 비용은 멈추지만 root EBS volume, Elastic IP/public IPv4, ECR, S3 비용은 남는다.
+
+`rds_runtime_state`는 AWS provider가 RDS stopped/running 상태를 직접 모델링하지 않기 때문에 Terraform `local-exec` helper가 AWS CLI로 `start-db-instance`/`stop-db-instance`를 호출한다. 따라서 apply 환경에는 `python`과 `aws` CLI가 필요하다. RDS를 멈춰도 storage, backup, Secrets Manager 비용은 남고, AWS는 장기간 정지된 DB instance를 자동으로 다시 시작할 수 있다. 같은 desired state에서 helper를 다시 실행해야 하면 `rds_runtime_state_operation_nonce` 값을 바꿔서 apply한다.
+
+```powershell
+terraform apply -var="rds_runtime_state=stopped" -var="rds_runtime_state_operation_nonce=1"
+```
+
 ## GitHub Repository Variables
 
-The deploy workflow uses GitHub OIDC and does not require AWS access key secrets. After `terraform apply`, set these repository variables:
+The deploy workflow uses GitHub OIDC and does not require AWS access key secrets. After `terraform apply`, set these repository variables. For domain deployment, set `public_domain_name` and `admin_domain_name` before reading Terraform outputs.
 
 ```powershell
 gh variable set AWS_REGION --body "$(terraform output -raw aws_region)"
@@ -52,6 +74,38 @@ gh variable set AWS_DEV_RDS_PORT --body "$(terraform output -raw rds_port)"
 gh variable set AWS_DEV_SSM_PARAMETER_PREFIX --body "$(terraform output -raw ssm_parameter_prefix)"
 gh variable set AWS_DEV_PUBLIC_BASE_URL --body "$(terraform output -raw main_public_base_url)"
 gh variable set AWS_DEV_ADMIN_PUBLIC_BASE_URL --body "$(terraform output -raw admin_public_base_url)"
+gh variable set AWS_DEV_PUBLIC_SITE_ADDRESS --body "$(terraform output -raw public_site_address)"
+gh variable set AWS_DEV_ADMIN_SITE_ADDRESS --body "$(terraform output -raw admin_site_address)"
+gh variable set AWS_DEV_ACME_EMAIL --body "$(terraform output -raw acme_email)"
+```
+
+## External DNS And HTTPS
+
+이 개발환경은 Route 53, ALB, ACM을 만들지 않는다. 외부 DNS provider에서 직접 A record를 만든 뒤 Caddy가 EC2에서 HTTPS 인증서를 자동 발급한다.
+
+Required DNS records:
+
+```text
+<public-domain>       A  43.201.161.67
+admin.<public-domain> A  43.201.161.67
+```
+
+Terraform 변수는 도메인 값으로 설정한다.
+
+```hcl
+public_domain_name = "example.com"
+admin_domain_name  = "admin.example.com"
+acme_email         = "admin@example.com"
+```
+
+도메인 적용 후 GitHub variables를 갱신하고, frontend image에는 public base URL이 build-time에 들어가므로 `workflow_dispatch`에서 `deploy_all=true`로 한 번 재배포한다.
+
+OAuth provider redirect URI도 public domain 기준으로 맞춘다.
+
+```text
+https://<public-domain>/oauth/google/callback
+https://<public-domain>/oauth/kakao/callback
+https://<public-domain>/oauth/naver/callback
 ```
 
 ## AWS SSM Runtime Secrets
