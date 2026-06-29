@@ -108,10 +108,19 @@ jobs:
           python infra/aws-dev/scripts/detect_changed_services.py "${ARGS[@]}" > detection.json
           cat detection.json
 
-          echo "services_json=$(python -c 'import json; print(json.load(open(\"detection.json\"))[\"servicesJson\"])')" >> "$GITHUB_OUTPUT"
-          echo "services_space=$(python -c 'import json; print(json.load(open(\"detection.json\"))[\"servicesSpace\"])')" >> "$GITHUB_OUTPUT"
-          echo "should_deploy=$(python -c 'import json; print(str(json.load(open(\"detection.json\"))[\"shouldDeploy\"]).lower())')" >> "$GITHUB_OUTPUT"
-          echo "deploy_config_changed=$(python -c 'import json; print(str(json.load(open(\"detection.json\"))[\"deployConfigChanged\"]).lower())')" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          import os
+
+          with open("detection.json", "r", encoding="utf-8") as fp:
+              detection = json.load(fp)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fp:
+              fp.write(f"services_json={detection['servicesJson']}\n")
+              fp.write(f"services_space={detection['servicesSpace']}\n")
+              fp.write(f"should_deploy={str(detection['shouldDeploy']).lower()}\n")
+              fp.write(f"deploy_config_changed={str(detection['deployConfigChanged']).lower()}\n")
+          PY
 
   build:
     name: Build and push ${{ matrix.service }}
