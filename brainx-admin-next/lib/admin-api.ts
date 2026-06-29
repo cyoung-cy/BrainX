@@ -31,6 +31,15 @@ type ApiSuccess<T> = {
   message?: string;
 };
 
+type ApiFailure = {
+  success?: false;
+  message?: string;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
 type ApiPlanId = "free" | "pro" | "max";
 type ApiUserStatus = "ACTIVE" | "SUSPENDED" | "WITHDRAWN";
 type ApiTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
@@ -70,6 +79,7 @@ type ApiLoginSession = {
 
 type ApiUserDetail = ApiUserRow & {
   sessions: ApiLoginSession[];
+  activities?: Array<{ activityId?: string; type?: string; message: string; occurredAt: string }>;
 };
 
 type ApiTicket = {
@@ -108,6 +118,7 @@ type ApiSubscription = {
   planId: ApiPlanId;
   startedAt: string;
   nextBillingAt?: string | null;
+  billingCycle?: "MONTHLY" | "YEARLY";
   amount: number;
 };
 
@@ -133,6 +144,7 @@ export type AdminAccountRow = {
   adminId: string;
   name: string;
   loginId: string;
+  email: string | null;
   role: AdminRole;
   mustChangePassword: boolean;
   createdAt: string;
@@ -251,18 +263,25 @@ const planToApi = (plan: Plan): ApiPlanId => plan;
 
 function formatDate(value?: string | null) {
   if (!value) return "";
-  return value.slice(0, 10);
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
 }
 
 function formatShortDateTime(value?: string | null) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${month}-${day} ${hour}:${minute}`;
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
 }
 
 function bytesToStorage(bytes?: number) {
@@ -286,8 +305,46 @@ function relativeTime(value?: string | null) {
   return `${days}일 전`;
 }
 
+function normalizeSessions(sessions: ApiLoginSession[]) {
+  const byDevice = new Map<string, ApiLoginSession>();
+  for (const session of [...sessions].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))) {
+    const key = `${session.device}|${session.ipAddress ?? ""}`;
+    if (!byDevice.has(key)) {
+      byDevice.set(key, session);
+    }
+  }
+  return [...byDevice.values()].slice(0, 2);
+}
+
+function normalizeLocationLabel(value?: string | null) {
+  if (!value) return "대한민국 서울";
+  const trimmed = value.trim();
+  if (/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(trimmed.replace(/\s+/g, ""))) {
+    return "대한민국 서울";
+  }
+  if (trimmed === "Asia/Seoul") {
+    return "대한민국 서울";
+  }
+  return trimmed;
+}
+
+function buildActivities(row: ApiUserRow | ApiUserDetail) {
+  const activities = (row.activities ?? []).map((activity) => ({
+    text: activity.message,
+    time: formatShortDateTime(activity.occurredAt)
+  }));
+  if (row.lastLogin?.lastSeenAt) {
+    activities.unshift({
+      text: "최근 접속",
+      time: formatShortDateTime(row.lastLogin.lastSeenAt)
+    });
+  }
+  return activities.slice(0, 5);
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const method = init?.method?.toUpperCase() ?? "GET";
   const response = await fetch(path, {
     ...init,
     cache: "no-store",
@@ -298,24 +355,33 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   });
 
+  const payload = response.status === 204 ? null : ((await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null);
+  const errorMessage =
+    payload && "error" in payload && payload.error?.message
+      ? payload.error.message
+      : payload && "message" in payload && payload.message
+        ? payload.message
+        : `Admin API ${response.status}: ${path}`;
+
   if ((response.status === 401 || response.status === 403) && !path.endsWith("/auth/login")) {
-    clearSession();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
+    if (method === "GET") {
+      clearSession();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
     }
-    throw new Error(`Admin API ${response.status}: ${path}`);
+    throw new Error(errorMessage);
   }
 
   if (!response.ok) {
-    throw new Error(`Admin API ${response.status}: ${path}`);
+    throw new Error(errorMessage);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || !payload) {
     return undefined as T;
   }
 
-  const payload = (await response.json()) as ApiSuccess<T>;
-  return payload.data;
+  return (payload as ApiSuccess<T>).data;
 }
 
 function planRank(plan: Plan) {
@@ -340,29 +406,24 @@ function buildPlanOverrides(
 ) {
   const overrides = new Map<string, Plan>();
 
-  const consider = (key: string, plan: Plan) => {
-    if (!key) return;
-    const current = overrides.get(key);
-    if (!current || planRank(plan) > planRank(current)) {
-      overrides.set(key, plan);
-    }
-  };
-
   subscriptions.forEach((subscription) => {
     const key = resolveUserKey(subscription.userId, subscription.userName, usersById, usersByName);
-    consider(key, planFromApi(subscription.planId));
+    if (!key) return;
+    overrides.set(key, planFromApi(subscription.planId));
   });
 
   payments.forEach((payment) => {
     if (payment.status !== "SUCCESS") return;
     const key = resolveUserKey(payment.userId, payment.userName, usersById, usersByName);
-    consider(key, planFromApi(payment.planId));
+    if (!key || overrides.has(key)) return;
+    overrides.set(key, planFromApi(payment.planId));
   });
 
   return overrides;
 }
 
 function mapUser(row: ApiUserRow, effectivePlan?: Plan): AdminUser {
+  const recentActiveAt = row.lastActiveAt ?? row.lastLogin?.lastSeenAt ?? null;
   return {
     id: row.userId,
     name: row.name,
@@ -372,13 +433,10 @@ function mapUser(row: ApiUserRow, effectivePlan?: Plan): AdminUser {
     joined: formatDate(row.joinedAt),
     notes: row.noteCount,
     storage: bytesToStorage(row.storageBytes),
-    lastActive: relativeTime(row.lastActiveAt),
+    lastActive: recentActiveAt ? formatShortDateTime(recentActiveAt) : "-",
     location: row.lastLogin?.location ?? "-",
     device: row.lastLogin?.device ?? "-",
-    activities: (row.activities ?? []).map((activity) => ({
-      text: activity.message,
-      time: relativeTime(activity.occurredAt)
-    }))
+    activities: buildActivities(row)
   };
 }
 
@@ -386,7 +444,7 @@ function mapSession(session: ApiLoginSession): AdminLoginSession {
   return {
     sessionId: session.sessionId,
     device: session.device,
-    location: session.location ?? "Unknown",
+    location: normalizeLocationLabel(session.location),
     ipAddress: session.ipAddress ?? "127.0.0.1",
     userAgentHash: session.userAgentHash ?? null,
     lastSeenAt: session.lastSeenAt,
@@ -447,6 +505,16 @@ function mapPayment(payment: ApiPayment, usersById: Map<string, { name: string }
 
 function mapSubscription(subscription: ApiSubscription, usersById: Map<string, { name: string }>): BillingSubscription {
   const user = resolveUserLabel(subscription.userId, subscription.userName, usersById);
+  const inferredCycle =
+    subscription.billingCycle === "YEARLY"
+      ? "yearly"
+      : subscription.billingCycle === "MONTHLY"
+        ? "monthly"
+        : subscription.nextBillingAt
+          ? Math.abs(new Date(subscription.nextBillingAt).getTime() - new Date(subscription.startedAt).getTime()) >= 300 * 24 * 60 * 60 * 1000
+            ? "yearly"
+            : "monthly"
+          : undefined;
   return {
     subscriptionId: subscription.subscriptionId,
     user,
@@ -454,6 +522,7 @@ function mapSubscription(subscription: ApiSubscription, usersById: Map<string, {
     plan: planFromApi(subscription.planId),
     started: formatDate(subscription.startedAt),
     next: subscription.nextBillingAt ? formatDate(subscription.nextBillingAt).slice(5) : "-",
+    billingCycle: inferredCycle,
     amount: subscription.amount
   };
 }
@@ -530,12 +599,12 @@ export const adminApi = {
     }),
   getMe: () => apiFetch<AdminProfile>("/api/v1/admin/me"),
   listAdminAccounts: () => apiFetch<{ admins: AdminAccountRow[] }>("/api/v1/admin/admin-accounts").then((data) => data.admins),
-  createAdminAccount: (body: { name: string; loginId: string; role: AdminRole }) =>
+  createAdminAccount: (body: { name: string; loginId: string; email?: string | null; role: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow; temporaryPassword: string }>("/api/v1/admin/admin-accounts", {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; role?: AdminRole }) =>
+  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; email?: string | null; role?: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow }>("/api/v1/admin/admin-accounts/" + adminId, {
       method: "PATCH",
       body: JSON.stringify(body)
@@ -551,17 +620,28 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ targetPlanId: planToApi(targetPlanId) })
     }),
-  changeUserStatus: (userId: string, status: UserStatus) =>
+  changeUserStatus: (userId: string, status: UserStatus, options?: { reason?: string; suspendedDays?: number }) =>
     apiFetch<{ userId: string; status: ApiUserStatus }>("/api/v1/admin/users/" + userId + "/status", {
       method: "PATCH",
-      body: JSON.stringify({ status: userStatusToApi[status] })
+      body: JSON.stringify({ status: userStatusToApi[status], reason: options?.reason, suspendedDays: options?.suspendedDays })
     }),
-  withdrawUser: (userId: string) =>
-    apiFetch<{ userId: string; deletionRequestId: string }>("/api/v1/admin/users/" + userId + "/withdrawal", { method: "POST", body: JSON.stringify({}) }),
-  runUserBulkAction: (userIds: string[], action: "CHANGE_PLAN" | "SUSPEND" | "REACTIVATE" | "WITHDRAW" | "SEND_NOTICE", targetPlanId?: Plan) =>
+  withdrawUser: (userId: string, reason?: string) =>
+    apiFetch<{ userId: string; deletionRequestId: string }>("/api/v1/admin/users/" + userId + "/withdrawal", { method: "POST", body: JSON.stringify({ reason }) }),
+  runUserBulkAction: (
+    userIds: string[],
+    action: "CHANGE_PLAN" | "SUSPEND" | "REACTIVATE" | "WITHDRAW" | "SEND_NOTICE",
+    options?: { targetPlanId?: Plan; notice?: { title: string; body: string }; reason?: string; suspendedDays?: number }
+  ) =>
     apiFetch<{ accepted: number; failed: number }>("/api/v1/admin/users/bulk-actions", {
       method: "POST",
-      body: JSON.stringify({ userIds, action, targetPlanId: targetPlanId ? planToApi(targetPlanId) : undefined })
+      body: JSON.stringify({
+        userIds,
+        action,
+        targetPlanId: options?.targetPlanId ? planToApi(options.targetPlanId) : undefined,
+        notice: options?.notice,
+        reason: options?.reason,
+        suspendedDays: options?.suspendedDays
+      })
     }),
   updateTicket: (ticketId: string, body: { status?: InquiryStatus; assigneeAdminUserId?: string | null }) =>
     apiFetch<{ ticket: ApiTicket }>("/api/v1/admin/support/tickets/" + ticketId, {
@@ -570,8 +650,11 @@ export const adminApi = {
     }),
   replyTicket: (ticketId: string, body: { body: string; faq?: boolean }) =>
     apiFetch<{ replyId: string }>("/api/v1/admin/support/tickets/" + ticketId + "/replies", { method: "POST", body: JSON.stringify(body) }),
-  refundPayment: (paymentId: string) =>
-    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", { method: "POST", body: JSON.stringify({}) }),
+  refundPayment: (paymentId: string, body?: { amount?: number; reason?: string }) =>
+    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", {
+      method: "POST",
+      body: JSON.stringify(body ?? {})
+    }),
   retryPayment: (paymentId: string) =>
     apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/retry", { method: "POST" }),
   sendPaymentFailureNotice: (paymentId: string) =>
@@ -593,7 +676,8 @@ export const adminApi = {
   getUserDetail: (userId: string) =>
     apiFetch<ApiUserDetail>("/api/v1/admin/users/" + userId).then((row) => ({
       ...mapUser(row),
-      sessions: (row.sessions ?? []).map(mapSession)
+      sessions: normalizeSessions(row.sessions ?? []).map(mapSession),
+      activities: buildActivities(row)
     })),
   deleteTicket: (ticketId: string) =>
     apiFetch<void>("/api/v1/admin/support/tickets/" + ticketId, { method: "DELETE" }),

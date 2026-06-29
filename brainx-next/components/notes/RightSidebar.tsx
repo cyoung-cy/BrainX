@@ -222,7 +222,7 @@ function SideCard({
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-line/50"
+      className="overflow-hidden rounded-xl border border-line/70"
       style={{ background: "rgb(var(--surface))" }}
     >
       {/* 카드 헤더 */}
@@ -319,7 +319,7 @@ function LinkChip({
 }) {
   return (
     <div
-      className="flex items-center gap-2 rounded-lg border border-line/40 px-2.5 py-1.5 transition-colors hover:border-line/70 hover:bg-surface2/50"
+      className="flex items-center gap-2 rounded-lg border border-line/60 px-2.5 py-1.5 transition-colors hover:border-line/80 hover:bg-surface2/50"
       style={{ background: "rgb(var(--surface2) / 0.3)" }}
     >
       <Icon
@@ -663,12 +663,12 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
   return (
     <div
       ref={sidebarRef}
-      className="flex h-full w-full min-w-0 flex-col border-l border-line/50"
+      className="flex h-full w-full min-w-0 flex-col border-l border-line/70"
       style={{ background: "rgb(var(--bg2))" }}
     >
       {/* ── 패널 헤더 ──────────────────────────────── */}
       <div
-        className="flex h-9 items-center gap-[5px] border-b border-line/50 px-4"
+        className="flex h-9 items-center gap-[5px] border-b border-line/70 px-4"
         style={{ background: "rgb(var(--surface))" }}
       >
         <Icon name="sparkle" size={14} className="shrink-0 text-accent" />
@@ -785,7 +785,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
 
       {/* ── 인라인 AI 채팅 (하단 고정) ─────────────── */}
       <div
-        className="shrink-0 border-t border-line/50"
+        className="shrink-0 border-t border-line/70"
         style={{ background: "rgb(var(--surface))" }}
       >
         <div
@@ -858,7 +858,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
                 onChange={(e) => setAiInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") sendAi(); }}
                 placeholder={`${activeNote.title.length > 10 ? activeNote.title.slice(0, 10) + "…" : activeNote.title}에 질문…`}
-                className="h-8 flex-1 rounded-lg border border-line/50 px-2.5 text-[12px] text-txt outline-none placeholder:text-txt3 transition-colors focus:border-primary/50"
+                className="h-8 flex-1 rounded-lg border border-line/70 px-2.5 text-[12px] text-txt outline-none placeholder:text-txt3 transition-colors focus:border-primary/50"
                 style={{ background: "rgb(var(--bg2))" }}
               />
               <button

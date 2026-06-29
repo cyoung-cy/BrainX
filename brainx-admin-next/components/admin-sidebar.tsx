@@ -14,12 +14,14 @@ const roleLabel: Record<AdminRole, string> = {
 
 export function AdminSidebar({
   admin,
+  profileImage,
   activeTarget,
   onNavigate,
   supportBadge,
   billingBadge
 }: {
   admin: AdminProfile;
+  profileImage?: string | null;
   activeTarget: SidebarTarget | null;
   onNavigate: (target: SidebarTarget) => void;
   supportBadge?: number;
@@ -39,7 +41,9 @@ export function AdminSidebar({
 
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
-          <div className="sidebar-avatar">{initial}</div>
+          <div className="sidebar-avatar">
+            {profileImage ? <img src={profileImage} alt="" className="sidebar-avatar-image" /> : initial}
+          </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin.name}</div>
             <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 500 }}>{roleLabel[admin.role]}</div>

@@ -240,6 +240,30 @@ function settleLayout(notes: BrainXNote[], iterations = 260) {
     };
   });
 
+  const minDistance = 132;
+  for (let pass = 0; pass < 12; pass += 1) {
+    let moved = false;
+    for (let i = 0; i < notes.length; i += 1) {
+      for (let j = i + 1; j < notes.length; j += 1) {
+        const a = positions[notes[i].id];
+        const b = positions[notes[j].id];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.001;
+        if (dist >= minDistance) continue;
+        const push = (minDistance - dist) / 2;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        a.x -= ux * push;
+        a.y -= uy * push;
+        b.x += ux * push;
+        b.y += uy * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
   return positions;
 }
 
@@ -320,14 +344,22 @@ function GraphCanvasFlow({
   // Sync positionsRef with notes to handle async data loading
   useEffect(() => {
     let added = false;
+    let removed = false;
     const settled = settleLayout(notes);
+    const noteIdSet = new Set(notes.map((note) => note.id));
+    for (const id of Object.keys(positionsRef.current)) {
+      if (!noteIdSet.has(id)) {
+        delete positionsRef.current[id];
+        removed = true;
+      }
+    }
     notes.forEach(note => {
       if (!positionsRef.current[note.id]) {
         positionsRef.current[note.id] = settled[note.id];
         added = true;
       }
     });
-    if (added && controls.current) {
+    if ((added || removed) && controls.current) {
       controls.current.reheat();
     }
   }, [notes]);
@@ -1492,8 +1524,8 @@ function GraphScreenInner() {
 
       {selected && !bridgeMode ? (
         <div className="fade-up absolute bottom-5 right-5 top-5 z-30 w-80">
-          <div className="flex h-full flex-col overflow-hidden bg-surface/90 border border-line/50 rounded-2xl backdrop-blur-xl shadow-2xl">
-            <div className="flex items-start justify-between gap-2 border-b border-line/50 p-4">
+          <div className="flex h-full flex-col overflow-hidden bg-surface/90 border border-line/70 rounded-2xl backdrop-blur-xl shadow-2xl">
+            <div className="flex items-start justify-between gap-2 border-b border-line/70 p-4">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-3 w-3 shrink-0 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: `rgb(${clusterById(selected.cluster).color})`, color: `rgb(${clusterById(selected.cluster).color})` }} />
                 <span className="truncate text-[12px] text-txt2">{clusterById(selected.cluster).label}</span>
@@ -1533,7 +1565,7 @@ function GraphScreenInner() {
                 })}
               </div>
             </div>
-            <div className="flex gap-2 border-t border-line/50 p-4">
+            <div className="flex gap-2 border-t border-line/70 p-4">
               <Btn variant="primary" size="sm" icon="doc" className="flex-1 shadow-lg" onClick={() => router.push(`/notes/${selected.id}`)}>
                 탐험하기
               </Btn>

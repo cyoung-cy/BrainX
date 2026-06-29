@@ -55,6 +55,7 @@ function TagAutocompleteInner({ editor, allTags }: TagAutocompleteProps) {
   const active = state?.active ?? false;
   const range = state?.range ?? null;
   const query = state?.query ?? "";
+  const isManualOpen = state?.manual ?? false;
 
   // 쿼리가 바뀌면 선택 인덱스 초기화
   useEffect(() => {
@@ -79,11 +80,18 @@ function TagAutocompleteInner({ editor, allTags }: TagAutocompleteProps) {
     }
     try {
       const coords = editor.view.coordsAtPos(range.from);
-      setPos({ left: coords.left, top: coords.bottom + 6 });
+      const estimatedHeight = Math.min(280, Math.max(132, candidates.length * 31 + 8));
+      const baseTop = coords.bottom + 18;
+      const spaceBelow = window.innerHeight - baseTop;
+      const placeAbove = !isManualOpen && spaceBelow < estimatedHeight + 24;
+      const top = placeAbove
+        ? Math.max(8, coords.top - estimatedHeight - 10)
+        : baseTop;
+      setPos({ left: coords.left, top });
     } catch {
       setPos(null);
     }
-  }, [active, range, editor]);
+  }, [active, range, editor, candidates.length, isManualOpen]);
 
   /** 태그 선택 → `#쿼리` 범위를 TagNode 인라인 노드로 치환하고 커서를 뒤로 이동 */
   const commit = useCallback(
@@ -169,6 +177,7 @@ function TagAutocompleteInner({ editor, allTags }: TagAutocompleteProps) {
   if (!active || !pos || candidates.length === 0) return null;
 
   const safeLeft = Math.max(4, Math.min(pos.left, window.innerWidth - 244));
+  const safeTop = Math.max(8, Math.min(pos.top, window.innerHeight - 100));
 
   return createPortal(
     <div
@@ -178,8 +187,8 @@ function TagAutocompleteInner({ editor, allTags }: TagAutocompleteProps) {
       style={{
         position: "fixed",
         left: safeLeft,
-        top: pos.top,
-        zIndex: 2100,
+        top: safeTop,
+        zIndex: 3500,
         width: 240,
         maxHeight: 280,
         overflowY: "auto",

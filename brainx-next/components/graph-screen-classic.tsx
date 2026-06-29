@@ -646,7 +646,7 @@ export function GraphScreen() {
       {selected ? (
         <div className="fade-up absolute bottom-5 right-5 top-5 z-30 w-80">
           <Card className="flex h-full flex-col overflow-hidden">
-            <div className="flex items-start justify-between gap-2 border-b border-line/50 p-4">
+            <div className="flex items-start justify-between gap-2 border-b border-line/70 p-4">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: `rgb(${clusterById(selected.cluster).color})` }} />
                 <span className="truncate text-[12px] text-txt3">{clusterById(selected.cluster).label}</span>
@@ -686,7 +686,7 @@ export function GraphScreen() {
                 })}
               </div>
             </div>
-            <div className="flex gap-2 border-t border-line/50 p-4">
+            <div className="flex gap-2 border-t border-line/70 p-4">
               <Btn variant="primary" size="sm" icon="doc" className="flex-1" onClick={() => router.push(`/notes/${selected.id}`)}>
                 노트 열기
               </Btn>
