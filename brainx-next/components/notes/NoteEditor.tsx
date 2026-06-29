@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useLayoutEffect, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
-import { createRoot, type Root } from "react-dom/client";
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
@@ -41,6 +40,9 @@ import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
 import { useWikiLinkContext } from "./WikiLinkContext";
 import { SlashCommandSuggestion } from "./SlashCommand";
 import { SlashCommandMenu } from "./SlashCommandMenu";
+import { TagSuggestion } from "./TagSuggestion";
+import { TagAutocomplete } from "./TagAutocomplete";
+import { TagNode } from "./TagNode";
 import { TaskListMarkdownBridge } from "./TaskListMarkdownBridge";
 import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
 import { AI_CONTEXT_AROUND_CURSOR_CHARS, buildInlineAssistContext, validateAiContextSufficiency } from "@/lib/ai-context";
@@ -439,11 +441,10 @@ const SETTLE_MS = 150;
     것이었다 — 그래서 mousedown~mouseup 동안은 데코레이션을 동결(freeze)해 DOM을 건드리지
     않고, 드래그가 끝난 뒤(mouseup, 어디서 끝나든)에만 최종 selection 기준으로 다시 계산한다. */
 function computeLivePreviewDecorations(editor: Editor, state: EditorState): DecorationSet {
-  if (!editor.isEditable) return DecorationSet.empty;
-
   const { selection, doc } = state;
   const { $from, from, to } = selection;
   const decos: Decoration[] = [];
+  const isEditable = editor.isEditable;
 
   /* ── 헤딩의 "## " 마크다운 기호 — Obsidian Live Preview 방식(커서가 그 줄에 있을 때만 표시)
      "## "는 decoration 위젯이 아니라 heading 노드의 실제 텍스트 내용 일부다(아래 MarkdownHeading
@@ -454,13 +455,17 @@ function computeLivePreviewDecorations(editor: Editor, state: EditorState): Deco
      주석 참고, blockquote/인라인 코드 마커도 이미 같은 패턴) — 그래서 cursorInside가 바뀌어도
      "드래그가 진행되는 동안" DOM이 흔들리는 일은 없다(과거 버그는 정확히 이 보호가 없을 때만
      발생했다). 단순 클릭/화살표 이동처럼 드래그가 아닌 선택 변경은 한 번에 끝나는 동작이라
-     이 토글로 인한 DOM 변경이 진행 중인 네이티브 제스처를 방해할 일이 없다. */
+     이 토글로 인한 DOM 변경이 진행 중인 네이티브 제스처를 방해할 일이 없다.
+     읽기 모드(isEditable=false)에서는 "#"가 실제 텍스트로 항상 DOM에 남아있는 채 decoration이
+     전혀 안 붙으면 기본 스타일(완전히 보이는 일반 텍스트)로 노출돼 버린다 — 그래서 읽기
+     모드에서는 cursorInside를 보지 않고 무조건 숨김 클래스를 적용해, 클릭/포커스로 그 줄에
+     캐럿이 가더라도 "#"가 다시 나타나지 않게 한다. */
   doc.forEach((node, offset) => {
     if (node.type.name !== "heading") return;
     const match = /^#{1,6}\s*/.exec(node.textContent);
     if (!match || match[0].length === 0) return;
     const nodeEnd = offset + node.nodeSize;
-    const cursorInside = from > offset && to < nodeEnd;
+    const cursorInside = isEditable && from > offset && to < nodeEnd;
     const start = offset + 1;
     const end = start + match[0].length;
     decos.push(
@@ -469,6 +474,11 @@ function computeLivePreviewDecorations(editor: Editor, state: EditorState): Deco
       })
     );
   });
+
+  // 읽기 모드에서는 헤딩 "#" 숨김 외에 다른 라이브 프리뷰 데코레이션(블록쿼트/인라인 코드
+  // 마커 등 편집 전용 위젯)을 붙이지 않는다 — 그 위젯들은 원래 decoration 자체이므로 아래로
+  // 내려가지 않으면(=계산하지 않으면) 자동으로 보이지 않는다.
+  if (!isEditable) return DecorationSet.create(doc, decos);
 
   /* ── Blockquote prefix (커서가 있을 때만) ── */
   for (let d = $from.depth; d >= 1; d--) {
@@ -1421,18 +1431,7 @@ type InlineContinueDraftMeta =
   | { type: "set"; draft: ContinueSuggestionState }
   | { type: "clear" };
 
-type InlineContinueAction = "accept" | "cancel";
-
-type InlineContinueActionEvent = CustomEvent<{
-  action: InlineContinueAction;
-}>;
-
-type InlineContinueHostElement = HTMLSpanElement & {
-  __inlineContinueRoot?: Root;
-};
-
 const InlineContinueDraftKey = new PluginKey<ContinueSuggestionState | null>("inlineContinueDraft");
-const INLINE_CONTINUE_ACTION_EVENT = "brainx:inline-continue-action";
 
 function getInlineContinueDraft(editor: Editor) {
   return InlineContinueDraftKey.getState(editor.state) ?? null;
@@ -1450,40 +1449,24 @@ function continueSuggestionId(draft: ContinueSuggestionState | null | undefined)
   return draft?.status === "ready" || draft?.status === "error" ? draft.suggestionId : undefined;
 }
 
-function inlineContinueDraftKey(draft: ContinueSuggestionState) {
-  return [
-    "inline-continue",
-    draft.requestId,
-    draft.insertPos,
-    draft.status,
-    hashString(draft.text),
-    hashString(draft.status === "error" ? draft.message : ""),
-  ].join("-");
-}
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash).toString(36);
-}
-
-function createInlineContinueWidget(draft: ContinueSuggestionState) {
-  const host = document.createElement("span") as InlineContinueHostElement;
-  host.contentEditable = "false";
-  host.dataset.inlineContinueDraft = "true";
-  const root = createRoot(host);
-  host.__inlineContinueRoot = root;
-  root.render(<InlineContinueDraftWidget draft={draft} />);
-  return host;
-}
-
-function destroyInlineContinueWidget(node: Node) {
-  (node as InlineContinueHostElement).__inlineContinueRoot?.unmount();
-}
-
-function InlineContinueDraftWidget({ draft }: { draft: ContinueSuggestionState }) {
+/* "이어쓰기" 제안 UI — 예전엔 ProseMirror Decoration.widget으로 캐럿 위치의 텍스트 흐름
+   안(같은 줄)에 꽂아 넣었다(첫 수정: inline-flex → flex로 바꿔 최소한 다음 줄로는 내렸지만,
+   여전히 "본문 블록 일부"처럼 보여 작성 중인 줄과 위치가 애매했다). 이제는 일반 React
+   컴포넌트로 빼서 SlashCommandMenu/CursorContinueButton과 같은 방식 — editor 트랜잭션을
+   구독해 상태를 읽고, coordsAtPos로 계산한 caret 좌표를 기준으로 절대 위치 배치한다(아래
+   NoteEditor의 continueDraftAnchor 계산 참고) — 그래서 문서 흐름/구조에는 전혀 영향이 없고
+   캐럿 오른쪽 아래에 보조 UI로만 떠 있다. */
+function InlineContinueFloatingWidget({
+  draft,
+  anchor,
+  onAccept,
+  onCancel,
+}: {
+  draft: ContinueSuggestionState;
+  anchor: { left: number; top: number };
+  onAccept: () => void;
+  onCancel: () => void;
+}) {
   const isLoading = draft.status === "loading";
   const isError = draft.status === "error";
   const bodyText = isError
@@ -1492,61 +1475,57 @@ function InlineContinueDraftWidget({ draft }: { draft: ContinueSuggestionState }
       ? draft.text
       : "이어 쓰는 중...";
 
-  const dispatchAction = (event: React.MouseEvent<HTMLButtonElement>, action: InlineContinueAction) => {
+  const stop = (event: React.MouseEvent<HTMLButtonElement>, action: () => void) => {
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.dispatchEvent(
-      new CustomEvent(INLINE_CONTINUE_ACTION_EVENT, {
-        bubbles: true,
-        detail: { action },
-      })
-    );
+    action();
   };
 
   return (
-    <span
-      className={cx(
-        "mx-1 inline-flex max-w-full items-center gap-1.5 rounded-md border px-1.5 py-0.5 align-baseline text-[12.5px] leading-relaxed shadow-sm",
-        isError
-          ? "border-red-400/40 bg-red-500/10 text-red-300"
-          : "border-primary/30 bg-primary/10 text-txt"
-      )}
-      data-inline-continue-widget="true"
-    >
-      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/15 px-1 text-[10px] font-semibold text-primary">
-        <Sparkles size={10} />
-        AI
-      </span>
+    <div className="absolute z-40" style={{ left: anchor.left, top: anchor.top }} data-inline-continue-widget="true">
       <span
         className={cx(
-          "min-w-0 whitespace-pre-wrap border-b border-dashed",
-          isError ? "border-red-400/50" : "border-primary/50"
+          "flex w-fit max-w-full items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[12.5px] leading-relaxed shadow-sm",
+          isError
+            ? "border-red-400/40 bg-red-500/10 text-red-300"
+            : "border-primary/30 bg-primary/10 text-txt"
         )}
       >
-        {bodyText}
-      </span>
-      {isLoading ? <Loader2 size={12} className="shrink-0 animate-spin text-primary" /> : null}
-      {draft.status === "ready" ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/15 px-1 text-[10px] font-semibold text-primary">
+          <Sparkles size={10} />
+          AI
+        </span>
+        <span
+          className={cx(
+            "min-w-0 whitespace-pre-wrap border-b border-dashed",
+            isError ? "border-red-400/50" : "border-primary/50"
+          )}
+        >
+          {bodyText}
+        </span>
+        {isLoading ? <Loader2 size={12} className="shrink-0 animate-spin text-primary" /> : null}
+        {draft.status === "ready" ? (
+          <button
+            type="button"
+            title="이어쓰기 수락"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => stop(event, onAccept)}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded bg-primary text-white transition-colors hover:brightness-110"
+          >
+            <Check size={12} />
+          </button>
+        ) : null}
         <button
           type="button"
-          title="이어쓰기 수락"
+          title={isLoading ? "이어쓰기 중단" : "이어쓰기 취소"}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => dispatchAction(event, "accept")}
-          className="grid h-5 w-5 shrink-0 place-items-center rounded bg-primary text-white transition-colors hover:brightness-110"
+          onClick={(event) => stop(event, onCancel)}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-txt"
         >
-          <Check size={12} />
+          <X size={12} />
         </button>
-      ) : null}
-      <button
-        type="button"
-        title={isLoading ? "이어쓰기 중단" : "이어쓰기 취소"}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={(event) => dispatchAction(event, "cancel")}
-        className="grid h-5 w-5 shrink-0 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-txt"
-      >
-        <X size={12} />
-      </button>
-    </span>
+      </span>
+    </div>
   );
 }
 
@@ -1574,25 +1553,6 @@ const InlineContinueDraftExtension = Extension.create({
               ...previous,
               insertPos: Math.min(mapped.pos, tr.doc.content.size),
             };
-          },
-        },
-        props: {
-          decorations(state) {
-            const draft = InlineContinueDraftKey.getState(state);
-            if (!draft) return DecorationSet.empty;
-            const pos = Math.min(draft.insertPos, state.doc.content.size);
-            return DecorationSet.create(state.doc, [
-              Decoration.widget(pos, () => createInlineContinueWidget(draft), {
-                side: 1,
-                key: inlineContinueDraftKey(draft),
-                destroy: destroyInlineContinueWidget,
-                stopEvent: (event) =>
-                  event.type === "mousedown" ||
-                  event.type === "mouseup" ||
-                  event.type === "click" ||
-                  event.type === INLINE_CONTINUE_ACTION_EVENT,
-              }),
-            ]);
           },
         },
       }),
@@ -2208,6 +2168,14 @@ const NOTE_EDITOR_EXTENSIONS = [
     // 없어서 기본 검증을 통과하지 못해 setLink가 조용히 실패한다(LinkPopover의 노트 연결
     // 기능, INTERNAL_LINK_PREFIX) — 추가해줘야 내부 노트 링크가 실제로 적용된다.
     link: { openOnClick: false, autolink: false, protocols: ["http", "https", "mailto", "tel", "brainx-note"] },
+    // StarterKit(tiptap v3)이 기본 포함하는 TrailingNode 확장은 "문서의 마지막 노드가 단락이
+    // 아니면 빈 단락을 자동으로 덧붙인다"(표/이미지 뒤에 클릭할 자리를 만들어주는 용도) —
+    // 그런데 heading은 글을 쓰는 동안 거의 항상 "마지막 노드"이므로, "# "/슬래시 명령으로 헤딩을
+    // 만들 때마다 그 직후에 보이지 않는 빈 단락이 끼어들어 헤딩 다음 줄 배치가 한 줄 더
+    // 밀려 보이는 원인이었다(HeadingLevelSync/라이브 프리뷰 자체와는 무관). heading을
+    // notAfter에 추가해 "헤딩 다음에는 자동으로 빈 단락을 추가하지 않음"으로 좁히고,
+    // 표/이미지 등 다른 블록 뒤의 기존 동작은 그대로 둔다.
+    trailingNode: { notAfter: ["heading"] },
   }),
   MarkdownHeading.configure({ levels: [...SUPPORTED_HEADING_LEVELS] }),
   HeadingLevelSync,
@@ -2393,6 +2361,8 @@ const NOTE_EDITOR_EXTENSIONS = [
   BrainXTableCell,
   WikiLink,
   WikiLinkSuggestion,
+  TagNode,
+  TagSuggestion,
   TaskList,
   TaskItem.configure({ nested: true }),
   TaskListMarkdownBridge,
@@ -2677,6 +2647,8 @@ const EDITOR_HINT_TEXT =
 interface NoteEditorProps {
   note: MockNote;
   mode: EditMode;
+  /** 워크스페이스 전체 노트에서 수집된 고유 태그 목록 — `#` 자동완성에 사용 */
+  allTags: readonly string[];
   /** 편집 모드에서는 본문 클릭이 stopPropagation되어 패널 바깥 wrapper까지 버블링되지 않으므로,
       여기서 직접 호출해 패널(탭) 활성화가 빠지지 않게 한다 */
   onActivate: () => void;
@@ -2688,7 +2660,7 @@ interface NoteEditorProps {
     읽기/편집 모드는 노트(탭) 단위로 부모(EditorPanel)가 관리하며, 이 컴포넌트는 mode prop을
     그대로 따르기만 한다(모드를 직접 설정하지 않음 — 그래야 탭별 모드가 서로 덮어쓰지 않는다). */
 const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEditor(
-  { note, mode, onActivate, onContentChange, onAiAction },
+  { note, mode, allTags, onActivate, onContentChange, onAiAction },
   ref
 ) {
   const contentSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2703,7 +2675,8 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   const [focused, setFocused] = useState(false);
   const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
   const [cursorAiAnchor, setCursorAiAnchor] = useState<{ left: number; top: number } | null>(null);
-  const [hasInlineContinueDraft, setHasInlineContinueDraft] = useState(false);
+  const [continueDraftView, setContinueDraftView] = useState<ContinueSuggestionState | null>(null);
+  const [continueDraftAnchor, setContinueDraftAnchor] = useState<{ left: number; top: number } | null>(null);
   const wikiCtx = useWikiLinkContext();
 
   /* 내부 노트 링크(LinkPopover에서 만든 brainx-note://<id> href) 클릭 처리 — 읽기 모드는
@@ -3005,7 +2978,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       }
       suppressInlineContinueAutoRejectRef.current = false;
       lastInlineContinueDraftRef.current = current;
-      setHasInlineContinueDraft(Boolean(current));
+      setContinueDraftView(current);
     };
 
     syncInlineContinueDraft();
@@ -3015,20 +2988,6 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     };
   }, [editor]);
 
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleInlineContinueAction = (event: Event) => {
-      const detail = (event as InlineContinueActionEvent).detail;
-      if (detail?.action === "accept") acceptInlineContinue();
-      if (detail?.action === "cancel") cancelInlineContinue();
-    };
-
-    editor.view.dom.addEventListener(INLINE_CONTINUE_ACTION_EVENT, handleInlineContinueAction);
-    return () => {
-      editor.view.dom.removeEventListener(INLINE_CONTINUE_ACTION_EVENT, handleInlineContinueAction);
-    };
-  }, [acceptInlineContinue, cancelInlineContinue, editor]);
 
   useEffect(() => {
     return () => {
@@ -3040,6 +2999,26 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     if (!editor) return;
 
     const updateCursorAiAnchor = () => {
+      // "이어쓰기" 제안 위젯의 위치 — 트리거 버튼과 달리 포커스/selection 상태와 무관하게(
+      // 제안이 떠 있는 동안 다른 곳을 잠깐 봐도 사라지면 안 됨) draft.insertPos(캐럿이 있던
+      // 자리, 문서 변경 시 매핑됨) 기준으로 매번 다시 계산한다. coordsAtPos가 돌려주는 위치는
+      // 그 문자의 "오른쪽 아래" 경계와 가깝게 잡혀 있어(left/top=시작, right/bottom=끝) 거기서
+      // 살짝만 띄우면 캐럿을 가리지 않으면서 바로 오른쪽 아래에 자연스럽게 붙는다.
+      const draft = getInlineContinueDraft(editor);
+      const shellRectForDraft = editorShellRef.current?.getBoundingClientRect();
+      if (draft && shellRectForDraft) {
+        const pos = Math.min(draft.insertPos, editor.state.doc.content.size);
+        const draftCoords = safeCoordsAtPos(editor.view, pos, 1);
+        const left = Math.max(
+          8,
+          Math.min(draftCoords.right - shellRectForDraft.left + 6, shellRectForDraft.width - 280)
+        );
+        const top = Math.max(8, draftCoords.bottom - shellRectForDraft.top + 4);
+        setContinueDraftAnchor({ left, top });
+      } else {
+        setContinueDraftAnchor(null);
+      }
+
       const editorHasFocus = editor.view.dom.contains(document.activeElement);
       if (!editor.isEditable || !editorHasFocus) {
         setCursorAiAnchor(null);
@@ -3152,7 +3131,13 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   return (
     <div
       ref={editorShellRef}
-      className="split-pane-editor tiptap-note-content relative"
+      className={cx(
+        "split-pane-editor tiptap-note-content relative",
+        // .hf-btn은 globals.css의 `.split-pane-editor .ProseMirror .hf-btn { display:flex }`
+        // 규칙이 이 클래스보다 specificity가 높아 일반 `hidden`으로는 안 가려진다 — `!hidden`으로
+        // important를 줘서 강제로 숨긴다(실측: !important 없이는 읽기 모드에서도 display:flex로 보임).
+        mode === "read" && "[&_.hf-btn]:!hidden [&_.md-heading-syntax]:hidden [&_.md-heading-syntax-hidden]:hidden [&_.split-drag-handle]:hidden"
+      )}
       style={typographyCssVars(note.typography)}
       onClick={(e) => {
         if (handleInternalLinkClick(e)) return;
@@ -3204,7 +3189,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
         }}
       />
       {editor && <CustomBubbleMenu editor={editor} noteId={note.id} onAiAction={onAiAction} />}
-      {editor && mode === "edit" && cursorAiAnchor && !hasInlineContinueDraft ? (
+      {editor && mode === "edit" && cursorAiAnchor && !continueDraftView ? (
         <div
           className="absolute z-40"
           style={{ left: cursorAiAnchor.left, top: cursorAiAnchor.top }}
@@ -3212,8 +3197,17 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           <CursorContinueButton onRequest={requestInlineContinue} />
         </div>
       ) : null}
+      {editor && continueDraftView && continueDraftAnchor ? (
+        <InlineContinueFloatingWidget
+          draft={continueDraftView}
+          anchor={continueDraftAnchor}
+          onAccept={acceptInlineContinue}
+          onCancel={cancelInlineContinue}
+        />
+      ) : null}
       {editor && <TableToolbar editor={editor} />}
       {editor && <WikiLinkAutocomplete editor={editor} />}
+      {editor && <TagAutocomplete editor={editor} allTags={allTags} />}
       {editor && (
         <SlashCommandMenu editor={editor} onPickImage={() => fileInputRef.current?.click()} />
       )}

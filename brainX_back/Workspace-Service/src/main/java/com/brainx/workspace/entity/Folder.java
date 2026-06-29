@@ -44,4 +44,11 @@ public class Folder {
         }
         this.updatedAt = now;
     }
+
+    /** guest -> user 전환(draft claim) 시 폴더 소유자를 옮긴다. folderId는 그대로라 이 폴더를
+        가리키는 다른 폴더의 parentFolderId/노트의 folderId 참조는 깨지지 않는다. */
+    public void reassignOwner(String userId, Instant now) {
+        this.userId = userId;
+        this.updatedAt = now;
+    }
 }

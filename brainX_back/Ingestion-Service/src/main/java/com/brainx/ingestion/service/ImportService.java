@@ -3,10 +3,6 @@ package com.brainx.ingestion.service;
 import com.brainx.ingestion.client.WorkspaceApiClient;
 import com.brainx.ingestion.dto.request.IngestionRequest.*;
 import com.brainx.ingestion.dto.response.IngestionResponse.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import com.brainx.ingestion.entity.Asset;
 import com.brainx.ingestion.entity.ImportJob;
 import com.brainx.ingestion.entity.ImportJob.ImportMode;
@@ -14,6 +10,7 @@ import com.brainx.ingestion.entity.ImportJob.JobStatus;
 import com.brainx.ingestion.entity.ImportJob.SourceType;
 import com.brainx.ingestion.entity.IntegrationAccount;
 import com.brainx.ingestion.entity.IntegrationAccount.Provider;
+import com.brainx.ingestion.event.IngestionEventPublisher;
 import com.brainx.ingestion.exception.BrainXException;
 import com.brainx.ingestion.repository.ImportJobRepository;
 import com.brainx.ingestion.repository.IntegrationAccountRepository;
@@ -25,6 +22,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -38,6 +39,7 @@ public class ImportService {
     private final WorkspaceApiClient workspaceApiClient;
     private final AssetService assetService;
     private final ContentConverter contentConverter;
+    private final IngestionEventPublisher eventPublisher;
 
     @Value("${notion.client-id}")
     private String notionClientId;
@@ -108,6 +110,8 @@ public class ImportService {
         account.setState(null);
         integrationAccountRepository.save(account);
 
+        publishIntegrationConnected(account, userId);
+
         log.info("Notion 연동 완료: userId={}, workspace={}", userId, token.getWorkspaceName());
         return IntegrationConnectedResponse.from(account);
     }
@@ -148,10 +152,12 @@ public class ImportService {
             job.setStatus(JobStatus.COMPLETED);
             job.setCreatedNoteIds(String.join(",", allNoteIds));
             log.info("Notion 가져오기 완료: jobId={}, 생성 노트 수={}", job.getImportJobId(), allNoteIds.size());
+            publishImportJobCompleted(job, allNoteIds, 0);
         } catch (Exception e) {
             job.setStatus(JobStatus.FAILED);
             job.setFailedFiles("페이지 가져오기 실패: " + e.getMessage());
             log.error("Notion 가져오기 실패: jobId={}, error={}", job.getImportJobId(), e.getMessage());
+            publishImportJobFailed(job, e.getMessage());
         }
         importJobRepository.save(job);
 
@@ -179,27 +185,6 @@ public class ImportService {
                 }
             } catch (Exception e) {
                 log.warn("하위 페이지 가져오기 실패: childPageId={}, error={}", child.id(), e.getMessage());
-            }
-        }
-
-        // 페이지 안에 임베드된 데이터베이스 블록의 행들도 일반 하위 페이지가 아니라
-        // databases/{id}/query로만 조회되므로 별도로 순회한다. 행 하나하나가 실제로는 Notion
-        // 페이지이므로 importPageRecursive를 그대로 재사용하면 본문 블록 변환과 행 안의
-        // child_page/child_database 재귀까지 동일하게 처리된다.
-        List<NotionApiService.ChildDatabaseRef> childDatabases = notionApiService.getChildDatabases(pageId, accessToken);
-        for (NotionApiService.ChildDatabaseRef db : childDatabases) {
-            List<NotionApiService.ChildPageRef> rows = notionApiService.queryDatabaseRowRefs(db.id(), accessToken);
-            for (NotionApiService.ChildPageRef row : rows) {
-                try {
-                    List<String> rowNoteIds = importPageRecursive(userId, row.id(), folderId, accessToken, jwtToken);
-                    if (!rowNoteIds.isEmpty()) {
-                        workspaceApiClient.createNoteLink(noteId, rowNoteIds.get(0), row.title(), jwtToken);
-                        allNoteIds.addAll(rowNoteIds);
-                    }
-                } catch (Exception e) {
-                    log.warn("데이터베이스 행(노트) 가져오기 실패: databaseId={}, rowPageId={}, error={}",
-                            db.id(), row.id(), e.getMessage());
-                }
             }
         }
 
@@ -242,10 +227,19 @@ public class ImportService {
             if (!failed.isEmpty()) job.setFailedFiles(String.join(",", failed));
             log.info("ZIP 가져오기 완료: jobId={}, 생성 노트 수={}, 실패 수={}",
                     job.getImportJobId(), noteIds.size(), failed.size());
+
+            if (job.getStatus() == JobStatus.COMPLETED) {
+                publishImportJobCompleted(job, noteIds, failed.size());
+            } else {
+                publishImportJobFailed(job, job.getFailedFiles() != null
+                        ? "ZIP 가져오기 실패: " + job.getFailedFiles()
+                        : "ZIP 가져오기 결과 생성된 노트가 없습니다.");
+            }
         } catch (Exception e) {
             job.setStatus(JobStatus.FAILED);
             job.setFailedFiles("ZIP 가져오기 실패: " + e.getMessage());
             log.error("ZIP 가져오기 실패: jobId={}, error={}", job.getImportJobId(), e.getMessage());
+            publishImportJobFailed(job, e.getMessage());
         }
         importJobRepository.save(job);
         return ImportJobCreatedResponse.from(job);
@@ -276,6 +270,14 @@ public class ImportService {
                 job.setStatus(noteIds.isEmpty() && !entries.isEmpty() ? JobStatus.FAILED : JobStatus.COMPLETED);
                 job.setCreatedNoteIds(String.join(",", noteIds));
                 if (!failed.isEmpty()) job.setFailedFiles(String.join(",", failed));
+
+                if (job.getStatus() == JobStatus.COMPLETED) {
+                    publishImportJobCompleted(job, noteIds, failed.size());
+                } else {
+                    publishImportJobFailed(job, job.getFailedFiles() != null
+                            ? "ZIP 가져오기 실패: " + job.getFailedFiles()
+                            : "ZIP 가져오기 결과 생성된 노트가 없습니다.");
+                }
             } else {
                 String title = stripExtension(asset.getFileName());
                 ContentConverter.EmbedKind embedKind =
@@ -298,12 +300,14 @@ public class ImportService {
                 String noteId = workspaceApiClient.createNote(title, content, request.getTargetFolderId(), null, jwtToken);
                 job.setStatus(JobStatus.COMPLETED);
                 job.setCreatedNoteIds(noteId);
+                publishImportJobCompleted(job, List.of(noteId), 0);
             }
             log.info("파일 가져오기 완료: jobId={}, fileName={}", job.getImportJobId(), asset.getFileName());
         } catch (Exception e) {
             job.setStatus(JobStatus.FAILED);
             job.setFailedFiles("파일 가져오기 실패: " + e.getMessage());
             log.error("파일 가져오기 실패: jobId={}, error={}", job.getImportJobId(), e.getMessage());
+            publishImportJobFailed(job, e.getMessage());
         }
         importJobRepository.save(job);
         return ImportJobCreatedResponse.from(job);
@@ -396,6 +400,32 @@ public class ImportService {
         String folderId = workspaceApiClient.createFolder(name, parentFolderId, jwtToken);
         folderIdByPath.put(dirPath, folderId);
         return folderId;
+    }
+
+    private void publishIntegrationConnected(IntegrationAccount account, String userId) {
+        eventPublisher.publish("IntegrationConnected", userId, Map.of(
+                "integrationAccountId", account.getIntegrationAccountId(),
+                "userId", userId,
+                "provider", account.getProvider().name().toLowerCase()
+        ));
+    }
+
+    private void publishImportJobCompleted(ImportJob job, List<String> createdNoteIds, int failedCount) {
+        eventPublisher.publish("ImportJobCompleted", job.getUserId(), Map.of(
+                "importJobId", job.getImportJobId(),
+                "userId", job.getUserId(),
+                "createdNoteIds", List.copyOf(createdNoteIds),
+                "failedCount", failedCount
+        ));
+    }
+
+    private void publishImportJobFailed(ImportJob job, String errorMessage) {
+        eventPublisher.publish("ImportJobFailed", job.getUserId(), Map.of(
+                "importJobId", job.getImportJobId(),
+                "userId", job.getUserId(),
+                "errorCode", "IMPORT_FAILED",
+                "errorMessage", errorMessage == null ? "알 수 없는 오류" : errorMessage
+        ));
     }
 
     // ── 상태 조회 ─────────────────────────────────────────────────────────

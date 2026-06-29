@@ -33,6 +33,7 @@ public class EventOutbox {
     private String channel;
     @Column(columnDefinition = "text", nullable = false)
     private String payloadJson;
+    private Instant publishedAt;
 
     public EventOutbox(String eventId, String eventType, int eventVersion, Instant occurredAt, String producer,
                        String tenantId, String userId, String correlationId, String causationId,
@@ -49,5 +50,9 @@ public class EventOutbox {
         this.idempotencyKey = idempotencyKey;
         this.channel = channel;
         this.payloadJson = payloadJson;
+    }
+
+    public void markPublished(Instant publishedAt) {
+        this.publishedAt = publishedAt;
     }
 }

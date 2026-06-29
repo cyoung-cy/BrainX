@@ -47,9 +47,11 @@ function FavNoteRow({
   }, [renaming]);
 
   const commitRename = useCallback(() => {
-    const name = renameDraft.trim();
-    if (name && name !== note.title) onRenameNote?.(note.id, name);
-    else setRenameDraft(note.title);
+    // 빈 제목으로 비우고 commit하면 "제목 없음"으로 정규화한다(빈 문자열로 방치하지 않음) —
+    // 그래야 탭바/사이드바가 같은 기준(notes[].title)으로 항상 일관되게 표시된다.
+    const name = renameDraft.trim() || "제목 없음";
+    if (name !== note.title) onRenameNote?.(note.id, name);
+    setRenameDraft(name);
     setRenaming(false);
   }, [renameDraft, note.id, note.title, onRenameNote]);
 
@@ -172,9 +174,11 @@ function SearchNoteRow({
   }, [renaming]);
 
   const commitRename = useCallback(() => {
-    const name = renameDraft.trim();
-    if (name && name !== note.title) onRenameNote?.(note.id, name);
-    else setRenameDraft(note.title);
+    // 빈 제목으로 비우고 commit하면 "제목 없음"으로 정규화한다(빈 문자열로 방치하지 않음) —
+    // 그래야 탭바/사이드바가 같은 기준(notes[].title)으로 항상 일관되게 표시된다.
+    const name = renameDraft.trim() || "제목 없음";
+    if (name !== note.title) onRenameNote?.(note.id, name);
+    setRenameDraft(name);
     setRenaming(false);
   }, [renameDraft, note.id, note.title, onRenameNote]);
 

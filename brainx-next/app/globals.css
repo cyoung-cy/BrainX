@@ -286,6 +286,107 @@ html.light .aurora b {
   animation: sh 1.4s ease infinite;
 }
 
+.logo-orb {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgb(var(--accent)), rgb(var(--cyan)));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 18px 36px -24px rgb(var(--accent) / 0.65);
+}
+
+.orb-ring,
+.orb-ring2 {
+  position: absolute;
+  inset: -6px;
+  border-radius: 24px;
+  border: 2px solid rgb(var(--accent) / 0.25);
+  animation: ringPulse 2.4s ease-out infinite;
+}
+
+.orb-ring2 {
+  inset: -12px;
+  border-width: 1.5px;
+  border-color: rgb(var(--accent) / 0.1);
+  animation-delay: 0.6s;
+}
+
+.msg-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.msg-label {
+  position: relative;
+  overflow: hidden;
+  height: 22px;
+}
+
+.msg-inner {
+  display: flex;
+  flex-direction: column;
+  animation: textSlide 9s steps(1) infinite;
+}
+
+.msg-inner span {
+  height: 22px;
+  line-height: 22px;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgb(var(--accent) / 0.95);
+  letter-spacing: -0.01em;
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(var(--accent));
+  animation: dotAnim 1.5s ease-in-out infinite;
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.22s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.44s;
+}
+
+.progress-wrap {
+  width: min(200px, 72vw);
+  height: 3px;
+  background: rgb(var(--accent) / 0.12);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(var(--accent)), rgb(var(--cyan)));
+  animation: indeterminate 2s ease-in-out infinite;
+  transform-origin: left;
+}
+
+.hint {
+  font-size: 12px;
+  color: rgb(var(--accent) / 0.5);
+  letter-spacing: 0.01em;
+}
+
 .prose-bx h2 {
   margin: 1.75rem 0 0.75rem;
   font-size: 1.15rem;
@@ -357,6 +458,58 @@ html.light .aurora b {
   }
   100% {
     background-position: 0 0;
+  }
+}
+
+@keyframes ringPulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes textSlide {
+  0% {
+    transform: translateY(0);
+  }
+  33.33% {
+    transform: translateY(-22px);
+  }
+  66.66% {
+    transform: translateY(-44px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes dotAnim {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    background: rgb(var(--accent) / 0.45);
+    opacity: 0.5;
+  }
+  40% {
+    transform: translateY(-7px) scale(1.15);
+    background: rgb(var(--accent));
+    opacity: 1;
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%) scaleX(0.4);
+  }
+  50% {
+    transform: translateX(60%) scaleX(0.6);
+  }
+  100% {
+    transform: translateX(200%) scaleX(0.4);
   }
 }
 
@@ -574,7 +727,11 @@ html.light .aurora b {
      기존 비율(1.8배)을 그대로 유지 — 본문 font-size가 바뀌면 em 단위라 자동으로 같이 커진다 */
   font-size: var(--note-fs-h1, 1.8em);
   font-weight: 700;
-  margin-top: 1.4em;
+  /* margin-top이 1.4em(heading 자신의 큰 폰트 기준이라 실제로는 본문의 2배 이상)이라, "# "를
+     입력해 그 줄이 heading으로 바뀌는 순간 지금 쓰던 줄 자체가 그 여백만큼 아래로 밀려 보이는
+     문제가 있었다(아래쪽 여백은 그대로 둬도 문제 없음 — 그 줄이 움직이는 게 아니라 다음
+     내용이 밀리는 것뿐이라 자연스러움). Notion처럼 위쪽은 좁게 좁힌다. */
+  margin-top: 0.3em;
   margin-bottom: 0.2em;
   color: rgb(var(--txt));
   letter-spacing: -0.02em;
@@ -583,7 +740,7 @@ html.light .aurora b {
 .tiptap-note-content .ProseMirror h2 {
   font-size: var(--note-fs-h2, 1.35em);
   font-weight: 600;
-  margin-top: 1.2em;
+  margin-top: 0.3em;
   margin-bottom: 0.15em;
   color: rgb(var(--txt));
 }
@@ -591,7 +748,7 @@ html.light .aurora b {
 .tiptap-note-content .ProseMirror h3 {
   font-size: var(--note-fs-h3, 1.1em);
   font-weight: 600;
-  margin-top: 1em;
+  margin-top: 0.25em;
   color: rgb(var(--txt));
 }
 

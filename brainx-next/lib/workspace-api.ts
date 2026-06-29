@@ -75,11 +75,24 @@ export type NoteDraftIdResult = {
   status: "DRAFT_ID_ISSUED";
 };
 
+export type DeleteNoteResult = {
+  noteId: string;
+  deletedAt: string;
+  purgeAt: string | null;
+};
+
+export type DeleteFolderResult = {
+  deletedFolderIds: string[];
+  deletedNoteIds: string[];
+  deletedAt: string;
+};
+
 export type NoteDraftData = {
   noteId: string;
   actorType: "USER" | "GUEST";
   title: string | null;
   markdown: string;
+  folderId: string | null;
   baseVersion: number;
   clientSavedAt: string | null;
   savedAt: string;
@@ -162,6 +175,31 @@ export async function listFolders() {
   return authedRequest<FolderTreeData>("/api/v1/folders/tree");
 }
 
+export async function createWorkspaceFolder(name: string, parentFolderId: string | null) {
+  return authedRequest<WorkspaceFolderItem>("/api/v1/folders", {
+    method: "POST",
+    body: JSON.stringify({ name, parentFolderId }),
+  });
+}
+
+export async function patchWorkspaceFolder(
+  folderId: string,
+  patch: { name?: string; parentFolderId?: string | null }
+) {
+  return authedRequest<WorkspaceFolderItem>(`/api/v1/folders/${folderId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+/** 하위 폴더/노트를 전부 cascade로 삭제한다(더 이상 부모로 승격하지 않음 — orphan 방지).
+    mode: "trash"(휴지통, 기본) | "permanent"(완전삭제) — 노트 삭제와 동일한 정책. */
+export async function deleteWorkspaceFolder(folderId: string, mode: "trash" | "permanent" = "trash") {
+  return authedRequest<DeleteFolderResult>(`/api/v1/folders/${folderId}?mode=${mode}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createWorkspaceNote(note: MockNote) {
   return authedRequest<NoteCreated>("/api/v1/notes", {
     method: "POST",
@@ -210,6 +248,7 @@ export async function saveWorkspaceNoteDraft(note: MockNote) {
     body: JSON.stringify({
       title: note.title,
       markdown: note.content,
+      folderId: note.folderId ?? null,
       baseVersion: note.version ?? 1,
       clientSavedAt: new Date().toISOString()
     })
@@ -222,6 +261,14 @@ export async function getWorkspaceNoteDraft(noteId: string) {
 
 export async function listWorkspaceNoteDrafts() {
   return authedRequest<NoteDraftListData>("/api/v1/notes/drafts/list");
+}
+
+/** mode: "trash"(휴지통 이동, 기본) | "permanent"(완전삭제). Guest actor는 Postgres에 노트를
+    가질 수 없어 서버가 Redis draft만 지우고 성공으로 응답한다(CurrentActor 정책, 403 아님). */
+export async function deleteWorkspaceNote(noteId: string, mode: "trash" | "permanent" = "trash") {
+  return authedRequest<DeleteNoteResult>(`/api/v1/notes/${noteId}?mode=${mode}`, {
+    method: "DELETE",
+  });
 }
 
 export function workspaceNoteToMock(note: WorkspaceNoteItem | NoteDetail): MockNote {
@@ -249,6 +296,7 @@ export function workspaceDraftToMock(draft: NoteDraftData): MockNote {
     content: draft.markdown ?? "",
     tags: [],
     category: "frontend",
+    folderId: draft.folderId ?? undefined,
     createdAt: savedAt,
     updatedAt: savedAt,
     version: draft.baseVersion ?? 1,

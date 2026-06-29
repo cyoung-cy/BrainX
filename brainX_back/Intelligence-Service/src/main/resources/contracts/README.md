@@ -6,7 +6,7 @@
 
 - `knowledge-intelligence.openapi.yaml`: 이 서비스가 provider인 REST API 계약. `x-producer-service: knowledge-intelligence` 또는 `Knowledge Intelligence` tag 기준으로 추출한다.
 - `knowledge-intelligence.consumed.openapi.yaml`: 이 서비스가 consumer인 동기 내부 REST API 계약. `x-consumers[].id: internal.knowledge-intelligence` 기준으로 추출한다.
-- `knowledge-intelligence.asyncapi.yaml`: 이 서비스가 producer 또는 consumer인 이벤트 계약. AsyncAPI SSOT에서는 Intelligence Service가 `AI-Service`로 표기되어 있어 `x-producer-service: AI-Service` 또는 `x-consumer-services`에 `AI-Service`가 포함된 channel을 추출한다.
+- `knowledge-intelligence.asyncapi.yaml`: 이 서비스가 producer 또는 consumer인 이벤트 계약. AsyncAPI SSOT에서는 Intelligence Service가 `Intelligence-Service`로 표기되어 있어 `x-producer-service: Intelligence-Service` 또는 `x-consumer-services`에 `Intelligence-Service`가 포함된 channel을 추출한다.
 
 ## Regeneration
 

@@ -62,6 +62,10 @@ BrainX/
 
 `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 개발 기준에서 제외합니다. 백엔드 개발은 아래 MSA 서비스 경계를 기준으로 진행합니다.
 
+### 로컬 Kafka
+
+`brainX_back/docker-compose.yml`에는 로컬 Kafka broker가 들어 있습니다. 호스트에서는 `localhost:9092`, 컨테이너 내부에서는 `kafka:9092`로 접근합니다. 1차 Kafka 범위에서는 기존 동기 흐름을 그대로 유지하고, 이벤트 발행은 서비스 플래그로 켜는 방식입니다. `BRAINX_EVENTS_OUTBOX_ENABLED=true`이면 Workspace-Service와 Commerce-Service가 outbox row를 Kafka로 흘리고, `BRAINX_EVENTS_PRODUCER_ENABLED=true`이면 Ingestion-Service가 `IntegrationConnected`, `ImportJobCompleted`, `ImportJobFailed`를 발행합니다. `BRAINX_EVENTS_CONSUMER_ENABLED=true`이면 Intelligence-Service가 workspace note 이벤트, `CaptureReceived`, note link 이벤트, folder 이벤트, `UserDeletionRequested`를 소비합니다. 작업 요약은 [`brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md`](brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md)에 둡니다. `ImportJobRequested`는 앞으로의 async worker 흐름에서 다룹니다.
+
 ## Frontend: brainx-next
 
 `brainx-next`는 BrainX의 현재 주력 프론트엔드입니다. Next.js App Router 기반이며, 실제 백엔드 연결 전에도 localStorage와 mock seed data로 주요 사용 흐름을 체험할 수 있게 구성되어 있습니다.
@@ -154,9 +158,9 @@ BrainX/
 
 | Service | 담당 | 책임 | 상태 |
 | --- | --- | --- | --- |
-| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계 | 구현 중 (포트 8080) |
+| User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계, 로그인 세션 Redis 기록 | 구현 중 (포트 8080) |
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | API shell 구현 중 (포트 8085) |
-| AI-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 미구현 |
+| Intelligence-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 구현 중 (포트 8086) |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
@@ -368,6 +372,9 @@ Workspace-Service는 내부 식별 헤더를 `CurrentActor`로 해석합니다.
 
 비회원 노트/폴더/링크/그래프 데이터는 체험용 임시 데이터로 취급합니다. Redis in-memory 저장소가 도입되면 guest actor의 Workspace 데이터는 Redis에 저장하고 TTL 만료 또는 세션 종료로 사라지게 합니다. 회원 데이터는 계속 Workspace-Service의 PostgreSQL 원장에 저장합니다.
 
+User-Service도 같은 Redis를 사용합니다. 인증 토큰 자체는 PostgreSQL `RefreshToken` 원장과 JWT에 남기고, 실제 로그인 세션 이력은 Redis에 저장해 관리자 페이지와 내부 API가 읽습니다. 다만 Redis 세션 이력 기록이 실패해도 로그인/OAuth 콜백/토큰 재발급/로그아웃 응답 자체는 계속 성공하도록 best-effort로 처리합니다.
+Docker Compose로 실행할 때는 `user-service` 컨테이너가 `REDIS_HOST=redis`를 사용해야 하며, `localhost`를 쓰면 컨테이너 자기 자신을 보게 되어 로그인/OAuth 흐름이 500으로 실패할 수 있습니다.
+
 ```powershell
 cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 .\gradlew.bat bootRun
@@ -376,7 +383,7 @@ cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 ### Frontend
 
 ```powershell
-cd C:\Edu\BrainX\brainx-next
+cd C:\Edu\Final_Project\BrainX\brainx-next
 npm install
 npm run dev
 ```
@@ -386,7 +393,7 @@ npm run dev
 타입 체크:
 
 ```powershell
-cd C:\Edu\BrainX\brainx-next
+cd C:\Edu\Final_Project\BrainX\brainx-next
 npm run typecheck
 ```
 
@@ -403,6 +410,16 @@ cd C:\Edu\Final\brainX_back\User-Service
 cd C:\Edu\Final\brainX_back\User-Service
 .\gradlew.bat test
 ```
+
+User-Service의 Redis 역할은 다음과 같습니다.
+
+- 로그인 성공 시 실제 세션 기록 저장
+- JWT `sid` 기준으로 세션의 마지막 활동 시간 갱신
+- 로그아웃/세션 종료 시 세션 상태 종료 표시
+- 관리자 상세 조회용 실제 로그인 세션, IP, 기기, 위치 이력 제공
+- Redis 장애나 세션 이력 파싱 실패가 나더라도 auth 응답은 막지 않고, 이력 기록만 건너뜁니다.
+
+관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다.
 
 ### Backend: Ingestion-Service (포트 8083)
 
@@ -467,12 +484,12 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 일괄 처리 | POST | `/api/v1/admin/users/bulk-actions` | 플랜 변경/정지/재활성화/탈퇴/공지 |
 | 문의 목록 | GET | `/api/v1/admin/support/tickets` | 관리자 문의 목록 |
 | 문의 상세/배정 | GET/PATCH | `/api/v1/admin/support/tickets/{ticketId}` | 담당자/상태 변경, `SupportTicketUpdated` |
-| 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 답변 등록, `SupportTicketReplied`, `NotificationRequested` |
-| 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 매출/구독/실패 집계 |
-| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장 |
+| 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 로그인 관리자 이름으로 답변 등록, 사용자 문의 상세의 ADMIN 메시지로 표시 |
+| 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 이번 달 매출/활성 유료 구독/MRR/실패 건 집계 |
+| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 간편결제/신용카드/체크카드 결제수단 |
 | 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded` |
 | 결제 재시도 | POST | `/api/v1/admin/billing/payments/{paymentId}/retry` | Commerce 결제 재시도, `PaymentSucceeded`/`PaymentFailed` |
-| 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장 |
+| 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장. 무료 플랜은 제외하고 유료 구독만 표시 |
 | 결제 실패 추적 | GET | `/api/v1/admin/billing/payment-failures` | Commerce 실패 사유/재시도 횟수 |
 | 요금제 목록 | GET | `/api/v1/admin/billing/plans` | Commerce 플랜 카탈로그 |
 | 요금제 가격 | PATCH | `/api/v1/admin/billing/plans/{planId}` | Commerce 플랜 가격 변경, `PlanPriceChanged` |
@@ -521,6 +538,37 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 
 ## Current Notes
 
+- **(2026-06-29 SSOT 계약 변경) 폴더 cascade 삭제 / draft folderId / 이어쓰기 floating UI**:
+  - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `brainX_back/Workspace-Service`(`WorkspaceController`/`WorkspaceService`/`NoteDraftService`/`Note`/`Folder`/`NoteRepository`), `brainx-next`(`workspace-api.ts`/`NotesWorkspace.tsx`/`NoteEditor.tsx`).
+  - **폴더 삭제 정책 변경(API 계약 변경)**: `DELETE /api/v1/folders/{folderId}`가 하위 폴더/노트를 부모로 승격하던 것을 그만두고, 하위 폴더(중첩 포함)와 그 안의 노트를 전부 cascade로 삭제하도록 바꿨다. 요청 바디(`FolderDeleteRequest`)를 없애고 노트 삭제와 동일한 `mode`(trash|permanent) 쿼리 파라미터로 통일했으며, 응답을 `DeleteFolderData`(삭제된 폴더/노트 id 목록)로 바꿨다. 같은 actor의 Redis draft(아직 flush 전인 노트)도 같은 폴더 id 집합 기준으로 함께 삭제해 orphan을 막는다.
+  - **Redis draft에 folderId 추가(API 계약 변경)**: `NoteDraftSaveRequest`/`NoteDraftData`에 `folderId`를 추가해, draft 저장/flush/guest claim 전 과정에서 노트-폴더 배치가 유지되게 했다. guest 폴더는 claim 시 `Folder.userId`만 갱신(폴더 id는 그대로)하므로 draft.folderId 참조가 끊기지 않는다 — 그 결과 게스트 때 폴더에 넣어둔 노트가 회원가입 직후에도 같은 폴더 배치로 보인다.
+  - **이어쓰기 위치를 floating UI로 전환**: ProseMirror Decoration.widget(텍스트 흐름 안에 꽂혀 있던 방식)을 없애고, SlashCommandMenu/CursorContinueButton과 같은 `coordsAtPos` 기반 React 컴포넌트로 바꿔 캐럿 오른쪽 아래에 절대 위치로 띄운다 — 문서 구조/흐름에 영향이 전혀 없다.
+- **(2026-06-28 버그 수정) 노트 삭제 API 연결 / 헤딩 위쪽 여백 / 이어쓰기 위치 / 게스트 폴더 승계**:
+  - 분석 대상: `brainx-next/lib/workspace-api.ts`, `NotesWorkspace.tsx`, `app/globals.css`, `NoteEditor.tsx`, `brainX_back/Workspace-Service` `WorkspaceController`/`WorkspaceService`/`NoteDraftPersistenceService`/`Folder`.
+  - 노트 삭제(`handleDeleteNote`)가 클라이언트 메모리만 바꾸고 백엔드를 호출하지 않던 문제를 고쳤다 — `DELETE /api/v1/notes/{noteId}?mode=trash`를 호출해 성공해야만 화면을 정리하고, guest나 아직 Postgres로 flush되지 않은 draft-only 노트는 컨트롤러가 Redis draft만 지우고 성공으로 응답하도록 백엔드도 함께 고쳤다.
+  - 헤딩(H1~H3) `margin-top`이 헤딩 자신의 큰 폰트 기준 1.2~1.4em이라(실제로는 본문의 2배 이상) "# "를 입력해 그 줄이 헤딩으로 바뀌는 순간 줄 자체가 크게 밀려 보이던 문제를 0.25~0.3em으로 좁혀 해결했다. 아래쪽 여백은 변경하지 않았다.
+  - "이어쓰기" AI 제안 위젯이 inline-flex라 커서 바로 뒤 같은 줄에 끼어들어 작성 중인 줄을 가리던 문제를 flex(block)로 바꿔 커서 아래 자기 줄로 내렸다(ProseMirror decoration 위치/구조는 그대로, CSS만 변경).
+  - 게스트는 노트는 Postgres에 못 만들지만(`memberUserId()` 정책) 폴더 생성에는 그 제약이 없어, 게스트가 만든 폴더가 Postgres에 guestId 소유로 남아 회원가입 후에도 안 보이는 gap을 발견했다 — `claimGuestDrafts`가 note draft와 같은 트랜잭션에서 폴더 소유자도 user로 옮기도록 `WorkspaceService.reassignGuestFolders`를 추가했고, 프론트의 폴더 생성/이름변경/이동/삭제도 이번에 처음으로 백엔드에 연결했다(이전엔 폴더 API 자체가 호출되지 않고 있었음).
+- **(2026-06-28 버그 수정) 제목 공백 정규화 / 헤딩 뒤 빈 줄 / 게스트→유저 노트 승계 새로고침 수정**:
+  - 분석 대상: `brainx-next/components/notes/EditorPanel.tsx`, `NotesExplorer.tsx`, `NoteEditor.tsx`, `NotesWorkspace.tsx`, `lib/auth-api.ts`.
+  - 노트 제목을 전부 지우고 blur하면 `t && ...` 가드 때문에 `onTitleChange`가 전혀 호출되지 않고 입력창만 빈 문자열로 굳어버리던 버그를 고쳤다 — 빈 제목 commit 시 탭바와 동일한 기준("제목 없음")으로 정규화한다(NotesExplorer의 동일한 rename 로직도 함께 수정).
+  - tiptap v3 StarterKit이 기본 포함하는 `TrailingNode` 확장이 "마지막 노드가 단락이 아니면 빈 단락을 자동 삽입"하는데, heading은 글 쓰는 동안 거의 항상 마지막 노드라 `#`+Space/슬래시 명령으로 헤딩을 만들 때마다 보이지 않는 빈 단락이 끼어들어 다음 줄이 밀려 보였다 — `trailingNode: { notAfter: ["heading"] }`로 범위를 좁혀 표/이미지 등 다른 블록 뒤의 기존 동작은 유지했다.
+  - 회원가입 2단계(`signupWithEmail` → `completeOnboarding`) 중 실제 "가입 완료" 시점인 `completeOnboarding`에는 게스트 draft claim 호출이 빠져 있어 가입 직후 화면에 게스트 노트가 안 보일 수 있었다 — 호출을 추가했다. 또한 `NotesWorkspace`가 마운트 후 로그인 상태 변화를 구독하지 않아, 같은 탭에서 로그인/로그아웃해도 이전 actor의 탭/노트가 화면에 남아있던 문제를 막기 위해, claim 시도 직후와 `clearAuthSession()`(로그아웃) 시점에 기존 `brainx:notes-refresh` 이벤트를 `resetWorkspace:true`로 재사용해 워크스페이스를 비우고 새 actor 기준으로 다시 불러오게 했다.
+  - Workspace-Service의 노트 조회/수정/삭제는 이미 모두 `(userId, noteId)` 쌍으로 스코프돼 있어(`NoteRepository.findByNoteIdAndUserId` 등) guest/user 데이터가 DB 레벨에서 섞일 수 있는 경로는 없었다 — 다만 노트 "삭제" UI(`NotesWorkspace.handleDeleteNote`)가 현재 백엔드 호출 없이 클라이언트 메모리에서만 제거되는 상태라는 점을 확인했다(별도 후속 작업 필요, 이번 수정 범위 아님).
+- **(2026-06-28 버그 수정) 빈 패널 콘텐츠 잔존 + 슬래시 명령어 H1~H3 미적용 수정**:
+  - 분석 대상: `brainx-next/components/notes/PaneTreeRenderer.tsx`, `NotesWorkspace.tsx`, `SlashCommandMenu.tsx`.
+  - `PaneTreeRenderer`가 leaf의 탭이 0개일 때 `node.noteId`(닫힌 뒤에도 정리 안 된 leaf 자체 필드)나 `notes[0]`(조회 실패 시 임의의 다른 노트)로 fallback 하던 부분을 제거했다 — 탭이 0개면 항상 "노트 없음" 상태로 렌더링되도록 고쳐, 모든 탭을 닫아도 직전 노트 내용이 패널에 남아있던 문제를 막았다.
+  - "탭이 0개인지" 판정(`isWorkspaceEmpty`, 세션 하이드레이션의 "완전히 빈 세션인지" 체크, `nextActiveId` 후보 선정)을 모두 `paneTabs` 객체 전체가 아니라 `root` 트리에 실제로 존재하는 leaf 기준으로 통일했다 — 트리에서 이미 제거된 고아 `paneTabs` 항목이 남아있어도 Welcome 판정이 깨지지 않는다.
+  - 슬래시 명령어(`/h1`,`/h2`,`/h3`)로 헤딩을 적용하면 `HeadingLevelSync`(헤딩 본문의 실제 "#" 글자 수로 level을 되돌려 동기화하는 라이브 마크다운 프리뷰 로직)가 "#" 마커 텍스트가 없다는 이유로 즉시 평문으로 되돌리던 버그를 고쳤다 — `# `/`## `/`### ` 마커 텍스트를 직접 삽입한 뒤 `setNode`를 호출해 `# `+Space 단축키와 동일한 경로를 타게 했다.
+- **(2026-06-28 버그 수정) 노트 워크스페이스 Welcome 보드/세션 복원 레이스 컨디션 수정**:
+  - 분석 대상: `brainx-next/components/notes/NotesWorkspace.tsx`.
+  - URL(`/notes/[id]`)로 노트를 열 때, 서버에서 노트 목록을 불러오는 `loadFromServer` 콜백이 컴포넌트 마운트 시점에 캡처한 옛 `state.activeId`(paneId)를 그대로 써서, 그 사이 localStorage 세션이 복원되며 트리의 실제 paneId가 바뀌면 존재하지 않는 paneId에 노트를 매달아버리는 문제가 있었다(화면엔 반영되지 않고 고아 `paneTabs` 항목만 남아, 직전 세션이 Welcome 상태였을 경우 "노트를 클릭/이동해도 Welcome처럼 보이는" 현상으로 나타남). 항상 최신 트리를 들고 있는 `latestSessionRef`에서 현재 보이는 paneId를 다시 계산하도록 고쳤다.
+  - 탭을 모두 닫아 Welcome 상태로 돌아가는 전환은 세션 자동저장 디바운스(350ms)를 거치지 않고 즉시 localStorage에 기록하도록 바꿔, 그 안에 새로고침하면 직전(탭이 남아있던) 세션이 복원되어 닫은 탭/분할이 되살아나던 문제를 막았다.
+  - API/계약 변경 없음 — 순수 프론트엔드 상태 동기화 버그 수정이라 SSOT/OpenAPI 변경은 없다.
+- **(2026-06-28 구현) Workspace Redis dirty draft owner 탐색을 SCAN으로 전환**:
+  - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `contracts-v2/brainx-asyncapi.ssot.yaml`, `README.md`, `Workspace-Service` Redis draft 구현.
+  - `NoteDraftService.userIdsWithDirtyDrafts()`가 `redisTemplate.keys("workspace:note:dirty:user:*")`로 Redis 전체 키 공간을 블로킹 탐색하던 문제를 `SCAN MATCH workspace:note:dirty:user:* COUNT 500` 기반 점진 탐색으로 바꿨습니다.
+  - API 응답 계약은 그대로이며, OpenAPI에는 백그라운드 PostgreSQL flush 대상 사용자 탐색이 `KEYS` 대신 `SCAN`을 사용한다는 구현 기준을 명시했습니다.
 - **(2026-06-25 SSOT 계약 변경) BrainX-Admin 실제 데이터 연동용 관리자 API 확정**:
   - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `contracts-v2/brainx-asyncapi.ssot.yaml`, `README.md`, `BrainX-Admin/brainx-admin-next`의 현재 UI 더미 데이터.
   - OpenAPI: `/api/v1/admin/**` 아래에 관리자 대시보드, 사용자 목록/상세/플랜 변경/상태 변경/탈퇴/일괄 처리, 문의 상세/배정, 결제 KPI/내역/환불/재시도/구독/실패 추적/요금제 가격 수정, 관리자 프로필/비밀번호 변경 API를 추가했습니다.
@@ -531,17 +579,17 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 - `brainX_front`는 이전 Vite/React 구현으로 보이며, 신규 개발 기준은 `brainx-next`를 우선합니다.
 - `brainX_back/identity-access-service`, `brainX_back/knowledge-workspace-service`는 제거 예정이므로 새 문서와 개발 계획에서는 제외합니다.
 - DB는 PostgreSQL 16.x를 기준으로 하지만, 현재 `User-Service`에는 H2/MySQL/PostgreSQL runtime dependency가 함께 들어 있습니다. 서비스별 운영 DB 확정 시 정리합니다.
-- **Ingestion-Service SSOT 불일치 현황 (2026-06-19 기준)**:
+- **Ingestion-Service SSOT/구현 정합성 현황 (2026-06-28 기준)**:
   - 실제 구현 prefix는 `/api/v1/`로 SSOT와 일치 (컨트롤러 `@RequestMapping("/api/v1/imports")` 직접 확인).
   - `GET /api/v1/imports/notion/pages` 엔드포인트가 SSOT에 없었으나 추가 구현됨 → SSOT에 반영 완료.
-  - Import job이 SSOT 계약상 async이나 현재 동기 처리 중. Kafka 이벤트(ImportJobRequested, ImportJobCompleted, IntegrationConnected) 미발행.
+  - Import job은 현재 구현 기준으로 동기 처리 중이며, `BRAINX_EVENTS_PRODUCER_ENABLED=true`일 때 완료/실패 결과를 `ImportJobCompleted`/`ImportJobFailed` Kafka 이벤트로도 발행합니다. `IntegrationConnected`도 Notion OAuth 저장 commit 이후 발행됩니다. `ImportJobRequested`는 async worker 기반 import로 전환할 때 도입합니다.
   - 노트 생성이 `bulkCreateNotesInternal` 대신 신규 `Workspace-Service`의 `POST /api/v1/notes`를 직접 호출 중 (구 `knowledge-workspace-service`가 아님). 정식 internal API 전환 필요.
   - `brainx-next` import 화면은 `lib/ingestion-api.ts`로 실제 API와 연동되어 있습니다 (더 이상 mock 아님). Notion OAuth는 팝업 + `postMessage` 방식.
   - **(2026-06-23 수정)** Notion 가져오기 완료 후 노트가 `/editor-lab`(테스트 전용 데모)에만 추가되고 실제 `/notes` 화면에는 보이지 않던 배선 문제를 고쳤습니다. `components/utility/import-screen.tsx`가 가져온 노트를 `/notes/{noteId}`로 바로 라우팅하도록 변경했고, `app/(app)/notes/layout.tsx`의 초기 탭 판별 로직이 mock 시드 데이터(`getNoteById`)에만 의존하던 것을 `NEXT_PUBLIC_NOTES_USE_MOCK=false`(실 백엔드 모드)에서는 URL의 noteId를 그대로 신뢰하도록 고쳐, `NotesWorkspace`의 `listNotes()` 결과로 막 가져온 노트도 정상적으로 열립니다.
   - **TEMP**: 실제 로그인 연동 전까지 `/api/v1/imports/notion/**`, `/api/v1/imports/{importJobId}`(GET)를 인증 없이 허용하고(`SecurityConfig` permitAll), 인증이 없으면 고정 `dev-test-user`로 동작하도록 임시 우회되어 있습니다. 코드에 `TEMP` 주석으로 표시. 실제 로그인 연동 완료 후 제거 필요.
   - **(2026-06-23 추가 수정, 계약 변경 없음)**: Notion 텍스트 멘션(`@페이지`)이 마크다운 변환 시 통째로 누락되던 버그를 고쳐 `[[제목]]` 위키링크로 변환되게 함(`NotionApiService.richText`). 하위 페이지 백링크 등록(`POST /api/v1/notes/{id}/links`)이 SSOT에 이미 required로 정의된 `createIfMissing` 필드를 빠뜨려 매번 400으로 실패하던 버그 수정(`WorkspaceApiClient.createNoteLink`) — SSOT는 원래부터 맞았고 구현만 따라가지 못했던 경우. Notion OAuth 콜백이 React Strict Mode로 중복 호출되어 같은 code로 토큰 교환을 두 번 시도하던 레이스 컨디션 수정(`app/notion-callback/page.tsx`). 가져온 노트가 `/notes` 화면에 새로고침 없이는 반영되지 않던 문제를 `brainx:notes-refresh` 커스텀 이벤트로 해결(`NotesWorkspace.tsx`, `import-screen.tsx`).
   - **(2026-06-23 신규 구현, SSOT 계약 변경 포함)**: `/import` 화면의 "콘텐츠 가져오기"(ZIP 드래그&드롭)와 "파일 기반 가져오기"(CSV/PDF/Text/Markdown/HTML/Word 버튼)가 그동안 프런트엔드 `setTimeout` 가짜 진행률만 보여주고 실제로는 아무것도 가져오지 않던 문제를 실제 동작하도록 구현했습니다.
-    - 백엔드(Ingestion-Service): `Asset` 엔티티/로컬 디스크 스토리지(`AssetStorageService`, `ASSET_STORAGE_DIR` 환경변수)와 `AssetController`(`POST /api/v1/assets/upload-sessions`, `PUT .../binary`, `POST .../complete`)를 신규 구현. `ContentConverter`가 TXT/MD/HTML(Jsoup)/CSV(commons-csv → 마크다운 표)/PDF(PDFBox)/DOCX(POI)를 마크다운/텍스트로 변환하고, ZIP은 내부 항목을 모두 풀어 각각 노트로 만듭니다. `ImportJob.SourceType`에 `FILE` 추가, 신규 `POST /api/v1/imports/file/jobs` 추가(단일 파일 → 노트 1개, 또는 ZIP이면 항목별 노트). 기존 `POST /api/v1/imports/obsidian/jobs`는 "Job을 PENDING으로 저장만 하고 끝"이던 스텁을 실제 ZIP 추출 로직으로 교체(Obsidian vault 한정이 아니라 범용 ZIP을 지원하도록 일반화). 모두 Notion 가져오기와 동일하게 동기 처리(Kafka 이벤트 미발행)입니다.
+    - 백엔드(Ingestion-Service): `Asset` 엔티티/로컬 디스크 스토리지(`AssetStorageService`, `ASSET_STORAGE_DIR` 환경변수)와 `AssetController`(`POST /api/v1/assets/upload-sessions`, `PUT .../binary`, `POST .../complete`)를 신규 구현. `ContentConverter`가 TXT/MD/HTML(Jsoup)/CSV(commons-csv → 마크다운 표)/PDF(PDFBox)/DOCX(POI)를 마크다운/텍스트로 변환하고, ZIP은 내부 항목을 모두 풀어 각각 노트로 만듭니다. `ImportJob.SourceType`에 `FILE` 추가, 신규 `POST /api/v1/imports/file/jobs` 추가(단일 파일 → 노트 1개, 또는 ZIP이면 항목별 노트). 기존 `POST /api/v1/imports/obsidian/jobs`는 "Job을 PENDING으로 저장만 하고 끝"이던 스텁을 실제 ZIP 추출 로직으로 교체(Obsidian vault 한정이 아니라 범용 ZIP을 지원하도록 일반화). 모두 Notion 가져오기와 동일하게 동기 처리하며, Kafka producer 활성화 시 완료/실패 이벤트를 추가 발행합니다.
     - SSOT(`brainx-openapi.ssot.yaml`): `createAssetUploadSession`/`completeAssetUpload`의 `x-implementation-status: not-implemented`를 제거하고 실제 동작을 설명하는 `x-implementation-note`로 교체. 사전 서명 URL을 위한 외부 스토리지(S3 등)가 아직 없어 `uploadUrl`이 자체 바이너리 업로드 경로를 가리키므로, 신규 `PUT /api/v1/assets/upload-sessions/{uploadSessionId}/binary` 엔드포인트를 SSOT에 추가했습니다. 신규 `POST /api/v1/imports/file/jobs` + `FileImportJobCreateRequest` 스키마 추가. `InternalNoteBulkCreateRequest.source` enum에 `FILE_IMPORT` 추가. `brainx-asyncapi.ssot.yaml`의 `ImportJobRequestedPayload.source` enum에 `FILE` 추가.
     - 프런트엔드(`brainx-next`): `lib/ingestion-api.ts`에 `uploadAndImportFile()`(업로드 세션 생성 → 바이너리 업로드 → 완료 처리 → ZIP이면 obsidian job, 아니면 file job 호출 → 완료까지 폴링)를 추가하고, `components/utility/import-screen.tsx`의 드롭존/파일 타입 버튼이 실제로 이 함수를 호출해 결과 노트로 라우팅하도록 수정. 데모 세션(`isNotionDemoSession()`)은 실제 자산 업로드 백엔드가 없으므로 기존 가짜 진행률 시뮬레이션을 그대로 유지합니다.
     - `getAsset`(`GET /api/v1/assets/{assetId}`)은 이후 PDF 뷰어 작업(바로 아래 항목)에서 구현되었습니다. `/api/v1/conversions*`는 여전히 범위 밖이라 `x-implementation-status: not-implemented`로 남아 있습니다.
@@ -575,6 +623,9 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 - **Workspace-Service**: Gateway가 전달한 `X-User-Id`/`X-Guest-Id`를 `CurrentActor`로 해석하는 흐름을 기준으로 전환 중입니다. Redis 도입 전까지 직접 Workspace-Service를 호출하는 개발 편의 경로에는 `dev-test-user` fallback이 남아 있으나, 정식 흐름은 Gateway를 통해 회원은 USER actor, 비회원은 GUEST actor로 처리합니다.
 - **Commerce-Service (신규, 2026-06-19 추가)**:
   - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
+  - **(2026-06-28 수정)** Toss confirm 성공 응답의 `method`, `card.cardType`, `easyPay.provider`를 저장해 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `간편결제`, `신용카드`, `체크카드` 계열로 표시합니다. Admin-Service 사용자 목록의 플랜은 Commerce 활성 구독을 우선하고 성공 결제 이력으로 보정합니다.
+  - **(2026-06-28 수정)** 관리자 결제 관리의 구독 현황은 유료 구독만 표시하고, 사용자 표시는 시스템 문자열이 아니라 사람 이름으로 읽히는 표시명만 노출하도록 정리했습니다.
+  - **(2026-06-28 수정)** 관리자 문의 답변은 로그인 관리자 이름으로 User-Service에 저장되며, 관리자 콘솔에는 "관리자명에 의해 답변 완료"와 답변 본문이 표시되고 사용자 마이페이지 문의 상세에는 ADMIN 메시지로 표시됩니다.
   - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.
   - **TEMP**: 결제/등급 변경 동작 확인용으로 Pro 500원, Max 1000원으로 가격을 임시로 낮춰 두었습니다 (`Commerce-Service/src/main/java/.../service/PlanDataSeeder.java`). 실제 요금으로 전환 전 되돌려야 합니다.
   - **TEMP**: `application.yml`의 Toss `client-key`/`secret-key`는 Toss Payments 공식 문서에 공개된 샌드박스 테스트 키입니다. 실서비스 전환 시 가맹점 본인의 키로 교체해야 합니다.

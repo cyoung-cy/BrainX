@@ -27,7 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @ConditionalOnProperty(prefix = "brainx.events.producer", name = "enabled", havingValue = "true")
 public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, TokenUsagePort, AssistEventPort, ChatEventPort, ConnectionEventPort, ClusteringEventPort, InsightEventPort, OrganizationEventPort {
 
-    private static final String PRODUCER = "AI-Service";
+    private static final String PRODUCER = "Intelligence-Service";
     private static final int EVENT_VERSION = 1;
     private static final String SEMANTIC_SEARCH_PERFORMED = "SemanticSearchPerformed";
     private static final String TOKEN_USAGE_RECORDED_REQUESTED = "TokenUsageRecordedRequested";
@@ -281,7 +281,7 @@ public class KafkaIntelligenceEventAdapter implements ExplorationEventPort, Toke
     public void insightReportRequested(InsightReportRequestedEvent event) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("userId", event.userId());
-        payload.put("reportId", event.reportId());
+        payload.put("reportJobId", event.reportId());
         payload.put("scope", event.scope());
         payload.put("includeLearningRecommendations", event.includeLearningRecommendations());
         publish(

@@ -115,7 +115,7 @@ class SampleRagServiceTest {
         chunkRetrieval.usageRecord = new TokenUsageRecord(
             "usage-1",
             "sample-user",
-            "AI-Service",
+            "Intelligence-Service",
             "note-search-query-embedding",
             "voyage-4-lite",
             12,

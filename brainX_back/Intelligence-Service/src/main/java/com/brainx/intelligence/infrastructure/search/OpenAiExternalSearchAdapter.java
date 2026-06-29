@@ -25,7 +25,7 @@ public class OpenAiExternalSearchAdapter implements ExternalSearchPort {
 
     static final String PROVIDER = "openai";
     static final String FEATURE_ID = "external-search-web";
-    private static final String SOURCE_SERVICE = "AI-Service";
+    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String RESPONSES_PATH = "/v1/responses";
     private static final String WEB_SEARCH_TOOL = "web_search";
     private static final String SOURCES_INCLUDE = "web_search_call.action.sources";

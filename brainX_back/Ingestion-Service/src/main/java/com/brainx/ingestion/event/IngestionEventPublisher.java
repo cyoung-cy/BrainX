@@ -1,0 +1,99 @@
+package com.brainx.ingestion.event;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class IngestionEventPublisher {
+    private static final String PRODUCER = "Ingestion-Service";
+
+    private final ApplicationEventPublisher applicationEventPublisher;
+
+    @Value("${brainx.events.producer.enabled:false}")
+    private boolean enabled;
+
+    public void publish(String eventType, String userId, Map<String, Object> payload) {
+        if (!enabled) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        String eventId = "evt_" + UUID.randomUUID();
+        String correlationId = stringValue(payload, "correlationId");
+        if (correlationId == null) {
+            correlationId = "req_" + UUID.randomUUID();
+        }
+        String causationId = stringValue(payload, "causationId");
+        String idempotencyKey = stringValue(payload, "idempotencyKey");
+        IngestionEvent event = new IngestionEvent(
+                eventId,
+                eventType,
+                1,
+                now,
+                PRODUCER,
+                null,
+                userId,
+                correlationId,
+                causationId,
+                idempotencyKey,
+                channel(eventType),
+                payload == null ? Map.of() : payload
+        );
+        log.debug("Ingestion event published: type={}, userId={}, channel={}",
+                eventType, userId, event.channel());
+        applicationEventPublisher.publishEvent(event);
+    }
+
+    private String stringValue(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        return value instanceof String text && !text.isBlank() ? text : null;
+    }
+
+    private String channel(String eventType) {
+        return switch (eventType) {
+            case "ApiClientCreated" -> "brainx.content.ingestion.publishing.api-client-created.v1";
+            case "AssetUploaded" -> "brainx.content.ingestion.publishing.asset-uploaded.v1";
+            case "CaptureReceived" -> "brainx.content.ingestion.publishing.capture-received.v1";
+            case "ConversionJobRequested" -> "brainx.content.ingestion.publishing.conversion-job-requested.v1";
+            case "ConversionJobCompleted" -> "brainx.content.ingestion.publishing.conversion-job-completed.v1";
+            case "ConversionJobFailed" -> "brainx.content.ingestion.publishing.conversion-job-failed.v1";
+            case "ExportJobRequested" -> "brainx.content.ingestion.publishing.export-job-requested.v1";
+            case "ExportJobCompleted" -> "brainx.content.ingestion.publishing.export-job-completed.v1";
+            case "ExportJobFailed" -> "brainx.content.ingestion.publishing.export-job-failed.v1";
+            case "ExternalToolCalled" -> "brainx.content.ingestion.publishing.external-tool-called.v1";
+            case "ImportJobRequested" -> "brainx.content.ingestion.publishing.import-job-requested.v1";
+            case "ImportJobCompleted" -> "brainx.content.ingestion.publishing.import-job-completed.v1";
+            case "ImportJobFailed" -> "brainx.content.ingestion.publishing.import-job-failed.v1";
+            case "IntegrationConnected" -> "brainx.content.ingestion.publishing.integration-connected.v1";
+            case "PublishJobRequested" -> "brainx.content.ingestion.publishing.publish-job-requested.v1";
+            case "PublishJobCompleted" -> "brainx.content.ingestion.publishing.publish-job-completed.v1";
+            case "PublishJobFailed" -> "brainx.content.ingestion.publishing.publish-job-failed.v1";
+            default -> "brainx.content.ingestion.publishing.unknown.v1";
+        };
+    }
+
+    public record IngestionEvent(
+            String eventId,
+            String eventType,
+            int eventVersion,
+            Instant occurredAt,
+            String producer,
+            String tenantId,
+            String userId,
+            String correlationId,
+            String causationId,
+            String idempotencyKey,
+            String channel,
+            Map<String, Object> payload
+    ) {
+    }
+}
