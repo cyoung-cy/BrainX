@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Compass, FileUp, PencilLine, Pin, PinOff, Sparkles } from "lucide-react";
@@ -8,10 +8,11 @@ import { readAuthSession } from "@/lib/auth-api";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
 import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
 import { createBridgeConcepts, type BridgeConceptsData } from "@/lib/intelligence-api";
+import { createWorkspaceNote, type NoteCreated } from "@/lib/workspace-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
-import { ReactFlow, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useEdgesState, useReactFlow, useStoreApi, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { UniverseBackground } from "./universe-background";
 import { PlanetNode } from "./planet-node";
@@ -200,6 +201,12 @@ type PlanetFlowNode = Node<{
 
 type BridgeRecommendation = BridgeConceptsData["recommendations"][number];
 type BridgeResultStatus = "idle" | "loading" | "success" | "error";
+type BridgeSaveStatus = "saving" | "saved" | "error";
+type BridgeSaveState = {
+  status: BridgeSaveStatus;
+  noteId?: string;
+  error?: string;
+};
 
 type OrbitFlowEdge = Edge<{
   isBridge: boolean;
@@ -286,6 +293,35 @@ const ageRank: Record<string, number> = {
 
 const BRIDGE_MIN_NOTE_COUNT = 2;
 const BRIDGE_MAX_NOTE_COUNT = 10;
+const BRIDGE_RECOMMENDATION_TAGS = ["bridge", "ai-suggestion"];
+
+function isFilteredOutByTime(note: BrainXNote, timeFilter: string) {
+  if (timeFilter === "전체") return false;
+  const limit = timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99;
+  return (ageRank[note.updated] ?? 0) > limit;
+}
+
+function isBridgeSelectableNote(
+  note: BrainXNote,
+  hiddenClusters: Partial<Record<ClusterId, boolean>>,
+  timeFilter: string
+) {
+  return !hiddenClusters[note.cluster] && !isFilteredOutByTime(note, timeFilter);
+}
+
+function mergeBridgeSelectedIds(currentIds: string[], incomingIds: string[]) {
+  const nextIds: string[] = [...currentIds];
+  const seen = new Set(nextIds);
+  for (const id of incomingIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    nextIds.push(id);
+  }
+  return {
+    ids: nextIds.slice(0, BRIDGE_MAX_NOTE_COUNT),
+    truncated: nextIds.length > BRIDGE_MAX_NOTE_COUNT
+  };
+}
 
 function bridgeErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -301,6 +337,79 @@ function bridgeErrorMessage(error: unknown) {
   return message || "추천 생성에 실패했습니다. 선택한 노트를 확인하고 다시 시도하세요.";
 }
 
+function bridgeSaveErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("만료") || message.includes("권한")) {
+    return "로그인이 만료되었습니다. 다시 로그인한 뒤 저장하세요.";
+  }
+  return message || "노트 저장에 실패했습니다. 잠시 후 다시 시도하세요.";
+}
+
+function normalizeMarkdownText(value: string) {
+  return value.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeMarkdownLinkText(value: string) {
+  return normalizeMarkdownText(value).replace(/[\\[\]]/g, "\\$&");
+}
+
+function buildBridgeRecommendationMarkdown(recommendation: BridgeRecommendation, sourceNotes: BrainXNote[]) {
+  const title = normalizeMarkdownText(recommendation.title) || "징검다리 개념 후보";
+  const reason =
+    recommendation.bridgeReason?.trim() ||
+    "선택한 노트 사이를 이어줄 새 문서 주제로 제안되었습니다.";
+  const sourceLines = sourceNotes.map((note, index) => {
+    const tags = note.tags.length > 0 ? ` ${note.tags.map((tag) => `#${normalizeMarkdownText(tag)}`).join(" ")}` : "";
+    return `${index + 1}. [${escapeMarkdownLinkText(note.title)}](/notes/${encodeURIComponent(note.id)})${tags}`;
+  });
+
+  return [
+    `# ${title}`,
+    "",
+    "> AI가 선택한 노트 사이를 이어줄 새 주제로 제안했습니다.",
+    "",
+    "## 제안 이유",
+    "",
+    reason,
+    "",
+    "## 연결한 노트",
+    "",
+    sourceLines.length > 0 ? sourceLines.join("\n") : "- 선택한 노트 정보 없음",
+    "",
+    "## 다음에 적어볼 내용",
+    "",
+    "- 이 주제가 각 노트의 어떤 공백을 메우는지 정리하기",
+    "- 관련 개념, 사례, 의사결정 기준을 추가하기"
+  ].join("\n");
+}
+
+function bridgeRecommendationToGraphNote(
+  recommendation: BridgeRecommendation,
+  created: NoteCreated,
+  sourceNotes: BrainXNote[]
+): BrainXNote {
+  const now = created.createdAt || new Date().toISOString();
+  const cluster = sourceNotes[0]?.cluster ?? "proj";
+  return {
+    id: created.noteId,
+    title: normalizeMarkdownText(created.title || recommendation.title) || "징검다리 개념 후보",
+    markdown: "",
+    folderId: cluster,
+    cluster,
+    summary:
+      recommendation.bridgeReason?.trim() ||
+      "선택한 노트 사이를 이어줄 새 문서 주제로 제안되었습니다.",
+    tags: BRIDGE_RECOMMENDATION_TAGS,
+    links: [],
+    updated: "today",
+    words: 0,
+    isFavorite: false,
+    createdAt: now,
+    updatedAt: now,
+    version: created.version
+  };
+}
+
 function GraphCanvasFlow({
   theme,
   notes,
@@ -313,7 +422,9 @@ function GraphCanvasFlow({
   controls,
   bridgeMode,
   bridgeSelectedIds,
+  bridgeSelectionLocked,
   onBridgeSelect,
+  onBridgeSelectMany,
   onSelect
 }: {
   theme: '2d' | 'universe';
@@ -327,19 +438,42 @@ function GraphCanvasFlow({
   controls: MutableRefObject<GraphControls | null>;
   bridgeMode: boolean;
   bridgeSelectedIds: string[];
+  bridgeSelectionLocked: boolean;
   onBridgeSelect: (id: string) => void;
+  onBridgeSelectMany: (ids: string[]) => void;
   onSelect: (id: string | null) => void;
 }) {
   const { setCenter, fitView, zoomTo, getViewport, fitBounds } = useReactFlow();
+  const store = useStoreApi<PlanetFlowNode, OrbitFlowEdge>();
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<PlanetFlowNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<OrbitFlowEdge>([]);
   const [hovered, setHovered] = useState<BrainXNote | null>(null);
   const hoverTimeoutRef = useRef<number | null>(null);
   const isDraggingRef = useRef(false);
+  const bridgeBoxSelectingRef = useRef(false);
+  const reactFlowSelectionIdsRef = useRef<Set<string>>(new Set());
+  const bridgeSelectionSignatureRef = useRef("");
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   
   const positionsRef = useRef<Record<string, GraphNode>>(settleLayout(notes));
   const raf = useRef(0);
+
+  const clearReactFlowNodeSelection = useCallback(() => {
+    store.setState({
+      nodesSelectionActive: false,
+      userSelectionActive: false,
+      userSelectionRect: null
+    });
+    setRfNodes((current) => {
+      let changed = false;
+      const next = current.map((node) => {
+        if (!node.selected) return node;
+        changed = true;
+        return { ...node, selected: false };
+      });
+      return changed ? next : current;
+    });
+  }, [setRfNodes, store]);
 
   // Sync positionsRef with notes to handle async data loading
   useEffect(() => {
@@ -683,7 +817,7 @@ function GraphCanvasFlow({
       const bridgeSelected = bridgeSelectionOrder.has(note.id);
       const isDirect = activeId ? direct.has(note.id) : false;
       const radius = selected || bridgeSelected ? baseRadius + 4 : (isDirect ? baseRadius + 1.5 : baseRadius);
-      const dimmed = timeFilter !== "전체" && (ageRank[note.updated] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
+      const dimmed = isFilteredOutByTime(note, timeFilter);
       const hidden = hiddenClusters[note.cluster] ? true : false;
       
       let layer: 'front' | 'middle' | 'back' = 'middle';
@@ -705,6 +839,7 @@ function GraphCanvasFlow({
       return {
         id: note.id,
         type: 'planet',
+        selected: false,
         position: { x: positionsRef.current[note.id]?.x ?? 0, y: positionsRef.current[note.id]?.y ?? 0 },
         origin: [0.5, 0.5] as [number, number],
         data: {
@@ -720,6 +855,7 @@ function GraphCanvasFlow({
           theme
         },
         hidden,
+        selectable: bridgeMode && !bridgeSelectionLocked && !hidden && !dimmed,
         draggable: true,
         className: dimmed ? 'pointer-events-none' : ''
       };
@@ -729,8 +865,8 @@ function GraphCanvasFlow({
       const sourceNote = notes.find(n => n.id === edge.source);
       const targetNote = notes.find(n => n.id === edge.target);
       
-      const sourceDimmed = timeFilter !== "전체" && (ageRank[sourceNote?.updated ?? 0] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
-      const targetDimmed = timeFilter !== "전체" && (ageRank[targetNote?.updated ?? 0] ?? 0) > (timeFilter === "최근 1일" ? 1 : timeFilter === "최근 1주" ? 7 : 99);
+      const sourceDimmed = sourceNote ? isFilteredOutByTime(sourceNote, timeFilter) : false;
+      const targetDimmed = targetNote ? isFilteredOutByTime(targetNote, timeFilter) : false;
 
       const isSelected = activeId && (edge.source === activeId || edge.target === activeId);
       // bridgeMode: bridge 아닌 엣지는 흐리게, bridge 엣지는 강조
@@ -759,9 +895,28 @@ function GraphCanvasFlow({
       };
     });
     
-    setRfNodes(newNodes);
+    setRfNodes((currentNodes) => {
+      if (!bridgeBoxSelectingRef.current) {
+        return newNodes;
+      }
+      const selectedIds = new Set<string>(reactFlowSelectionIdsRef.current);
+      currentNodes.forEach((node) => {
+        if (node.selected) {
+          selectedIds.add(node.id);
+        }
+      });
+      if (selectedIds.size === 0) {
+        return newNodes;
+      }
+      return newNodes.map((node) => {
+        if (!selectedIds.has(node.id)) {
+          return node;
+        }
+        return { ...node, selected: true };
+      });
+    });
     setRfEdges(newEdges);
-  }, [notes, edges, selectedId, hovered, draggingNodeId, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme, bridgeMode, bridgeSelectedIds]);
+  }, [notes, edges, selectedId, hovered, draggingNodeId, timeFilter, hiddenClusters, setRfNodes, setRfEdges, theme, bridgeMode, bridgeSelectedIds, bridgeSelectionLocked]);
 
   // Camera zoom on select
   useEffect(() => {
@@ -793,6 +948,36 @@ function GraphCanvasFlow({
         }}
         onPaneClick={() => {
           if (!bridgeMode) onSelect(null);
+        }}
+        selectionKeyCode={bridgeMode && !bridgeSelectionLocked ? "Shift" : null}
+        selectionMode={SelectionMode.Partial}
+        onSelectionStart={() => {
+          if (!bridgeMode || bridgeSelectionLocked) return;
+          bridgeBoxSelectingRef.current = true;
+          reactFlowSelectionIdsRef.current = new Set();
+          bridgeSelectionSignatureRef.current = "";
+        }}
+        onSelectionChange={({ nodes: selectedNodes }) => {
+          if (!bridgeMode || bridgeSelectionLocked || !bridgeBoxSelectingRef.current) return;
+          const selectedNodeIds = selectedNodes
+            .filter((node) => !node.data.dimmed)
+            .map((node) => node.id);
+          reactFlowSelectionIdsRef.current = new Set(selectedNodeIds);
+          if (selectedNodeIds.length === 0) {
+            bridgeSelectionSignatureRef.current = "";
+            return;
+          }
+          const signature = selectedNodeIds.join("|");
+          if (signature === bridgeSelectionSignatureRef.current) return;
+          bridgeSelectionSignatureRef.current = signature;
+          onBridgeSelectMany(selectedNodeIds);
+        }}
+        onSelectionEnd={() => {
+          bridgeBoxSelectingRef.current = false;
+          reactFlowSelectionIdsRef.current = new Set();
+          bridgeSelectionSignatureRef.current = "";
+          clearReactFlowNodeSelection();
+          window.requestAnimationFrame(clearReactFlowNodeSelection);
         }}
         onNodeMouseEnter={(_, node) => {
           if (node.data.dimmed) return;
@@ -984,30 +1169,102 @@ function GraphScreenInner() {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeResultStatus>("idle");
   const [bridgeRecommendations, setBridgeRecommendations] = useState<BridgeRecommendation[]>([]);
   const [bridgeError, setBridgeError] = useState<string | null>(null);
+  const [bridgeSaveStates, setBridgeSaveStates] = useState<Record<string, BridgeSaveState>>({});
   const [sidebarsVisible, setSidebarsVisible] = useState(true);
   const [sidebarsLocked, setSidebarsLocked] = useState(false);
   const controls = useRef<GraphControls | null>(null);
   const idleTimerRef = useRef<number | null>(null);
+  const graphRequestIdRef = useRef(0);
+  const graphMountedRef = useRef(false);
+  const optimisticGraphNotesRef = useRef<Record<string, BrainXNote>>({});
   const notes = liveNotes ?? mockNotes;
   const edges = useMemo(() => liveEdges ?? deriveGraphEdges(notes), [liveEdges, notes]);
   const clusterListNotes = USE_MOCK_GRAPH_CLUSTERS ? mockNotes : notes;
   const selected = selectedId ? notes.find((note) => note.id === selectedId) ?? null : null;
   const hasGraphData = notes.length > 0;
+  const bridgeSelectableIds = useMemo(
+    () => notes
+      .filter((note) => isBridgeSelectableNote(note, hiddenClusters, timeFilter))
+      .map((note) => note.id),
+    [hiddenClusters, notes, timeFilter]
+  );
+  const bridgeSelectAllIds = useMemo(
+    () => bridgeSelectableIds.slice(0, BRIDGE_MAX_NOTE_COUNT),
+    [bridgeSelectableIds]
+  );
   const bridgeSelectedNotes = useMemo(
     () => bridgeSelectedIds.map((id) => notes.find((note) => note.id === id)).filter((note): note is BrainXNote => !!note),
     [bridgeSelectedIds, notes]
   );
+  const bridgeSelectionLocked = bridgeStatus === "loading";
+  const bridgeAllSelectableSelected =
+    bridgeSelectAllIds.length > 0 &&
+    bridgeSelectedIds.length === bridgeSelectAllIds.length &&
+    bridgeSelectAllIds.every((id) => bridgeSelectedIds.includes(id));
   const canCreateBridgeConcepts =
     bridgeSelectedIds.length >= BRIDGE_MIN_NOTE_COUNT &&
     bridgeSelectedIds.length <= BRIDGE_MAX_NOTE_COUNT &&
-    bridgeStatus !== "loading";
+    !bridgeSelectionLocked;
   const bridgePanelVisible = bridgeMode || bridgeStatus === "success" || bridgeStatus === "error";
+
+  const refreshGraph = useCallback(
+    async ({
+      reset = false,
+      showError = true
+    }: {
+      reset?: boolean;
+      showError?: boolean;
+    } = {}) => {
+      const session = readAuthSession();
+      const hasRealLogin = !!session && session.accessToken !== "demo-access-token";
+
+      if (USE_MOCK_GRAPH && !hasRealLogin) {
+        setLiveNotes(null);
+        setLiveEdges(null);
+        return;
+      }
+
+      const requestId = graphRequestIdRef.current + 1;
+      graphRequestIdRef.current = requestId;
+      if (reset) {
+        optimisticGraphNotesRef.current = {};
+        setLiveNotes([]);
+        setLiveEdges([]);
+      }
+
+      try {
+        const graph = await getGraph();
+        if (!graphMountedRef.current || requestId !== graphRequestIdRef.current) return;
+        const graphNotes = graphToBrainXNotes(graph);
+        const serverNoteIds = new Set(graphNotes.map((note) => note.id));
+        const optimisticNotes = Object.values(optimisticGraphNotesRef.current).filter((note) => {
+          if (serverNoteIds.has(note.id)) {
+            delete optimisticGraphNotesRef.current[note.id];
+            return false;
+          }
+          return true;
+        });
+        setLiveNotes(optimisticNotes.length > 0 ? [...optimisticNotes, ...graphNotes] : graphNotes);
+        setLiveEdges(graphEdgesForFlow(graph));
+      } catch (error) {
+        if (!graphMountedRef.current || requestId !== graphRequestIdRef.current) return;
+        setLiveNotes([]);
+        setLiveEdges([]);
+        if (showError) {
+          const message = error instanceof Error ? error.message : "Could not load graph data.";
+          pushToast(message, "err");
+        }
+      }
+    },
+    [pushToast]
+  );
 
   const clearBridgeState = () => {
     setBridgeSelectedIds([]);
     setBridgeStatus("idle");
     setBridgeRecommendations([]);
     setBridgeError(null);
+    setBridgeSaveStates({});
   };
 
   const closeBridgeMode = () => {
@@ -1027,27 +1284,56 @@ function GraphScreenInner() {
     clearBridgeState();
   };
 
-  const toggleBridgeNote = (noteId: string) => {
-    if (bridgeStatus === "loading") return;
+  const clearBridgeGeneratedState = () => {
     setBridgeStatus("idle");
     setBridgeError(null);
     setBridgeRecommendations([]);
-    setBridgeSelectedIds((current) => {
-      if (current.includes(noteId)) {
-        return current.filter((id) => id !== noteId);
-      }
-      if (current.length >= BRIDGE_MAX_NOTE_COUNT) {
-        pushToast(`징검다리 추천은 최대 ${BRIDGE_MAX_NOTE_COUNT}개 노트까지 선택할 수 있어요.`, "err");
-        return current;
-      }
-      return [...current, noteId];
-    });
+    setBridgeSaveStates({});
+  };
+
+  const selectBridgeNotes = (noteIds: string[], replace = false) => {
+    if (bridgeSelectionLocked || noteIds.length === 0) return;
+    clearBridgeGeneratedState();
+    const hasNewIncoming = noteIds.some((id) => !bridgeSelectedIds.includes(id));
+    setBridgeSelectedIds((current) => mergeBridgeSelectedIds(replace ? [] : current, noteIds).ids);
+    if (!replace && hasNewIncoming && bridgeSelectedIds.length >= BRIDGE_MAX_NOTE_COUNT) {
+      pushToast(`징검다리 추천은 최대 ${BRIDGE_MAX_NOTE_COUNT}개 노트까지 선택할 수 있어요.`, "info");
+    }
+  };
+
+  const toggleBridgeSelectAll = () => {
+    if (bridgeSelectionLocked || bridgeSelectableIds.length === 0) return;
+    clearBridgeGeneratedState();
+    if (bridgeAllSelectableSelected) {
+      setBridgeSelectedIds([]);
+      return;
+    }
+    const result = mergeBridgeSelectedIds([], bridgeSelectableIds);
+    setBridgeSelectedIds(result.ids);
+    if (result.truncated) {
+      pushToast(`보이는 노트 중 ${BRIDGE_MAX_NOTE_COUNT}개까지만 선택했어요.`, "info");
+    }
+  };
+
+  const toggleBridgeNote = (noteId: string) => {
+    if (bridgeSelectionLocked) return;
+    clearBridgeGeneratedState();
+    if (bridgeSelectedIds.includes(noteId)) {
+      setBridgeSelectedIds(bridgeSelectedIds.filter((id) => id !== noteId));
+      return;
+    }
+    const result = mergeBridgeSelectedIds(bridgeSelectedIds, [noteId]);
+    setBridgeSelectedIds(result.ids);
+    if (result.truncated) {
+      pushToast(`징검다리 추천은 최대 ${BRIDGE_MAX_NOTE_COUNT}개 노트까지 선택할 수 있어요.`, "info");
+    }
   };
 
   const handleCreateBridgeConcepts = async () => {
     if (!canCreateBridgeConcepts) return;
     setBridgeStatus("loading");
     setBridgeError(null);
+    setBridgeSaveStates({});
     try {
       const result = await createBridgeConcepts({ noteIds: bridgeSelectedIds });
       setBridgeRecommendations(result.recommendations);
@@ -1062,37 +1348,78 @@ function GraphScreenInner() {
     }
   };
 
-  useEffect(() => {
-    const session = readAuthSession();
-    const hasRealLogin = !!session && session.accessToken !== "demo-access-token";
-
-    if (USE_MOCK_GRAPH && !hasRealLogin) {
-      setLiveNotes(null);
-      setLiveEdges(null);
+  const handleSaveBridgeRecommendation = async (recommendation: BridgeRecommendation) => {
+    const proposalId = recommendation.noteId;
+    const currentSaveState = bridgeSaveStates[proposalId];
+    if (currentSaveState?.status === "saving") return;
+    if (currentSaveState?.status === "saved" && currentSaveState.noteId) {
+      router.push(`/notes/${currentSaveState.noteId}`);
       return;
     }
 
-    let active = true;
-    setLiveNotes([]);
-    setLiveEdges([]);
-    getGraph()
-      .then((graph) => {
-        if (!active) return;
-        setLiveNotes(graphToBrainXNotes(graph));
-        setLiveEdges(graphEdgesForFlow(graph));
-      })
-      .catch((error) => {
-        if (!active) return;
-        setLiveNotes([]);
-        setLiveEdges([]);
-        const message = error instanceof Error ? error.message : "Could not load graph data.";
-        pushToast(message, "err");
-      });
+    setBridgeSaveStates((current) => ({
+      ...current,
+      [proposalId]: { status: "saving" }
+    }));
 
-    return () => {
-      active = false;
+    try {
+      const now = Date.now();
+      const created = await createWorkspaceNote({
+        id: proposalId,
+        title: normalizeMarkdownText(recommendation.title) || "징검다리 개념 후보",
+        content: buildBridgeRecommendationMarkdown(recommendation, bridgeSelectedNotes),
+        tags: BRIDGE_RECOMMENDATION_TAGS,
+        category: "ai",
+        folderId: undefined,
+        createdAt: now,
+        updatedAt: now,
+        persisted: false
+      });
+      const graphNote = bridgeRecommendationToGraphNote(recommendation, created, bridgeSelectedNotes);
+      optimisticGraphNotesRef.current[graphNote.id] = graphNote;
+
+      setBridgeSaveStates((current) => ({
+        ...current,
+        [proposalId]: { status: "saved", noteId: created.noteId }
+      }));
+      setLiveNotes((current) => {
+        const baseNotes = current ?? notes;
+        if (baseNotes.some((note) => note.id === graphNote.id)) {
+          return baseNotes.map((note) => (note.id === graphNote.id ? graphNote : note));
+        }
+        return [graphNote, ...baseNotes];
+      });
+      controls.current?.reheat();
+      window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: created.noteId } }));
+      pushToast("징검다리 후보를 새 노트로 저장했어요.", "ok");
+    } catch (error) {
+      setBridgeSaveStates((current) => ({
+        ...current,
+        [proposalId]: { status: "error", error: bridgeSaveErrorMessage(error) }
+      }));
+    }
+  };
+
+  useEffect(() => {
+    graphMountedRef.current = true;
+    void refreshGraph({ reset: true });
+
+    const handleNotesRefresh = () => {
+      void refreshGraph({ showError: false });
     };
-  }, [pushToast]);
+    const handleAuthSessionChanged = () => {
+      void refreshGraph({ reset: true, showError: false });
+    };
+
+    window.addEventListener("brainx:notes-refresh", handleNotesRefresh);
+    window.addEventListener("brainx-auth-session-changed", handleAuthSessionChanged);
+    return () => {
+      graphMountedRef.current = false;
+      graphRequestIdRef.current += 1;
+      window.removeEventListener("brainx:notes-refresh", handleNotesRefresh);
+      window.removeEventListener("brainx-auth-session-changed", handleAuthSessionChanged);
+    };
+  }, [refreshGraph]);
 
   useEffect(() => {
     if (!hasGraphData) {
@@ -1164,7 +1491,9 @@ function GraphScreenInner() {
           controls={controls}
           bridgeMode={bridgeMode}
           bridgeSelectedIds={bridgeSelectedIds}
+          bridgeSelectionLocked={bridgeSelectionLocked}
           onBridgeSelect={toggleBridgeNote}
+          onBridgeSelectMany={(ids) => selectBridgeNotes(ids)}
           onSelect={(id) => {
             setSelectedId(id);
           }}
@@ -1432,10 +1761,23 @@ function GraphScreenInner() {
 
             <div className="scroll flex-1 overflow-y-auto p-4" aria-live="polite">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-[11px] font-semibold text-txt3">선택한 노트</span>
-                <span className="text-[11px] tabular-nums text-txt3">
-                  {bridgeSelectedIds.length}/{BRIDGE_MAX_NOTE_COUNT}
-                </span>
+                <div className="min-w-0">
+                  <span className="block text-[11px] font-semibold text-txt3">선택한 노트</span>
+                  <span className="mt-0.5 block text-[10px] text-txt3">Shift + 드래그로 여러 노트를 선택</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={bridgeSelectionLocked || bridgeSelectableIds.length === 0}
+                    onClick={toggleBridgeSelectAll}
+                    className="h-6 rounded-md border border-line/60 bg-surface2/60 px-2 text-[10.5px] font-semibold text-txt2 transition-colors hover:border-primary/40 hover:text-txt disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {bridgeAllSelectableSelected ? "전체 해제" : "전체 선택"}
+                  </button>
+                  <span className="text-[11px] tabular-nums text-txt3">
+                    {bridgeSelectedIds.length}/{BRIDGE_MAX_NOTE_COUNT}
+                  </span>
+                </div>
               </div>
 
               {bridgeSelectedNotes.length > 0 ? (
@@ -1497,24 +1839,52 @@ function GraphScreenInner() {
               {bridgeRecommendations.length > 0 ? (
                 <div className="space-y-2.5">
                   <div className="text-[11px] font-semibold text-txt3">추천 후보</div>
-                  {bridgeRecommendations.map((recommendation) => (
-                    <article
-                      key={recommendation.noteId}
-                      className="rounded-xl border border-line/60 bg-surface2/55 p-3"
-                    >
-                      <div className="flex min-w-0 items-start justify-between gap-2">
-                        <h3 className="min-w-0 flex-1 truncate text-[13px] font-bold text-txt">
-                          {recommendation.title}
-                        </h3>
-                        <span className="shrink-0 rounded-full bg-txt/5 px-2 py-0.5 text-[10px] font-medium text-txt3" translate="no">
-                          {recommendation.noteId.slice(0, 12)}
-                        </span>
-                      </div>
-                      <p className="mt-2 max-h-24 overflow-y-auto break-words text-[12px] leading-5 text-txt2">
-                        {recommendation.bridgeReason}
-                      </p>
-                    </article>
-                  ))}
+                  {bridgeRecommendations.map((recommendation) => {
+                    const saveState = bridgeSaveStates[recommendation.noteId];
+                    const saveStatus = saveState?.status ?? "idle";
+                    const isSaving = saveStatus === "saving";
+                    const isSaved = saveStatus === "saved" && !!saveState.noteId;
+                    return (
+                      <article
+                        key={recommendation.noteId}
+                        className="rounded-xl border border-line/60 bg-surface2/55 p-3"
+                      >
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <h3 className="min-w-0 flex-1 truncate text-[13px] font-bold text-txt">
+                            {recommendation.title}
+                          </h3>
+                          <span className="shrink-0 rounded-full bg-txt/5 px-2 py-0.5 text-[10px] font-medium text-txt3" translate="no">
+                            {recommendation.noteId.slice(0, 12)}
+                          </span>
+                        </div>
+                        <p className="mt-2 max-h-24 overflow-y-auto break-words text-[12px] leading-5 text-txt2">
+                          {recommendation.bridgeReason}
+                        </p>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/50 pt-2.5">
+                          <span className={cx(
+                            "min-w-0 truncate text-[11px]",
+                            saveStatus === "error" ? "text-red-600 dark:text-red-300" : "text-txt3"
+                          )}>
+                            {isSaved ? "Workspace 노트로 저장됨" : saveStatus === "error" ? saveState.error : "후보를 새 노트로 남길 수 있어요"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => handleSaveBridgeRecommendation(recommendation)}
+                            className={cx(
+                              "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-wait disabled:opacity-60",
+                              isSaved
+                                ? "bg-txt/10 text-txt hover:bg-txt/15"
+                                : "bg-primary text-white hover:bg-primary/90"
+                            )}
+                          >
+                            <Icon name={isSaving ? "refresh" : isSaved ? "doc" : "plus"} size={12} />
+                            {isSaving ? "저장 중" : isSaved ? "열기" : "노트로 저장"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
