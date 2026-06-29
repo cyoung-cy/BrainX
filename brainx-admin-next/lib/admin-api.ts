@@ -31,6 +31,15 @@ type ApiSuccess<T> = {
   message?: string;
 };
 
+type ApiFailure = {
+  success?: false;
+  message?: string;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
 type ApiPlanId = "free" | "pro" | "max";
 type ApiUserStatus = "ACTIVE" | "SUSPENDED" | "WITHDRAWN";
 type ApiTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
@@ -109,6 +118,7 @@ type ApiSubscription = {
   planId: ApiPlanId;
   startedAt: string;
   nextBillingAt?: string | null;
+  billingCycle?: "MONTHLY" | "YEARLY";
   amount: number;
 };
 
@@ -134,6 +144,7 @@ export type AdminAccountRow = {
   adminId: string;
   name: string;
   loginId: string;
+  email: string | null;
   role: AdminRole;
   mustChangePassword: boolean;
   createdAt: string;
@@ -333,6 +344,7 @@ function buildActivities(row: ApiUserRow | ApiUserDetail) {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const method = init?.method?.toUpperCase() ?? "GET";
   const response = await fetch(path, {
     ...init,
     cache: "no-store",
@@ -343,24 +355,33 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   });
 
+  const payload = response.status === 204 ? null : ((await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null);
+  const errorMessage =
+    payload && "error" in payload && payload.error?.message
+      ? payload.error.message
+      : payload && "message" in payload && payload.message
+        ? payload.message
+        : `Admin API ${response.status}: ${path}`;
+
   if ((response.status === 401 || response.status === 403) && !path.endsWith("/auth/login")) {
-    clearSession();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
+    if (method === "GET") {
+      clearSession();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
     }
-    throw new Error(`Admin API ${response.status}: ${path}`);
+    throw new Error(errorMessage);
   }
 
   if (!response.ok) {
-    throw new Error(`Admin API ${response.status}: ${path}`);
+    throw new Error(errorMessage);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || !payload) {
     return undefined as T;
   }
 
-  const payload = (await response.json()) as ApiSuccess<T>;
-  return payload.data;
+  return (payload as ApiSuccess<T>).data;
 }
 
 function planRank(plan: Plan) {
@@ -484,6 +505,16 @@ function mapPayment(payment: ApiPayment, usersById: Map<string, { name: string }
 
 function mapSubscription(subscription: ApiSubscription, usersById: Map<string, { name: string }>): BillingSubscription {
   const user = resolveUserLabel(subscription.userId, subscription.userName, usersById);
+  const inferredCycle =
+    subscription.billingCycle === "YEARLY"
+      ? "yearly"
+      : subscription.billingCycle === "MONTHLY"
+        ? "monthly"
+        : subscription.nextBillingAt
+          ? Math.abs(new Date(subscription.nextBillingAt).getTime() - new Date(subscription.startedAt).getTime()) >= 300 * 24 * 60 * 60 * 1000
+            ? "yearly"
+            : "monthly"
+          : undefined;
   return {
     subscriptionId: subscription.subscriptionId,
     user,
@@ -491,6 +522,7 @@ function mapSubscription(subscription: ApiSubscription, usersById: Map<string, {
     plan: planFromApi(subscription.planId),
     started: formatDate(subscription.startedAt),
     next: subscription.nextBillingAt ? formatDate(subscription.nextBillingAt).slice(5) : "-",
+    billingCycle: inferredCycle,
     amount: subscription.amount
   };
 }
@@ -567,12 +599,12 @@ export const adminApi = {
     }),
   getMe: () => apiFetch<AdminProfile>("/api/v1/admin/me"),
   listAdminAccounts: () => apiFetch<{ admins: AdminAccountRow[] }>("/api/v1/admin/admin-accounts").then((data) => data.admins),
-  createAdminAccount: (body: { name: string; loginId: string; role: AdminRole }) =>
+  createAdminAccount: (body: { name: string; loginId: string; email?: string | null; role: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow; temporaryPassword: string }>("/api/v1/admin/admin-accounts", {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; role?: AdminRole }) =>
+  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; email?: string | null; role?: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow }>("/api/v1/admin/admin-accounts/" + adminId, {
       method: "PATCH",
       body: JSON.stringify(body)
@@ -618,8 +650,11 @@ export const adminApi = {
     }),
   replyTicket: (ticketId: string, body: { body: string; faq?: boolean }) =>
     apiFetch<{ replyId: string }>("/api/v1/admin/support/tickets/" + ticketId + "/replies", { method: "POST", body: JSON.stringify(body) }),
-  refundPayment: (paymentId: string) =>
-    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", { method: "POST", body: JSON.stringify({}) }),
+  refundPayment: (paymentId: string, body?: { amount?: number; reason?: string }) =>
+    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", {
+      method: "POST",
+      body: JSON.stringify(body ?? {})
+    }),
   retryPayment: (paymentId: string) =>
     apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/retry", { method: "POST" }),
   sendPaymentFailureNotice: (paymentId: string) =>

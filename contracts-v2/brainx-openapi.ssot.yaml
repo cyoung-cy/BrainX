@@ -9220,6 +9220,7 @@ paths:
     post:
       operationId: refundAdminPayment
       summary: Refund a payment from admin console
+      description: Refund the payment, send the user a refund notification email, downgrade the user subscription entitlement to the free plan, and reconcile local billing state if the payment provider is already canceled.
       tags:
       - Admin
       x-producer-service: admin-service
@@ -15129,7 +15130,7 @@ components:
         reason:
           type: string
           nullable: true
-          description: Administrator-provided refund reason. Used for provider refund requests and refund notification email content.
+          description: Administrator-provided refund reason. Used for provider refund requests, refund notification email content, and free-plan downgrade audit context.
       additionalProperties: false
     AdminPaymentActionData:
       type: object
