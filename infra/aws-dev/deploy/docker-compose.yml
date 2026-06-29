@@ -301,7 +301,9 @@ services:
     image: apache/kafka:3.8.0
     container_name: brainx-kafka
     restart: unless-stopped
+    user: "0:0"
     environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: broker,controller
