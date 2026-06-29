@@ -23,8 +23,9 @@ services:
       - QDRANT_COLLECTION
       - BRAINX_WORKSPACE_BASE_URL=http://workspace-service:8082
       - BRAINX_WORKSPACE_SERVICE_TOKEN=local-service-token
-      - BRAINX_EVENTS_CONSUMER_ENABLED=false
-      - BRAINX_EVENTS_PRODUCER_ENABLED=false
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - BRAINX_EVENTS_CONSUMER_ENABLED=true
+      - BRAINX_EVENTS_PRODUCER_ENABLED=true
     ports:
       - "8086:8086"
     depends_on:
@@ -33,6 +34,8 @@ services:
       qdrant:
         condition: service_started
       workspace-service:
+        condition: service_started
+      kafka:
         condition: service_started
 
   workspace-service:
@@ -59,8 +62,8 @@ services:
       JWT_SECRET: replace_with_same_32_byte_or_longer_secret_for_all_services
       PUBLIC_BASE_URL: http://localhost:3000
       SEED_DEMO_DATA: "true"
-      BRAINX_EVENTS_OUTBOX_ENABLED: "false"
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      BRAINX_EVENTS_OUTBOX_ENABLED: "true"
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8082:8082"
     depends_on:
@@ -70,6 +73,36 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+      kafka:
+        condition: service_started
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: brainx-intelligence-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:29092"
+    volumes:
+      - intelligence_kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
 
   postgres:
     image: postgres:16-alpine
@@ -136,6 +169,7 @@ services:
       - qdrant_storage:/qdrant/storage
 
 volumes:
+  intelligence_kafka_data:
   intelligence_postgres_data:
   intelligence_neo4j_data:
   intelligence_neo4j_logs:
