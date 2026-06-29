@@ -6,6 +6,7 @@ COPY gradle ./gradle
 COPY gradlew gradlew.bat ./
 COPY src ./src
 
+#RUN gradle clean bootJar -x test --no-daemon
 RUN gradle clean bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
