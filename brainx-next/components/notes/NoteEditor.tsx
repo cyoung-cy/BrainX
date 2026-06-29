@@ -2612,7 +2612,7 @@ function CustomBubbleMenu({
     const margin = 8;
     let left = anchor.left - rect.width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
-    let top = anchor.top - rect.height - 10;
+      let top = anchor.top - rect.height + 0;
     if (top < margin) top = anchor.bottom + 10; // 위쪽 공간이 부족하면 선택 영역 아래로
     setPos({ left, top });
   }, [anchor]);

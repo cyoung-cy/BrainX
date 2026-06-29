@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { WikiLinkContext, resolveWikiLinkTitle, type WikiLinkContextValue } from "./WikiLinkContext";
-import { AlertCircle, Check, ChevronLeft, Download, LoaderCircle, MoreHorizontal, RotateCcw, Save } from "lucide-react";
+import { AlertCircle, Check, ChevronLeft, Download, LoaderCircle, MoreHorizontal, PanelRightClose, PanelRight, RotateCcw, Save } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, PaneNode, PaneTabsState, Tab, NotesWorkspaceSession, DragPayload } from "@/lib/notes/noteTypes";
 import type { EditMode, AiActionType } from "./NoteEditor";
@@ -1808,7 +1808,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 
           {/* 툴바 */}
-          <div className="flex shrink-0 items-center gap-3 border-b border-line/50 px-5 py-2">
+          <div className="flex shrink-0 items-center gap-3 border-b border-line/50 px-2 py-2">
             <span className="text-[12px] font-medium text-txt2">
               {panelCount}개 패널
             </span>
@@ -1847,11 +1847,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
               >
                 <MoreHorizontal size={14} />
               </button>
-              {moreMenuOpen && (
-                <div
-                  role="menu"
-                  aria-label="더 보기 메뉴"
-                  className="absolute right-0 top-[calc(100%+4px)] z-[1200] w-44 overflow-hidden rounded-lg border border-line/60 py-1"
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                aria-label="더 보기 메뉴"
+                className="absolute right-0 top-[calc(100%+4px)] z-[1200] w-44 overflow-hidden rounded-lg border border-line/60 py-1"
                   style={{
                     background: "rgb(var(--surface))",
                     boxShadow: "0 12px 28px -6px rgba(2,6,23,0.5), 0 0 0 1px rgb(var(--border) / 0.2)"
@@ -1896,6 +1896,19 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => setContextOpen((prev) => !prev)}
+              title={contextOpen ? "컨텍스트 패널 닫기" : "컨텍스트 패널 열기"}
+              className={cx(
+                "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-all",
+                contextOpen
+                  ? "border-line/60 bg-surface2/60 text-primary"
+                  : "border-transparent text-txt3/60 hover:bg-surface2/70 hover:text-txt"
+              )}
+            >
+              {contextOpen ? <PanelRightClose size={13} /> : <PanelRight size={13} />}
+            </button>
           </div>
 
           {/* 에디터 + 우측 컨텍스트 패널 — 컨텍스트 패널은 고정 폭이었는데, Split View
@@ -1960,14 +1973,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
             ) : (
               <>
                 <div className="flex-1 overflow-hidden">{mainContent}</div>
-                <button
-                  type="button"
-                  onClick={() => setContextOpen(true)}
-                  title="컨텍스트 패널 열기"
-                  className="flex w-6 shrink-0 flex-col items-center justify-center border-l border-line/50 bg-bg2/30 text-txt3 transition-colors hover:bg-surface2/50 hover:text-txt"
-                >
-                  <ChevronLeft size={13} />
-                </button>
+                
               </>
             )}
           </div>

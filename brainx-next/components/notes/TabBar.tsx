@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { X, Plus, Eye, SquarePen, Pin, PanelRight, PanelRightClose } from "lucide-react";
+import { X, Plus, Eye, SquarePen, Pin } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { Tab, MockNote, DragPayload } from "@/lib/notes/noteTypes";
 import type { EditMode } from "./NoteEditor";
@@ -32,8 +32,6 @@ interface TabBarProps {
   onSplitTabRight: (tabId: string) => void;
   onSplitTabDown: (tabId: string) => void;
   canSplitWorkspace: boolean;
-  onContextToggle?: () => void;
-  contextOpen?: boolean;
 }
 
 function tabLabel(tab: Tab, notes: MockNote[]): string {
@@ -64,8 +62,6 @@ export default function TabBar({
   onSplitTabRight,
   onSplitTabDown,
   canSplitWorkspace,
-  onContextToggle,
-  contextOpen,
 }: TabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuTarget | null>(null);
@@ -210,8 +206,8 @@ export default function TabBar({
         </button>
       </div>
 
-      {/* 우측 컨트롤: 읽기/편집 모드 전환 + 컨텍스트 패널 토글 */}
-      {(showModeToggle || onContextToggle) && (
+      {/* 우측 컨트롤: 읽기/편집 모드 전환 */}
+      {showModeToggle && (
         <div className="flex shrink-0 items-center border-l border-line/40 px-1.5 gap-0.5">
           {showModeToggle && (
             <button
@@ -224,24 +220,9 @@ export default function TabBar({
                   ? "text-primary hover:bg-primary/10"
                   : "text-txt3/60 hover:bg-surface2/70 hover:text-txt"
               )}
-            >
-              {mode === "edit" ? <SquarePen size={13} /> : <Eye size={13} />}
-            </button>
-          )}
-          {onContextToggle && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onContextToggle(); }}
-              title={contextOpen ? "컨텍스트 패널 닫기" : "컨텍스트 패널 열기"}
-              className={cx(
-                "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-all",
-                contextOpen
-                  ? "text-primary hover:bg-primary/10"
-                  : "text-txt3/60 hover:bg-surface2/70 hover:text-txt"
-              )}
-            >
-              {contextOpen ? <PanelRightClose size={13} /> : <PanelRight size={13} />}
-            </button>
+              >
+                {mode === "edit" ? <SquarePen size={13} /> : <Eye size={13} />}
+              </button>
           )}
         </div>
       )}
