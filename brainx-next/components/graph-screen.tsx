@@ -4,11 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Compass, FileUp, PencilLine, Pin, PinOff, Sparkles } from "lucide-react";
-import { readAuthSession } from "@/lib/auth-api";
+import { buildAuthPath, isDevAuthSession, readAuthSession } from "@/lib/auth-api";
 import { deriveGraphEdges, noteById, clusterById, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
-import { getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
+import { draftsToBrainXNotes, getGraph, graphEdgesForFlow, graphToBrainXNotes, USE_MOCK_GRAPH, USE_MOCK_GRAPH_CLUSTERS } from "@/lib/graph-api";
 import { createBridgeConcepts, type BridgeConceptsData } from "@/lib/intelligence-api";
-import { createWorkspaceNote, type NoteCreated } from "@/lib/workspace-api";
+import { createWorkspaceNote, listWorkspaceNoteDrafts, type NoteCreated } from "@/lib/workspace-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
@@ -1216,18 +1216,47 @@ function GraphScreenInner() {
       showError?: boolean;
     } = {}) => {
       const session = readAuthSession();
-      const hasRealLogin = !!session && session.accessToken !== "demo-access-token";
+      const hasRealLogin = !!session?.accessToken && !isDevAuthSession(session);
+      const requestId = graphRequestIdRef.current + 1;
+      graphRequestIdRef.current = requestId;
 
-      if (USE_MOCK_GRAPH && !hasRealLogin) {
+      if (reset) {
+        optimisticGraphNotesRef.current = {};
+      }
+
+      if (isDevAuthSession(session)) {
         setLiveNotes(null);
         setLiveEdges(null);
         return;
       }
 
-      const requestId = graphRequestIdRef.current + 1;
-      graphRequestIdRef.current = requestId;
+      if (!hasRealLogin) {
+        setLiveNotes([]);
+        setLiveEdges([]);
+        try {
+          const data = await listWorkspaceNoteDrafts();
+          if (!graphMountedRef.current || requestId !== graphRequestIdRef.current) return;
+          setLiveNotes(draftsToBrainXNotes(data.drafts));
+          setLiveEdges([]);
+        } catch (error) {
+          if (!graphMountedRef.current || requestId !== graphRequestIdRef.current) return;
+          setLiveNotes([]);
+          setLiveEdges([]);
+          if (showError) {
+            const message = error instanceof Error ? error.message : "임시 저장된 노트를 불러오지 못했습니다.";
+            pushToast(message, "err");
+          }
+        }
+        return;
+      }
+
+      if (USE_MOCK_GRAPH) {
+        setLiveNotes(null);
+        setLiveEdges(null);
+        return;
+      }
+
       if (reset) {
-        optimisticGraphNotesRef.current = {};
         setLiveNotes([]);
         setLiveEdges([]);
       }
@@ -1331,6 +1360,13 @@ function GraphScreenInner() {
 
   const handleCreateBridgeConcepts = async () => {
     if (!canCreateBridgeConcepts) return;
+    const session = readAuthSession();
+    const hasRealLogin = !!session?.accessToken && !isDevAuthSession(session);
+    if (!hasRealLogin) {
+      pushToast("회원가입/로그인 하고 이어서 작업할 수 있어요.", "info");
+      router.push(buildAuthPath("/login", "/graph"));
+      return;
+    }
     setBridgeStatus("loading");
     setBridgeError(null);
     setBridgeSaveStates({});

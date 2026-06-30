@@ -2385,6 +2385,9 @@ export interface NoteEditorHandle {
   insertImageFile: (file: File) => void;
   insertImageUrl: (src: string) => void;
   insertTable: (rows: number, cols: number) => void;
+  /** 우측 목차(RightSidebar) 클릭 → 해당 heading으로 스크롤. index는 parseHeadings가 매긴
+      문서 순서(0-based, heading id "h-{index}")와 동일한 기준이라 그대로 재사용할 수 있다. */
+  scrollToHeading: (index: number) => void;
 }
 
 /* ── 커스텀 버블 메뉴 ──────────────────────────────────────────────────
@@ -2829,6 +2832,20 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     },
     insertTable: (rows, cols) => {
       editor?.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    },
+    scrollToHeading: (index) => {
+      if (!editor) return;
+      // parseHeadings(RightSidebar.tsx)와 같은 문서 순서 기준 — 별도 id/anchor를 새로 만드는
+      // 대신 실제 렌더된 heading 엘리먼트를 순서대로 찾는다(DOM 쿼리가 ProseMirror position
+      // 계산보다 read/edit 모드 양쪽에서 더 단순하고 안정적이다).
+      const target = editor.view.dom.querySelectorAll("h1, h2, h3")[index] as HTMLElement | undefined;
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove("brainx-heading-flash");
+      // 같은 heading을 연속으로 다시 클릭해도 애니메이션이 재생되도록 강제로 리플로우시킨다.
+      void target.offsetWidth;
+      target.classList.add("brainx-heading-flash");
+      window.setTimeout(() => target.classList.remove("brainx-heading-flash"), 900);
     },
   }), [editor, note.id, onContentChange]);
 

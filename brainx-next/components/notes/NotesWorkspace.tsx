@@ -43,10 +43,10 @@ import QuickSwitcher from "./QuickSwitcher";
 import NotesExplorer from "./NotesExplorer";
 import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
-import { exportNote, isNotionDemoSession, uploadAndImportFile, type ExportFormat } from "@/lib/ingestion-api";
+import { exportNote, uploadAndImportFile, type ExportFormat } from "@/lib/ingestion-api";
 import { downloadPdfFile, downloadTextFile, htmlToMarkdown, htmlToPlainText, safeFileName } from "@/lib/notes/exportNoteContent";
 import { useBrainX } from "@/components/brainx-provider";
-import { readAuthSession } from "@/lib/auth-api";
+import { consumePendingNoteClaim, readAuthSession } from "@/lib/auth-api";
 
 export type InitialTab = { kind: "note"; noteId: string } | { kind: "start" };
 
@@ -283,15 +283,27 @@ function resolveActorPersistKey(persistKeyBase: string): string {
   }
 
   const userKey = `${persistKeyBase}:user:${session.userId}`;
+  // 방금 claimGuestDraftsAfterAuth가 끝났다면(로그인/회원가입 직후 첫 마운트) draft id → 승계된
+  // 실제 noteId 매핑이 여기 있다 — 게스트 세션을 그대로 넘기면 pane tree/tabs가 더 이상 존재하지
+  // 않는 draft id를 가리키게 되므로, user 키에 쓰기 전에 먼저 갈아끼운다. 한 번 소비하면 지워지므로
+  // 이 함수가 같은 로그인에 대해 여러 번 호출돼도(이벤트 핸들러 쪽 재호출 등) 두 번 적용되지 않는다.
+  const claimMapping = consumePendingNoteClaim();
   try {
     const guestRaw = window.localStorage.getItem(guestKey);
     if (guestRaw) {
-      const guestSession = JSON.parse(guestRaw) as NotesWorkspaceSession;
+      let guestSession = JSON.parse(guestRaw) as NotesWorkspaceSession;
       const guestHasTabs = collectLeafIds(guestSession.root).some(
         (leafId) => (guestSession.paneTabs[leafId]?.tabs.length ?? 0) > 0
       );
       if (guestHasTabs) {
-        window.localStorage.setItem(userKey, guestRaw);
+        for (const { from, to } of claimMapping) {
+          guestSession = {
+            ...guestSession,
+            root: replaceNoteIdInNode(guestSession.root, from, to),
+            paneTabs: replaceNoteIdInTabs(guestSession.paneTabs, from, to),
+          };
+        }
+        window.localStorage.setItem(userKey, JSON.stringify(guestSession));
       }
       window.localStorage.removeItem(guestKey);
     }
@@ -455,6 +467,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           ? "saved"
           : "idle";
   const [saveSignal, setSaveSignal] = useState(0);
+  const [scrollToHeadingSignal, setScrollToHeadingSignal] = useState<{ nonce: number; index: number } | null>(null);
+  const handleHeadingSelect = useCallback((index: number) => {
+    setScrollToHeadingSignal((prev) => ({ nonce: (prev?.nonce ?? 0) + 1, index }));
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isInitialWorkspaceLoading, setIsInitialWorkspaceLoading] = useState(!USE_MOCK_NOTES);
   const aiNonceRef = useRef(0);
@@ -583,11 +599,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   }, [primaryPaneId, openNoteInPane]);
 
   /* 노트 탐색기 위로 OS 파일을 드래그&드롭하면 /import 화면과 동일한
-     uploadAndImportFile() 경로로 가져오기를 수행한다(현재 선택된 폴더로 들어감).
-     데모(Notion demo) 세션은 실제 자산 업로드 백엔드가 없어 지원하지 않는다. */
+     uploadAndImportFile() 경로로 가져오기를 수행한다(현재 선택된 폴더로 들어감). */
   const handleDropFiles = useCallback((files: FileList) => {
-    if (USE_MOCK_NOTES || isNotionDemoSession()) {
-      pushToast("데모 모드에서는 드래그&드롭 가져오기를 지원하지 않습니다.", "err");
+    if (USE_MOCK_NOTES) {
+      pushToast("목 데이터 모드에서는 드래그&드롭 가져오기를 지원하지 않습니다.", "err");
       return;
     }
     void (async () => {
@@ -1036,8 +1051,10 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       return;
     }
     void patchWorkspaceFolder(folderId, { name: newName })
-      .then(() => {
-        setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f)));
+      .then((updated) => {
+        // 같은 depth에 이미 같은 이름이 있으면 서버가 "이름 2"처럼 자동으로 바꿔서 응답한다 —
+        // 입력값(newName)이 아니라 실제로 저장된 이름(updated.name)을 화면에 반영해야 한다.
+        setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: updated.name } : f)));
       })
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "폴더 이름을 바꾸지 못했습니다.", "err");
@@ -1205,7 +1222,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     // 백엔드 FolderPatchRequest는 parentFolderId가 null이면 "변경 없음"으로 보고, 빈 문자열이면
     // "루트로 이동(null)"으로 정규화한다 — 그래서 루트로 옮길 때는 null이 아니라 ""를 보내야 한다.
     void patchWorkspaceFolder(folderId, { parentFolderId: targetParentId ?? "" })
-      .then(() => setFolders(next))
+      .then((updated) => {
+        // 옮긴 위치(목적지)에 같은 이름이 이미 있으면 서버가 이름을 자동으로 바꿔서 응답한다 —
+        // 그 경우를 반영해 표시 이름도 함께 갈아끼운다.
+        setFolders(next.map((f) => (f.id === folderId ? { ...f, name: updated.name } : f)));
+      })
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "폴더를 이동하지 못했습니다.", "err");
       });
@@ -1559,15 +1580,19 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     if (!note.persisted && !note.id.startsWith("note_")) {
       const created = await createWorkspaceNote(note);
       let nextVersion = created.version;
+      // 같은 폴더에 같은 제목이 이미 있으면 서버가 "제목 2"처럼 자동으로 바꿔서 응답한다 —
+      // 로컬에 타이핑된 제목이 아니라 실제로 저장된 제목을 반영해야 한다.
+      let finalTitle = created.title;
       const savedId = created.noteId;
       if (note.typography) {
         const metadata = await updateWorkspaceNoteMetadata({ ...note, id: savedId, version: nextVersion, persisted: true });
         nextVersion = metadata.version;
+        finalTitle = metadata.title;
       }
       setNotes((prev) =>
         prev.map((item) =>
           item.id === note.id
-            ? { ...item, id: savedId, version: nextVersion, persisted: true, updatedAt: Date.now() }
+            ? { ...item, id: savedId, title: finalTitle, version: nextVersion, persisted: true, updatedAt: Date.now() }
             : item
         )
       );
@@ -1583,7 +1608,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setNotes((prev) =>
       prev.map((item) =>
         item.id === note.id
-          ? { ...item, version: metadata.version, persisted: true, updatedAt: Date.parse(content.savedAt) || Date.now() }
+          ? { ...item, title: metadata.title, version: metadata.version, persisted: true, updatedAt: Date.parse(content.savedAt) || Date.now() }
           : item
       )
     );
@@ -1636,9 +1661,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     if (!activeNote) return;
     setExportingFormat(format);
     try {
-      if (!isNotionDemoSession()) {
-        exportNote(activeNote.id, format).catch(() => {});
-      }
+      exportNote(activeNote.id, format).catch(() => {});
       const fileName = safeFileName(activeNote.title);
       if (format === "TXT") {
         downloadTextFile(`${fileName}.txt`, htmlToPlainText(activeNote.content), "text/plain;charset=utf-8");
@@ -1713,6 +1736,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       paneTabs={paneTabs}
       quickSwitcher={quickSwitcher}
       saveSignal={saveSignal}
+      scrollToHeadingSignal={scrollToHeadingSignal}
       onActivate={handleActivate}
       onDrop={handleDrop}
       onTitleChange={handleTitleChange}
@@ -1971,6 +1995,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                     onCollapse={() => setContextOpen(false)}
                     pendingAiRequest={aiRequest}
                     onAiRequestHandled={() => setAiRequest(null)}
+                    onHeadingSelect={handleHeadingSelect}
                   />
                 </div>
               </>

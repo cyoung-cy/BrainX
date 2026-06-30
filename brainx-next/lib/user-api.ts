@@ -1,6 +1,6 @@
 "use client";
 
-import { clearAuthSession, isDemoSession, readAuthSession, saveAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, readAuthSession, saveAuthSession, type ApiResponse } from "@/lib/auth-api";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
 
@@ -52,6 +52,7 @@ export type MyNotificationsResponse = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const LANGUAGE_KEY = "brainx_language_v1";
 const THEME_KEY = "brainx_theme_v1";
+const USE_MOCK_USER_API = process.env.NEXT_PUBLIC_USER_USE_MOCK === "true";
 
 export class AuthRequiredError extends Error {
   constructor(message = "로그인이 만료되었습니다. 다시 로그인해 주세요.") {
@@ -76,13 +77,13 @@ function readStoredTheme(): ThemeMode {
 }
 
 async function authedRequest<T>(path: string, init?: RequestInit) {
+  if (USE_MOCK_USER_API) {
+    return demoUserResponse<T>(path, init);
+  }
+
   const session = readAuthSession();
   if (!session?.accessToken) {
     throw new AuthRequiredError("로그인이 필요합니다.");
-  }
-
-  if (isDemoSession(session)) {
-    return demoUserResponse<T>(path, init);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -227,7 +228,6 @@ function demoUserResponse<T>(path: string, init?: RequestInit): T {
 
   throw new Error("데모 모드에서 지원하지 않는 사용자 API입니다.");
 }
-
 export async function getMyProfile() {
   const data = await authedRequest<MyProfile | IdentityProfileResponse>("/api/v1/users/me");
   return normalizeProfile(data);

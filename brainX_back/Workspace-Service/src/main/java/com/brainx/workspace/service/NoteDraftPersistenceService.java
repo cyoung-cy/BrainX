@@ -7,6 +7,7 @@ import com.brainx.workspace.dto.WorkspaceDtos.NoteDraftFlushData;
 import com.brainx.workspace.security.CurrentActor.Actor;
 import com.brainx.workspace.security.CurrentActor.ActorType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NoteDraftPersistenceService {
@@ -31,12 +33,20 @@ public class NoteDraftPersistenceService {
         // draft 승계와 같은 트랜잭션에서 폴더 소유권도 함께 옮긴다.
         workspaceService.reassignGuestFolders(guestId, userId);
         List<ClaimedNoteDraft> claimed = new ArrayList<>();
-        for (NoteDraftData draft : noteDraftService.listDrafts(guest).drafts()) {
-            ClaimedNoteDraft note = workspaceService.persistDraft(userId, draft);
-            noteDraftService.deleteDraft(guest, draft.noteId());
-            claimed.add(note);
+        try {
+            for (NoteDraftData draft : noteDraftService.listDrafts(guest).drafts()) {
+                ClaimedNoteDraft note = workspaceService.persistDraft(userId, draft);
+                noteDraftService.deleteDraft(guest, draft.noteId());
+                claimed.add(note);
+            }
+            log.info("[draft-claim] status=success userId={} guestId={} claimedCount={}",
+                    userId, guestId, claimed.size());
+            return new NoteDraftClaimData(claimed.size(), claimed);
+        } catch (Exception exception) {
+            log.warn("[draft-claim] status=failed userId={} guestId={} claimedCount={} reason={}",
+                    userId, guestId, claimed.size(), exception.getClass().getSimpleName(), exception);
+            throw exception;
         }
-        return new NoteDraftClaimData(claimed.size(), claimed);
     }
 
     @Transactional
@@ -55,6 +65,10 @@ public class NoteDraftPersistenceService {
                 noteDraftService.deleteDraft(user, draft.noteId());
                 flushed++;
             }
+        }
+        if (flushed > 0 || skipped > 0) {
+            log.info("[draft-flush] status=completed flushedCount={} skippedCount={} cutoff={}",
+                    flushed, skipped, cutoff);
         }
         return new NoteDraftFlushData(flushed, skipped);
     }

@@ -10,7 +10,7 @@ import { AccountSettingsModal } from "@/components/utility/account-settings-moda
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { cx } from "@/lib/utils";
 import {
-  isDemoSession,
+  buildAuthPath,
   readAuthSession,
   type AuthSession,
 } from "@/lib/auth-api";
@@ -324,13 +324,16 @@ function formatNotificationTime(value: string) {
 function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { pushToast, t } = useBrainX();
   const router = useRouter();
+  const pathname = usePathname();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [profileName, setProfileName] = useState("");
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [currentPlan, setCurrentPlan] = useState("Free");
+  const [guestMenuOpen, setGuestMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<MyNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const isGuest = !session?.accessToken;
 
   useEffect(() => {
     setSession(readAuthSession());
@@ -346,14 +349,6 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     if (!session?.accessToken) {
       setProfileName("");
       setProfileImageUrl(null);
-      return () => {
-        active = false;
-      };
-    }
-
-    if (isDemoSession(session)) {
-      setProfileName(session.nickname?.trim() || "BrainX Demo");
-      setProfileImageUrl(session.profileImageUrl ?? null);
       return () => {
         active = false;
       };
@@ -458,11 +453,12 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
     };
   }, [session?.accessToken, session?.userId]);
 
-  const displayName =
-    profileName ||
-    session?.nickname?.trim() ||
-    session?.email?.split("@")[0] ||
-    "사용자";
+  const displayName = isGuest
+    ? "게스트"
+    : profileName ||
+      session?.nickname?.trim() ||
+      session?.email?.split("@")[0] ||
+      "사용자";
   const displayImageUrl = profileImageUrl ?? session?.profileImageUrl;
   const mobileNav = [
     { label: t("nav.home"), icon: "home" as const, path: "/home" },
@@ -498,83 +494,134 @@ function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
               <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setNotificationOpen((open) => !open)}
-            className="tutorial-target-notifications group relative grid h-8 w-8 place-items-center rounded-lg border border-line/60 text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt"
-          >
-            <Icon name="bell" size={15} />
-            {unreadCount > 0 ? <span className="absolute right-1 top-1 grid min-h-[16px] min-w-[16px] place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">{Math.min(unreadCount, 9)}</span> : null}
-            <span className={topTooltipClass}>
-              알림
-              <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
-            </span>
-          </button>
-          {notificationOpen ? (
-            <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[320px] overflow-hidden rounded-2xl border border-line/70 bg-bg shadow-soft">
-              <div className="flex items-center justify-between border-b border-line/50 px-4 py-3">
-                <div>
-                  <div className="text-[14px] font-semibold text-txt">알림</div>
-                  <div className="text-[12px] text-txt3">관리자 공지와 주요 안내를 확인할 수 있어요.</div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setGuestMenuOpen(false);
+                setNotificationOpen((open) => !open);
+              }}
+              className="tutorial-target-notifications group relative grid h-8 w-8 place-items-center rounded-lg border border-line/60 text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt"
+            >
+              <Icon name="bell" size={15} />
+              {unreadCount > 0 ? <span className="absolute right-1 top-1 grid min-h-[16px] min-w-[16px] place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">{Math.min(unreadCount, 9)}</span> : null}
+              <span className={topTooltipClass}>
+                알림
+                <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+              </span>
+            </button>
+            {notificationOpen ? (
+              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[320px] overflow-hidden rounded-2xl border border-line/70 bg-bg shadow-soft">
+                <div className="flex items-center justify-between border-b border-line/50 px-4 py-3">
+                  <div>
+                    <div className="text-[14px] font-semibold text-txt">알림</div>
+                    <div className="text-[12px] text-txt3">관리자 공지와 주요 안내를 확인할 수 있어요.</div>
+                  </div>
+                  <div className="text-[12px] font-semibold text-accent">{unreadCount}개 미확인</div>
                 </div>
-                <div className="text-[12px] font-semibold text-accent">{unreadCount}개 미확인</div>
-              </div>
-              <div className="max-h-[360px] overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-[13px] text-txt3">새 알림이 없습니다.</div>
-                ) : (
-                  notifications.map((notification) => (
-                    <button
-                      key={notification.notificationId}
-                      type="button"
-                      onClick={async () => {
-                        if (!notification.read) {
-                          const updated = await markMyNotificationRead(notification.notificationId);
-                          setNotifications((current) => current.map((item) => item.notificationId === updated.notificationId ? updated : item));
-                          setUnreadCount((count) => Math.max(0, count - 1));
-                        }
-                      }}
-                      className={cx(
-                        "w-full border-b border-line/40 px-4 py-3 text-left transition-colors hover:bg-surface2/50",
-                        notification.read ? "bg-transparent" : "bg-accent/[0.06]"
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-semibold text-txt">{notification.title}</div>
-                          <div className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-txt2">{notification.body}</div>
-                          <div className="mt-2 text-[11px] text-txt3">
-                            {(notification.sentByAdminName || "BrainX Admin") + " · " + formatNotificationTime(notification.createdAt)}
+                <div className="max-h-[360px] overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-[13px] text-txt3">새 알림이 없습니다.</div>
+                  ) : (
+                    notifications.map((notification) => (
+                      <button
+                        key={notification.notificationId}
+                        type="button"
+                        onClick={async () => {
+                          if (!notification.read) {
+                            const updated = await markMyNotificationRead(notification.notificationId);
+                            setNotifications((current) => current.map((item) => item.notificationId === updated.notificationId ? updated : item));
+                            setUnreadCount((count) => Math.max(0, count - 1));
+                          }
+                        }}
+                        className={cx(
+                          "w-full border-b border-line/40 px-4 py-3 text-left transition-colors hover:bg-surface2/50",
+                          notification.read ? "bg-transparent" : "bg-accent/[0.06]"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-[13px] font-semibold text-txt">{notification.title}</div>
+                            <div className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-txt2">{notification.body}</div>
+                            <div className="mt-2 text-[11px] text-txt3">
+                              {(notification.sentByAdminName || "BrainX Admin") + " · " + formatNotificationTime(notification.createdAt)}
+                            </div>
                           </div>
+                          {!notification.read ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" /> : null}
                         </div>
-                        {!notification.read ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" /> : null}
-                      </div>
-                    </button>
-                  ))
-                )}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
           <div className="mx-1 hidden h-6 w-px bg-line/60 md:block" />
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="tutorial-target-profile group relative flex h-8 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-surface2/60"
-          >
-            <Avatar name={displayName} size={26} imageUrl={displayImageUrl} />
-            <div className="hidden text-left leading-tight sm:block">
-              <div className="max-w-[110px] truncate text-[12px] font-semibold text-txt">
-                {displayName}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setNotificationOpen(false);
+                if (isGuest) {
+                  setGuestMenuOpen((current) => !current);
+                  return;
+                }
+                onOpenSettings();
+              }}
+              className="tutorial-target-profile group relative flex h-8 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-surface2/60"
+            >
+              <Avatar name={displayName} size={26} imageUrl={displayImageUrl} />
+              <div className="hidden text-left leading-tight sm:block">
+                <div className="max-w-[110px] truncate text-[12px] font-semibold text-txt">
+                  {displayName}
+                </div>
+                <div className="text-[10px] text-txt3">
+                  {isGuest ? "체험 중" : currentPlan}
+                </div>
               </div>
-              <div className="text-[10px] text-txt3">
-                {currentPlan}
+              {isGuest ? <Icon name="chevD" size={12} className="text-txt3" /> : null}
+              {!isGuest ? (
+                <span className={topTooltipClass}>
+                  사용자 프로필
+                  <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
+                </span>
+              ) : null}
+            </button>
+            {isGuest && guestMenuOpen ? (
+              <div
+                className="fade-up absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-xl border border-line/60 bg-surface p-3 shadow-soft"
+                onMouseLeave={() => setGuestMenuOpen(false)}
+              >
+                <div className="px-1">
+                  <div className="text-[13px] font-semibold text-txt">체험 모드 사용 중</div>
+                  <div className="mt-1 text-[12px] leading-relaxed text-txt2">
+                    가입하면 현재 작성한 노트와 폴더를 계정에 저장할 수 있어요.
+                  </div>
+                </div>
+                <div className="my-2 h-px bg-line/50" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuestMenuOpen(false);
+                    router.push(buildAuthPath("/signup", pathname));
+                  }}
+                  className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[13px] font-medium text-txt hover:bg-surface2/60"
+                >
+                  회원가입
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuestMenuOpen(false);
+                    router.push(buildAuthPath("/login", pathname));
+                  }}
+                  className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[13px] text-txt2 hover:bg-surface2/60 hover:text-txt"
+                >
+                  로그인
+                </button>
               </div>
-            </div>
-            <span className={topTooltipClass}>
-              사용자 프로필
-              <div className="absolute left-1/2 top-[-4px] h-2.5 w-2.5 -translate-x-1/2 rotate-45 bg-txt" style={{ zIndex: -1 }} />
-            </span>
-          </button>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="border-t border-line/40 px-4 py-2 md:hidden">
@@ -614,7 +661,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (pathname === "/mypage") {
-      setSettingsOpen(true);
+      if (readAuthSession()?.accessToken) {
+        setSettingsOpen(true);
+      }
       router.replace("/home");
     }
   }, [pathname, router]);

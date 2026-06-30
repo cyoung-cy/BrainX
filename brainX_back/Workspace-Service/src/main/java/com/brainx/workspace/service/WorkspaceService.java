@@ -89,9 +89,40 @@ public class WorkspaceService {
         return new NoteListData(notes, notes.size());
     }
 
+    /** 같은 폴더(루트 포함) 안에서 이름/제목이 겹치면 "이름", "이름 2", "이름 3"... 순으로
+        자동으로 갈라준다. 즉시 생성되는 빈 노트(기본 제목 "제목 없음")가 가장 흔한 충돌
+        케이스라, 막아서 입력을 가로막기보다(Notion/Obsidian과 동일한 정책) 조용히 풀어준다. */
+    private String dedupeName(Set<String> takenNames, String desiredName) {
+        if (!takenNames.contains(desiredName)) {
+            return desiredName;
+        }
+        int suffix = 2;
+        while (takenNames.contains(desiredName + " " + suffix)) {
+            suffix += 1;
+        }
+        return desiredName + " " + suffix;
+    }
+
+    private String dedupeFolderName(String userId, String parentFolderId, String desiredName, String excludeFolderId) {
+        Set<String> taken = folderRepository.findSiblingsByUserIdAndParentFolderId(userId, parentFolderId).stream()
+                .filter(folder -> excludeFolderId == null || !folder.getFolderId().equals(excludeFolderId))
+                .map(Folder::getName)
+                .collect(Collectors.toSet());
+        return dedupeName(taken, desiredName);
+    }
+
+    private String dedupeNoteTitle(String userId, String folderId, String desiredTitle, String excludeNoteId) {
+        Set<String> taken = noteRepository.findSiblingsByUserIdAndFolderId(userId, folderId).stream()
+                .filter(note -> excludeNoteId == null || !note.getNoteId().equals(excludeNoteId))
+                .map(Note::getTitle)
+                .collect(Collectors.toSet());
+        return dedupeName(taken, desiredTitle);
+    }
+
     public NoteCreatedData createNote(String userId, NoteCreateRequest request) {
         Instant now = Instant.now();
-        Note note = new Note(Ids.note(), userId, request.title(), request.markdown(), request.folderId(), request.tags(), now);
+        String title = dedupeNoteTitle(userId, request.folderId(), request.title(), null);
+        Note note = new Note(Ids.note(), userId, title, request.markdown(), request.folderId(), request.tags(), now);
         noteRepository.save(note);
         snapshot(note, now);
         activity(userId, note, "created", now);
@@ -113,6 +144,10 @@ public class WorkspaceService {
         Note note = noteRepository.findByNoteIdAndUserId(draft.noteId(), userId).orElse(null);
         if (note == null) {
             String noteId = noteRepository.existsById(draft.noteId()) ? Ids.note() : draft.noteId();
+            // draft가 Postgres에 처음 들어오는 순간(idle flush 또는 guest->user claim) — 이미
+            // 같은 폴더에 같은 제목(기본값 "제목 없음" 포함)이 있으면 충돌하므로 새로 생기는
+            // 시점에 한 번만 갈라준다(이미 영속화된 노트를 매 flush마다 다시 검사/리네임하지 않음).
+            title = dedupeNoteTitle(userId, draft.folderId(), title, null);
             note = new Note(noteId, userId, title, markdown, draft.folderId(), List.of(), now);
             noteRepository.save(note);
             eventPublisher.publish("NoteCreated", userId, payload(
@@ -193,13 +228,20 @@ public class WorkspaceService {
     public NoteMetadataData patchMetadata(String userId, String noteId, NoteMetadataPatchRequest request) {
         Note note = note(userId, noteId);
         Instant now = Instant.now();
-        note.patchMetadata(request.title(), request.folderId(), request.tags(), request.archived(), typographyJson(request.typography()), now);
+        // 제목/폴더 중 바뀌는 쪽만 반영한 "최종" 값 기준으로 같은 폴더 안 중복을 검사해야 한다 —
+        // 폴더만 옮기고 제목은 그대로인 이동도 목적지에서 충돌할 수 있다.
+        String targetFolderId = request.folderId() != null
+                ? (request.folderId().isBlank() ? null : request.folderId())
+                : note.getFolderId();
+        String desiredTitle = (request.title() != null && !request.title().isBlank()) ? request.title() : note.getTitle();
+        String finalTitle = dedupeNoteTitle(userId, targetFolderId, desiredTitle, noteId);
+        note.patchMetadata(finalTitle, request.folderId(), request.tags(), request.archived(), typographyJson(request.typography()), now);
         snapshot(note, now);
         activity(userId, note, "updated", now);
         eventPublisher.publish("NoteMetadataChanged", userId, payload(
                 "noteId", noteId,
                 "userId", userId,
-                "title", request.title(),
+                "title", note.getTitle(),
                 "folderId", request.folderId(),
                 "tags", request.tags(),
                 "archived", request.archived(),
@@ -261,7 +303,8 @@ public class WorkspaceService {
 
     public FolderData createFolder(String userId, FolderCreateRequest request) {
         Instant now = Instant.now();
-        Folder folder = new Folder(Ids.folder(), userId, request.name(), request.parentFolderId(), now);
+        String name = dedupeFolderName(userId, request.parentFolderId(), request.name(), null);
+        Folder folder = new Folder(Ids.folder(), userId, name, request.parentFolderId(), now);
         folderRepository.save(folder);
         eventPublisher.publish("FolderCreated", userId, payload(
                 "folderId", folder.getFolderId(), "userId", userId, "name", folder.getName(), "parentFolderId", folder.getParentFolderId()
@@ -276,9 +319,16 @@ public class WorkspaceService {
 
     public FolderData patchFolder(String userId, String folderId, FolderPatchRequest request) {
         Folder folder = folder(userId, folderId);
-        folder.patch(request.name(), request.parentFolderId(), Instant.now());
+        // rename만 하든 move만 하든(또는 둘 다든) 최종적으로 위치할 부모/이름 기준으로 중복을
+        // 검사한다 — 이름은 그대로 두고 옮기기만 해도 목적지에 같은 이름이 있으면 충돌한다.
+        String targetParentFolderId = request.parentFolderId() != null
+                ? (request.parentFolderId().isBlank() ? null : request.parentFolderId())
+                : folder.getParentFolderId();
+        String desiredName = (request.name() != null && !request.name().isBlank()) ? request.name() : folder.getName();
+        String finalName = dedupeFolderName(userId, targetParentFolderId, desiredName, folderId);
+        folder.patch(finalName, request.parentFolderId(), Instant.now());
         eventPublisher.publish("FolderChanged", userId, payload(
-                "folderId", folderId, "userId", userId, "name", request.name(), "parentFolderId", request.parentFolderId()
+                "folderId", folderId, "userId", userId, "name", folder.getName(), "parentFolderId", request.parentFolderId()
         ));
         return folderData(folder);
     }
