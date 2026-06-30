@@ -6,12 +6,12 @@ info:
     governed by the source SSOT.
 servers:
 - url: http://localhost:8080
-  description: Local API Gateway
+  description: 로컬 API 게이트웨이
 - url: https://api.brainx.com
-  description: Production API Gateway
+  description: 운영 API 게이트웨이
 tags:
 - name: Internal Service APIs
-  description: Service-to-service synchronous APIs. Not exposed to browsers or external clients.
+  description: 서비스 간 동기 호출 API. 브라우저나 외부 클라이언트에는 노출하지 않는다.
 paths:
   /internal/v1/entitlements/check:
     post:
@@ -24,17 +24,17 @@ paths:
       x-consumers:
       - id: internal.knowledge-intelligence
         type: internal-service
-        description: Knowledge Intelligence synchronous caller
+        description: Knowledge Intelligence 동기 호출자
       - id: internal.knowledge-workspace
         type: internal-service
-        description: Knowledge Workspace synchronous caller
+        description: Knowledge Workspace 동기 호출자
       - id: internal.content-ingestion-publishing
         type: internal-service
-        description: Content ingestion job worker synchronous caller
+        description: 콘텐츠 수집 작업 워커 동기 호출자
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: 서비스 간 동기 preflight. 이벤트로 대체하지 않는다.
+      description: 서비스 호출 전 사전 preflight. 이벤트로 대체하지 않는다.
       requestBody:
         required: true
         content:
@@ -43,7 +43,7 @@ paths:
               $ref: '#/components/schemas/EntitlementsCheckRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -56,37 +56,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/EntitlementsCheckData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -104,10 +104,10 @@ paths:
       x-consumers:
       - id: internal.knowledge-intelligence
         type: internal-service
-        description: Knowledge Intelligence synchronous caller
+        description: Knowledge Intelligence 동기 호출자
       - id: internal.content-ingestion-publishing
         type: internal-service
-        description: Content ingestion job worker synchronous caller
+        description: 콘텐츠 수집 작업 워커 동기 호출자
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
@@ -120,7 +120,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -133,37 +133,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/InternalNoteSnapshotData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -181,12 +181,12 @@ paths:
       x-consumers:
       - id: internal.knowledge-intelligence
         type: internal-service
-        description: Knowledge Intelligence synchronous caller
+        description: Knowledge Intelligence 동기 호출자
       x-produces-events:
       - NoteContentSaved
       x-internal-sync-calls: []
       x-async-boundary: false
-      description: AI 제안 수락 등 외부 서비스의 노트 변경을 Workspace 원장으로 강제한다.
+      description: AI 제안 수락 이후 타 서비스의 노트 변경을 Workspace 원장으로 강제한다.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: noteId
@@ -202,7 +202,7 @@ paths:
               $ref: '#/components/schemas/InternalNoteContentPatchRequest'
       responses:
         '200':
-          description: Success
+          description: 성공
           content:
             application/json:
               schema:
@@ -215,37 +215,37 @@ paths:
                     data:
                       $ref: '#/components/schemas/NoteContentSaveData'
         '400':
-          description: Bad request
+          description: 잘못된 요청
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '401':
-          description: Authentication required
+          description: 인증 필요
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '403':
-          description: Forbidden
+          description: 권한 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '404':
-          description: Not found
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
-          description: Conflict
+          description: 충돌
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '500':
-          description: Internal server error
+          description: 서버 내부 오류
           content:
             application/json:
               schema:
@@ -265,7 +265,7 @@ components:
       required: false
       schema:
         type: string
-      description: Recommended for commands and job requests. Same key must return the same result for retries.
+      description: 명령 및 작업 요청에 권장한다. 같은 키로 재시도하면 같은 결과를 반환해야 한다.
   schemas:
     ApiSuccessBase:
       type: object
@@ -303,7 +303,7 @@ components:
             details:
               type: object
               additionalProperties: true
-              description: Machine-readable error details
+              description: 기계가 읽을 수 있는 오류 상세 정보
           required:
           - code
           - message
@@ -387,8 +387,7 @@ components:
           type: string
         documentGroupId:
           type: string
-          description: Logical document group boundary for this note. If omitted by older Workspace providers, consumers should
-            use default.
+          description: 이 노트의 논리적 문서 그룹 경계. 오래된 Workspace 제공자가 생략하면 소비자는 default를 사용해야 한다.
         title:
           type: string
         markdown:

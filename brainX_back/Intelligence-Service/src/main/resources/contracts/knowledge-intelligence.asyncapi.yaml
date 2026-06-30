@@ -49,7 +49,8 @@ channels:
     messages:
       CaptureReceived:
         $ref: '#/components/messages/CaptureReceived'
-    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service, Intelligence-Service, Admin-Service.'
+    description: 'Channel for CaptureReceived. Producer: Ingestion-Service. Consumers: Ingestion-Service, Intelligence-Service,
+      Admin-Service.'
     x-producer-service: Ingestion-Service
     x-consumer-services:
     - Ingestion-Service
@@ -144,8 +145,8 @@ channels:
     messages:
       NoteContentSaved:
         $ref: '#/components/messages/NoteContentSaved'
-    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
-      Commerce-Service.'
+    description: 'Channel for NoteContentSaved. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service, Commerce-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -157,8 +158,8 @@ channels:
     messages:
       NoteCreated:
         $ref: '#/components/messages/NoteCreated'
-    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
-      Commerce-Service.'
+    description: 'Channel for NoteCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service, Commerce-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -170,8 +171,8 @@ channels:
     messages:
       NoteDeleted:
         $ref: '#/components/messages/NoteDeleted'
-    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
-      User-Service, Ingestion-Service.'
+    description: 'Channel for NoteDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service, User-Service, Ingestion-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -184,7 +185,8 @@ channels:
     messages:
       NoteLinkCreated:
         $ref: '#/components/messages/NoteLinkCreated'
-    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service.'
+    description: 'Channel for NoteLinkCreated. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -195,7 +197,8 @@ channels:
     messages:
       NoteLinkDeleted:
         $ref: '#/components/messages/NoteLinkDeleted'
-    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service.'
+    description: 'Channel for NoteLinkDeleted. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -218,7 +221,8 @@ channels:
     messages:
       NoteTagsChanged:
         $ref: '#/components/messages/NoteTagsChanged'
-    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service, Workspace-Service.'
+    description: 'Channel for NoteTagsChanged. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service,
+      Workspace-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
@@ -229,25 +233,14 @@ channels:
     messages:
       NoteTrashed:
         $ref: '#/components/messages/NoteTrashed'
-    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service, Admin-Service,
-      User-Service.'
+    description: 'Channel for NoteTrashed. Producer: Workspace-Service. Consumers: Intelligence-Service, Workspace-Service,
+      Admin-Service, User-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
     - Intelligence-Service
     - Workspace-Service
     - Admin-Service
     - User-Service
-  notesMoved:
-    address: brainx.knowledge.workspace.notes-moved.v1
-    messages:
-      NotesMoved:
-        $ref: '#/components/messages/NotesMoved'
-    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service, Workspace-Service.'
-    x-producer-service: Workspace-Service
-    x-consumer-services:
-    - Intelligence-Service
-    - Admin-Service
-    - Workspace-Service
   semanticSearchPerformed:
     address: brainx.knowledge.intelligence.semantic-search-performed.v1
     messages:
@@ -529,18 +522,6 @@ operations:
     - Workspace-Service
     - Admin-Service
     - User-Service
-  sendNotesMoved:
-    action: send
-    channel:
-      $ref: '#/channels/notesMoved'
-    messages:
-    - $ref: '#/channels/notesMoved/messages/NotesMoved'
-    summary: Workspace-Service publishes NotesMoved
-    x-producer-service: Workspace-Service
-    x-consumer-services:
-    - Intelligence-Service
-    - Admin-Service
-    - Workspace-Service
   sendSemanticSearchPerformed:
     action: send
     channel:
@@ -1125,7 +1106,6 @@ components:
               $ref: '#/components/schemas/NoteTagsChangedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - Intelligence-Service
       - Admin-Service
       - Workspace-Service
       x-delivery:
@@ -1162,34 +1142,6 @@ components:
         orderingKey: userId or aggregate id
         requiresIdempotentConsumer: true
         deadLetter: brainx.knowledge.workspace.note-trashed.v1.dlq
-    NotesMoved:
-      name: NotesMoved
-      title: NotesMoved
-      summary: NotesMoved domain/integration event
-      contentType: application/json
-      payload:
-        allOf:
-        - $ref: '#/components/schemas/EventEnvelope'
-        - type: object
-          properties:
-            eventType:
-              type: string
-              const: NotesMoved
-            producer:
-              type: string
-              const: Workspace-Service
-            payload:
-              $ref: '#/components/schemas/NotesMovedPayload'
-      x-producer-service: Workspace-Service
-      x-consumer-services:
-      - Intelligence-Service
-      - Admin-Service
-      - Workspace-Service
-      x-delivery:
-        semantic: at-least-once
-        orderingKey: userId or aggregate id
-        requiresIdempotentConsumer: true
-        deadLetter: brainx.knowledge.workspace.notes-moved.v1.dlq
     SemanticSearchPerformed:
       name: SemanticSearchPerformed
       title: SemanticSearchPerformed
@@ -1557,43 +1509,25 @@ components:
     FolderDeletedPayload:
       type: object
       properties:
-        folderId:
-          type: string
         userId:
           type: string
-        childNoteAction:
+        folderIds:
+          type: array
+          items:
+            type: string
+        mode:
           type: string
           enum:
-          - MOVE
-          - TRASH
-        targetFolderId:
-          type: string
-          nullable: true
-      required:
-      - folderId
-      - userId
-      - childNoteAction
-      additionalProperties: false
-    NotesMovedPayload:
-      type: object
-      properties:
-        userId:
-          type: string
-        documentGroupId:
-          type: string
-          description: Logical document group boundary. If omitted by older producers, consumers should use default.
+          - trash
+          - permanent
         noteIds:
           type: array
           items:
             type: string
-        sourceFolderId:
-          type: string
-          nullable: true
-        targetFolderId:
-          type: string
-          nullable: true
       required:
       - userId
+      - folderIds
+      - mode
       - noteIds
       additionalProperties: false
     NoteTagsChangedPayload:
@@ -1959,6 +1893,10 @@ x-ssot:
   - 'Token usage is event-first: TokenUsageRecordedRequested is consumed by Commerce; TokenUsageRecorded is emitted after
     ledger write.'
   - Note read models, search indexes, graph projections, dashboards and wordclouds are eventually consistent.
+  - Workspace noteId is the canonical cross-system note identifier for PostgreSQL records, graph projections such as Neo4j,
+    Knowledge Intelligence vector/RAG indexes, RAG citations and frontend graph state.
+  - Graph databases are projections/read models. Accepted note links must be created through Workspace commands and then projected
+    to graph storage.
 x-extracted-from:
   source: contracts-v2/brainx-asyncapi.ssot.yaml
   serviceId: Intelligence-Service

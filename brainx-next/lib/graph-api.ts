@@ -1,6 +1,6 @@
 "use client";
 
-import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDevAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 import { CLUSTERS, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
 import type { NoteDraftData } from "@/lib/workspace-api";
 
@@ -45,7 +45,7 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function workspaceRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
-  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDemoSession(session);
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDevAuthSession(session);
   const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
   const response = await fetch(`${WORKSPACE_API_BASE_URL}${path}`, {
     ...init,

@@ -1,6 +1,6 @@
 "use client";
 
-import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDevAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 import type { MockFolder, MockNote, NoteTypography } from "@/lib/notes/noteTypes";
 
 const WORKSPACE_API_BASE_URL = process.env.NEXT_PUBLIC_WORKSPACE_API_BASE_URL ?? "http://localhost:8082";
@@ -119,7 +119,7 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
-  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDemoSession(session);
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDevAuthSession(session);
   const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
 
   // session이 없으면(비회원) Authorization 헤더 없이 호출한다 — Gateway가 guest cookie/

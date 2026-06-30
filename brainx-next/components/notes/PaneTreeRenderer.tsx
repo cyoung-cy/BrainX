@@ -5,7 +5,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { PaneNode, MockNote, PaneTabsState, Tab, DragPayload } from "@/lib/notes/noteTypes";
 import { DropZone } from "@/lib/notes/paneUtils";
 import EditorPanel from "./EditorPanel";
-import type { EditMode, AiActionType } from "./NoteEditor";
+import type { EditMode, AiActionType, NoteEditorHandle } from "./NoteEditor";
 
 export interface QuickSwitcherTarget {
   paneId: string;
@@ -33,6 +33,7 @@ interface Props {
   onTabClose: (paneId: string, tabId: string) => void;
   onNewTab: (paneId: string) => void;
   onAiAction: (type: AiActionType, text: string) => void;
+  onEditorHandleChange?: (paneId: string, tabId: string, handle: NoteEditorHandle | null) => void;
   onCreateNoteInTab: (paneId: string, tabId: string) => void;
   onOpenQuickSwitcher: (paneId: string, tabId: string) => void;
   onQuickSwitcherSelect: (noteId: string) => void;
@@ -73,6 +74,7 @@ export default function PaneTreeRenderer({
   onTabClose,
   onNewTab,
   onAiAction,
+  onEditorHandleChange,
   onCreateNoteInTab,
   onOpenQuickSwitcher,
   onQuickSwitcherSelect,
@@ -131,6 +133,7 @@ export default function PaneTreeRenderer({
         onTabClose={(tabId) => onTabClose(node.id, tabId)}
         onNewTab={() => onNewTab(node.id)}
         onAiAction={onAiAction}
+        onEditorHandleChange={onEditorHandleChange}
         onCreateNoteInTab={() => onCreateNoteInTab(node.id, activeTab.id)}
         onOpenQuickSwitcher={() => onOpenQuickSwitcher(node.id, activeTab.id)}
         quickSwitcherOpen={quickSwitcher?.paneId === node.id && quickSwitcher?.tabId === activeTabId}
@@ -184,6 +187,7 @@ export default function PaneTreeRenderer({
               onTabClose={onTabClose}
               onNewTab={onNewTab}
               onAiAction={onAiAction}
+              onEditorHandleChange={onEditorHandleChange}
               onCreateNoteInTab={onCreateNoteInTab}
               onOpenQuickSwitcher={onOpenQuickSwitcher}
               onQuickSwitcherSelect={onQuickSwitcherSelect}

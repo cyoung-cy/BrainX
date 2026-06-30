@@ -25,8 +25,7 @@ public class BrainxEventConsumerProperties {
         "brainx.knowledge.workspace.note-deleted.v1",
         "brainx.knowledge.workspace.note-metadata-changed.v1",
         "brainx.knowledge.workspace.note-tags-changed.v1",
-        "brainx.knowledge.workspace.note-trashed.v1",
-        "brainx.knowledge.workspace.notes-moved.v1"
+        "brainx.knowledge.workspace.note-trashed.v1"
     ));
 
     public boolean isEnabled() {
