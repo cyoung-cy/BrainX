@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { CollapseChevron } from "./CollapseChevron";
 import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
@@ -189,19 +189,47 @@ interface Props {
   onCollapse: () => void;
   pendingAiRequest?: PendingAiRequest | null;
   onAiRequestHandled?: () => void;
+  onScrollToHeading?: (text: string) => void;
 }
 
-export default function RightSidebar({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled }: Props) {
+export default function RightSidebar({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled, onScrollToHeading }: Props) {
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState<Array<{ role: "ai" | "user"; text: string; streaming?: boolean }>>([
     { role: "ai", text: "이 노트에 대해 무엇이든 물어보세요. 관련 노트도 함께 찾아드려요." },
   ]);
   const [chatOpen, setChatOpen] = useState(true);
+  const [inlinePanelHeight, setInlinePanelHeight] = useState(200);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const aiRequestAbortRef = useRef<AbortController | null>(null);
   const aiMockTimerRef = useRef<number | null>(null);
   const chatThreadIdsRef = useRef<Record<string, string>>({});
+  const isResizingRef = useRef(false);
+  const resizeStartYRef = useRef(0);
+  const resizeStartHeightRef = useRef(200);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    resizeStartYRef.current = e.clientY;
+    resizeStartHeightRef.current = inlinePanelHeight;
+  }, [inlinePanelHeight]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const dy = resizeStartYRef.current - e.clientY;
+      const next = Math.min(720, Math.max(120, resizeStartHeightRef.current + dy));
+      setInlinePanelHeight(next);
+    };
+    const onMouseUp = () => { isResizingRef.current = false; };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
   const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
@@ -476,7 +504,10 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
                   key={h.id}
                   heading={h}
                   isActive={activeTocId === h.id}
-                  onClick={() => setActiveTocId(h.id === activeTocId ? null : h.id)}
+                  onClick={() => {
+                    setActiveTocId(h.id === activeTocId ? null : h.id);
+                    onScrollToHeading?.(h.text);
+                  }}
                 />
               ))}
             </div>
@@ -559,6 +590,14 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         className="shrink-0 border-t border-line/50"
         style={{ background: "rgb(var(--surface))" }}
       >
+        {/* 리사이즈 핸들 */}
+        <div
+          onMouseDown={handleResizeMouseDown}
+          className="group flex h-2 w-full cursor-ns-resize items-center justify-center"
+        >
+          <div className="h-0.5 w-8 rounded-full bg-line/50 transition-colors group-hover:bg-primary/50" />
+        </div>
+
         {/* 채팅 헤더 */}
         <button
           type="button"
@@ -571,7 +610,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         </button>
 
         {chatOpen && (
-          <div className="flex flex-col" style={{ height: "200px" }}>
+          <div className="flex flex-col" style={{ height: `${inlinePanelHeight}px` }}>
             {/* 메시지 목록 */}
             <div className="no-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
               {aiMessages.map((msg, i) => (

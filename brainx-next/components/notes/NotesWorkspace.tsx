@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { WikiLinkContext, resolveWikiLinkTitle, type WikiLinkContextValue } from "./WikiLinkContext";
-import { AlertCircle, Check, ChevronLeft, Download, LoaderCircle, MoreHorizontal, RotateCcw, Save } from "lucide-react";
+import { AlertCircle, Check, ChevronLeft, LoaderCircle, MoreHorizontal, RotateCcw, Save, Upload } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { MockFolder, MockNote, PaneNode, PaneTabsState, Tab, NotesWorkspaceSession, DragPayload } from "@/lib/notes/noteTypes";
 import type { EditMode, AiActionType } from "./NoteEditor";
@@ -1221,6 +1221,22 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setAiRequest({ type, text, nonce: aiNonceRef.current });
   }, []);
 
+  /* TOC 헤딩 클릭 → 해당 에디터 패널 스크롤 */
+  const scrollToHeadingRegistryRef = useRef<Map<string, (text: string) => void>>(new Map());
+  const handleScrollToHeadingRegister = useCallback(
+    (noteId: string | null, fn: ((text: string) => void) | null) => {
+      if (!noteId) return;
+      if (fn) scrollToHeadingRegistryRef.current.set(noteId, fn);
+      else scrollToHeadingRegistryRef.current.delete(noteId);
+    },
+    []
+  );
+  const handleScrollToHeading = useCallback((text: string) => {
+    if (!activeNoteId) return;
+    scrollToHeadingRegistryRef.current.get(activeNoteId)?.(text);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNoteId]);
+
   const handleReset = useCallback(() => {
     const fresh = createInitialPaneState(initialTab);
     setState({ root: fresh.root, activeId: fresh.activeId });
@@ -1737,6 +1753,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       hasSplitPanels={hasSplitPanels}
       contextOpen={contextOpen}
       onContextToggle={() => setContextOpen((prev) => !prev)}
+      onScrollToHeadingRegister={handleScrollToHeadingRegister}
     />
   );
 
@@ -1865,7 +1882,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                       disabled={!activeNote}
                       className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt disabled:cursor-not-allowed disabled:text-txt3/50"
                     >
-                      <Download size={13} />
+                      <Upload size={13} />
                       <span>내보내기</span>
                     </button>
                   ) : (
@@ -1954,6 +1971,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
                     onCollapse={() => setContextOpen(false)}
                     pendingAiRequest={aiRequest}
                     onAiRequestHandled={() => setAiRequest(null)}
+                    onScrollToHeading={handleScrollToHeading}
                   />
                 </div>
               </>
