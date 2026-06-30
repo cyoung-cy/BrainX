@@ -71,6 +71,11 @@ BrainX/
 
 `brainx-next`는 BrainX의 현재 주력 프론트엔드입니다. Next.js App Router 기반이며, 실제 백엔드 연결 전에도 localStorage와 mock seed data로 주요 사용 흐름을 체험할 수 있게 구성되어 있습니다.
 
+- `next.config.mjs`에서 Turbopack root를 `brainx-next` 폴더로 고정해, 루트에 다른 lockfile이 있어도 개발 서버가 잘못된 워크스페이스 루트를 잡지 않도록 했습니다.
+- 관리자 콘솔 mock 기준으로 관리자 계정 이메일 입력, 미확인 문의 수 배지, 답변 완료 문의의 답변 입력 숨김, 환불 시 무료 플랜 전환, 로그인 기기 국가만 표시, 구독 다음 결제일의 월간/연간 표기를 반영했습니다.
+- 환불은 관리자 사유를 함께 전달하고, 환불 안내 메일 발송과 Commerce 구독의 `free` 전환을 기준으로 사용자 화면이 주기적으로 최신 플랜을 다시 읽어오도록 맞췄습니다.
+- Commerce 환불은 `REFUNDED` 상태를 DB 체크 제약에 포함하도록 보정했고, 결제사에서 이미 취소된 결제라면 로컬 원장과 구독 상태를 `환불 완료 + free 전환`으로 재동기화하도록 처리했습니다.
+
 ### Tech Stack
 
 - Next.js `16.2.7`
@@ -300,7 +305,7 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build admin-service
 ```
 
-관리자 프론트(`BrainX-Admin/brainx-admin-next`)에서 실제 Admin-Service를 사용하려면 `.env.local`에 `ADMIN_MOCK_ENABLED=false`, `ADMIN_SERVICE_URL=http://localhost:8085`를 설정한 뒤 Next 개발 서버를 재시작합니다.
+관리자 프론트(`BrainX-Admin/brainx-admin-next`)는 기본적으로 mock API를 끝까지 사용합니다. 실제 Admin-Service를 사용하려면 `.env.local`에 `ADMIN_MOCK_ENABLED=false`, `ADMIN_SERVICE_URL=http://localhost:8085`를 설정한 뒤 Next 개발 서버를 재시작합니다.
 
 각 서비스는 자기 폴더 기준으로 실행하면 아래 파일을 자동으로 읽습니다.
 
@@ -384,7 +389,7 @@ cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 ### Frontend
 
 ```powershell
-cd C:\Edu\Final_Project\BrainX\brainx-next
+cd C:\Edu\BrainX\brainx-next
 npm install
 npm run dev
 ```
@@ -394,7 +399,7 @@ npm run dev
 타입 체크:
 
 ```powershell
-cd C:\Edu\Final_Project\BrainX\brainx-next
+cd C:\Edu\BrainX\brainx-next
 npm run typecheck
 ```
 
@@ -419,6 +424,7 @@ User-Service의 Redis 역할은 다음과 같습니다.
 - 로그아웃/세션 종료 시 세션 상태 종료 표시
 - 관리자 상세 조회용 실제 로그인 세션, IP, 기기, 위치 이력 제공
 - Redis 장애나 세션 이력 파싱 실패가 나더라도 auth 응답은 막지 않고, 이력 기록만 건너뜁니다.
+- `SecurityConfig`와 `PasswordEncoderConfig`를 분리하고 `CustomUserDetailsService`가 `UserService`를 직접 의존하지 않도록 정리해, 인증 필터 생성 과정에서 순환 참조가 생기지 않도록 했습니다.
 
 관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다. 실제 로그인 기록이 없으면 가짜 데이터로 채우지 않고 빈 목록을 그대로 반환합니다.
 
@@ -476,7 +482,10 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 
 `BrainX-Admin/brainx-admin-next`가 실제 데이터로 동작하기 위한 관리자 API는 `contracts-v2/brainx-openapi.ssot.yaml`의 `/api/v1/admin/**`로 확정합니다. Admin-Service는 관리자 화면 전용 read model/orchestration layer이며, 원장 데이터는 각 소유 서비스가 유지합니다.
 
-현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다.
+현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다. 사용자 관리 화면에서는 정지된 계정을 바로 정지 취소할 수 있습니다.
+관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
+현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
+관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
 
 | 화면 | Method | Path | 소유 데이터/연동 |
 | --- | --- | --- | --- |

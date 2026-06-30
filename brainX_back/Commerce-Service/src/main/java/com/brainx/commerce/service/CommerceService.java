@@ -177,8 +177,12 @@ public class CommerceService {
 
         Instant now = Instant.now();
         TossPaymentsClient.TossCancelResult result = tossPaymentsClient.cancel(session.getPaymentKey(), amount, reason);
-        if (!result.isRefunded()) {
+        boolean alreadyCanceled = "ALREADY_CANCELED_PAYMENT".equals(result.getErrorCode());
+        if (!result.isRefunded() && !alreadyCanceled) {
             throw CommerceException.paymentFailed(result.getErrorCode(), result.getErrorMessage());
+        }
+        if (alreadyCanceled) {
+            log.info("Provider already marked payment as canceled. Reconciling local refund state: paymentId={}, userId={}", paymentId, session.getUserId());
         }
 
         String refundReason = reason == null || reason.isBlank() ? "관리자 요청 환불" : reason;

@@ -321,6 +321,7 @@ button {
   height: 52px;
   flex-shrink: 0;
   place-items: center;
+  overflow: hidden;
   border-radius: 50%;
   background: #111827;
   color: #fff;
@@ -332,6 +333,14 @@ button {
   width: 40px;
   height: 40px;
   font-size: 16px;
+}
+
+.sidebar-avatar-image,
+.rail-mini-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .rail-field {
@@ -616,6 +625,7 @@ button {
   flex-shrink: 0;
   place-items: center;
   border-radius: 50%;
+  overflow: hidden;
   background: #2563eb;
   color: #fff;
   font-size: 13px;
@@ -1725,6 +1735,15 @@ input[type="checkbox"] {
   color: #44403c;
 }
 
+.row-icons button.success {
+  color: #15803d;
+}
+
+.row-icons button.success:hover {
+  background: #f0fdf4;
+  color: #166534;
+}
+
 .bulkbar {
   display: flex;
   align-items: center;
@@ -2291,6 +2310,24 @@ input[type="checkbox"] {
   border: 1px solid #fdba74;
   background: #fff;
   color: #c2410c;
+}
+
+.reactivate-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reactivate-button:hover {
+  background: #dcfce7;
 }
 
 .danger-primary {

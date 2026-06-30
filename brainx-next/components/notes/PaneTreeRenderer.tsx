@@ -153,8 +153,6 @@ export default function PaneTreeRenderer({
         onSplitTabRight={(tabId) => onSplitTab(node.id, tabId, "horizontal")}
         onSplitTabDown={(tabId) => onSplitTab(node.id, tabId, "vertical")}
         canSplitWorkspace={canSplitPane}
-        contextOpen={contextOpen}
-        onContextToggle={onContextToggle}
       />
     );
   }
@@ -202,8 +200,6 @@ export default function PaneTreeRenderer({
               onTogglePinTab={onTogglePinTab}
               onSplitTab={onSplitTab}
               hasSplitPanels={hasSplitPanels}
-              contextOpen={contextOpen}
-              onContextToggle={onContextToggle}
             />
           </Panel>
 

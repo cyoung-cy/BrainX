@@ -46,6 +46,7 @@ import { AdminAccountsPanel } from "@/components/admin-accounts-panel";
 type ConsoleView = SidebarTarget;
 
 const ADMIN_SCREEN_STORAGE_KEY = "brainx_admin_screen_v1";
+const ADMIN_PROFILE_IMAGE_STORAGE_KEY = "brainx-admin-profile-image";
 
 const titles: Record<ConsoleView, { title: string; desc: string }> = {
   admins: { title: "관리자 관리", desc: "관리자 계정 추가와 권한 관리를 할 수 있어요" },
@@ -134,6 +135,7 @@ export function AdminConsole() {
   const [toast, setToast] = useState("대시보드 로딩 준비 중입니다");
   const [billingTab, setBillingTab] = useState<"history" | "subscriptions" | "failed" | "plans">("history");
   const [now, setNow] = useState("--:--:--");
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
   useEffect(() => {
     const session = getSession();
@@ -168,6 +170,11 @@ export function AdminConsole() {
     setNow(kstClock());
     const timer = window.setInterval(() => setNow(kstClock()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setProfileImage(window.localStorage.getItem(ADMIN_PROFILE_IMAGE_STORAGE_KEY));
   }, []);
 
   const reloadAdminData = async () => {
@@ -230,6 +237,11 @@ export function AdminConsole() {
   const activeInquiry = adminData?.inquiries.find((item) => item.id === selectedInquiry) ?? adminData?.inquiries[0];
   const failedPayments = adminData?.billingTransactions.filter((payment) => payment.status === "failed") ?? [];
 
+  const syncAdminProfile = (profile: AdminBootstrap["adminProfile"]) => {
+    updateSessionAdmin(profile);
+    setAdminData((current) => (current ? { ...current, adminProfile: profile } : current));
+  };
+
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -266,9 +278,10 @@ export function AdminConsole() {
     <div className="admin-shell">
       <AdminSidebar
         admin={adminData.adminProfile}
+        profileImage={profileImage}
         activeTarget={screen}
         onNavigate={setScreen}
-        supportBadge={2}
+        supportBadge={adminData.inquiries.filter((item) => item.status === "pending").length}
         billingBadge={failedPayments.length}
       />
 
@@ -300,7 +313,9 @@ export function AdminConsole() {
             <DashboardPage
               data={adminData}
               adminProfile={adminData.adminProfile}
-              onProfileUpdated={(profile) => setAdminData((current) => (current ? { ...current, adminProfile: profile } : current))}
+              profileImage={profileImage}
+              onProfileImageUpdated={setProfileImage}
+              onProfileUpdated={syncAdminProfile}
               onOpenAdmins={() => setScreen("admins")}
               onToast={notify}
             />
@@ -319,7 +334,7 @@ export function AdminConsole() {
             />
           ) : null}
           {screen === "billing" ? <BillingPanel data={adminData} tab={billingTab} setTab={setBillingTab} onReload={reloadAdminData} onToast={notify} /> : null}
-          {screen === "admins" ? <AdminAccountsPanel onToast={notify} /> : null}
+          {screen === "admins" ? <AdminAccountsPanel currentAdmin={adminData.adminProfile} onCurrentAdminUpdated={syncAdminProfile} onToast={notify} /> : null}
         </section>
       </main>
       {toast ? (
@@ -535,12 +550,16 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
 function DashboardPage({
   data,
   adminProfile,
+  profileImage,
+  onProfileImageUpdated,
   onProfileUpdated,
   onOpenAdmins,
   onToast
 }: {
   data: AdminBootstrap;
   adminProfile: AdminBootstrap["adminProfile"];
+  profileImage: string | null;
+  onProfileImageUpdated: (value: string | null) => void;
   onProfileUpdated: (profile: AdminBootstrap["adminProfile"]) => void;
   onOpenAdmins: () => void;
   onToast: (message: string) => void;
@@ -552,6 +571,8 @@ function DashboardPage({
       </div>
       <AdminProfileRail
         admin={adminProfile}
+        profileImage={profileImage}
+        onProfileImageUpdated={onProfileImageUpdated}
         onProfileUpdated={onProfileUpdated}
         onOpenAdmins={onOpenAdmins}
         onToast={onToast}
@@ -562,11 +583,15 @@ function DashboardPage({
 
 function AdminProfileRail({
   admin,
+  profileImage,
+  onProfileImageUpdated,
   onProfileUpdated,
   onOpenAdmins,
   onToast
 }: {
   admin: AdminBootstrap["adminProfile"];
+  profileImage: string | null;
+  onProfileImageUpdated: (value: string | null) => void;
   onProfileUpdated: (profile: AdminBootstrap["adminProfile"]) => void;
   onOpenAdmins: () => void;
   onToast: (message: string) => void;
@@ -579,7 +604,6 @@ function AdminProfileRail({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [editingField, setEditingField] = useState<"loginId" | "email" | "password" | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const currentAccount = accounts.find((account) => account.adminId === admin.adminUserId) ?? accounts[0];
@@ -590,13 +614,6 @@ function AdminProfileRail({
   useEffect(() => {
     setEmail(admin.email ?? "");
   }, [admin.email, admin.name]);
-
-  useEffect(() => {
-    setProfileImage(() => {
-      if (typeof window === "undefined") return null;
-      return window.localStorage.getItem("brainx-admin-profile-image");
-    });
-  }, []);
 
   useEffect(() => {
     setLoginId(currentAccount?.loginId ?? "");
@@ -623,8 +640,8 @@ function AdminProfileRail({
     reader.onload = () => {
       const value = typeof reader.result === "string" ? reader.result : null;
       if (!value) return;
-      setProfileImage(value);
-      window.localStorage.setItem("brainx-admin-profile-image", value);
+      onProfileImageUpdated(value);
+      window.localStorage.setItem(ADMIN_PROFILE_IMAGE_STORAGE_KEY, value);
     };
     reader.readAsDataURL(file);
   };
@@ -828,7 +845,13 @@ function AdminProfileRail({
               onClick={admin.role === "owner" ? onOpenAdmins : undefined}
               style={admin.role === "owner" ? { cursor: "pointer" } : undefined}
             >
-              <div className="rail-mini-avatar">{account.name.trim().charAt(0) || "A"}</div>
+              <div className="rail-mini-avatar">
+                {account.adminId === admin.adminUserId && profileImage ? (
+                  <img src={profileImage} alt="" className="rail-mini-avatar-image" />
+                ) : (
+                  account.name.trim().charAt(0) || "A"
+                )}
+              </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: "#111827" }}>{account.name}</div>
                 <div style={{ color: "#6b7280", fontSize: 12, marginTop: 2 }}>{account.loginId}</div>
@@ -923,6 +946,13 @@ function UsersPanel({ users, onReload, onToast }: { users: AdminUser[]; onReload
     return true;
   };
 
+  const reactivateUser = async (user: AdminUser) => {
+    await adminApi.changeUserStatus(user.id, "active");
+    await onReload();
+    setSelectedIds((current) => current.filter((id) => id !== user.id));
+    onToast(`${user.name} 계정의 정지를 취소했어요`);
+  };
+
   return (
     <>
       <div className="toolbar">
@@ -1000,10 +1030,16 @@ function UsersPanel({ users, onReload, onToast }: { users: AdminUser[]; onReload
                       setSelectedIds([user.id]);
                       setBulkPlanModalOpen(true);
                     }}><Repeat2 size={15} /></button>
-                    <button aria-label={`${user.name} 계정 정지`} onClick={() => {
-                      setSelectedIds([user.id]);
-                      setBulkSuspendModalOpen(true);
-                    }}><Ban size={15} /></button>
+                    {user.status === "suspended" ? (
+                      <button className="success" aria-label={`${user.name} 정지 취소`} onClick={() => { void reactivateUser(user); }}>
+                        <RefreshCw size={15} />
+                      </button>
+                    ) : (
+                      <button aria-label={`${user.name} 계정 정지`} onClick={() => {
+                        setSelectedIds([user.id]);
+                        setBulkSuspendModalOpen(true);
+                      }}><Ban size={15} /></button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1084,11 +1120,16 @@ function loginSessions(user: AdminUserDetail | AdminUser) {
   return user.sessions.map((session) => ({
     id: session.sessionId,
     device: session.device,
-    location: session.location,
+    location: normalizeCountryLabel(session.location),
     lastSeen: formatHistoryTime(session.lastSeenAt),
-    ip: session.ipAddress,
     current: session.current
   }));
+}
+
+function normalizeCountryLabel(value?: string | null) {
+  if (!value) return "대한민국";
+  if (value.includes("Korea") || value.includes("대한민국")) return "대한민국";
+  return "대한민국";
 }
 
 function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUserDetail; onReload: () => Promise<void>; onClose: () => void; onToast: (message: string) => void }) {
@@ -1122,6 +1163,14 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
     }, [user.id]);
 
     const sessions = loginSessions(detail);
+    const suspendButtonLabel = detail.status === "suspended" ? "정지 취소" : "계정 정지";
+    const suspendButtonIcon = detail.status === "suspended" ? <RefreshCw size={15} /> : <Ban size={15} />;
+    const reactivateUser = async () => {
+      await adminApi.changeUserStatus(detail.id, "active");
+      await onReload();
+      setDetail((current) => ({ ...current, status: "active" }));
+      onToast(`${detail.name} 계정의 정지를 취소했어요`);
+    };
 
     return (
       <div className="drawer-backdrop" onClick={onClose}>
@@ -1160,7 +1209,7 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
                         <b>{session.device}</b>
                 {session.current ? <span>현재 접속</span> : null}
                       </div>
-                      <p>{session.location} · IP {session.ip}</p>
+                      <p>{session.location}</p>
                     </div>
                     <time>{session.lastSeen}</time>
                   </div>
@@ -1170,8 +1219,8 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
           </section>
           <section className="activity-section">
             <h3>활동 내역</h3>
-            {detail.activities.map((activity) => (
-              <div className="activity-item" key={`${activity.text}-${activity.time}`}>
+            {detail.activities.map((activity, index) => (
+              <div className="activity-item" key={`${activity.text}-${activity.time}-${index}`}>
                 <span className="dot" style={{ background: "#0d9488" }} />
                 <div>
                   <div>{activity.text}</div>
@@ -1183,9 +1232,19 @@ function UserDetailDrawer({ user, onReload, onClose, onToast }: { user: AdminUse
           <section className="danger-zone">
             <h3>위험 구역</h3>
             <div className="danger-actions">
-              <button className="danger-secondary" onClick={async () => {
-                setSuspendModalOpen(true);
-              }}>계정 정지</button>
+              {detail.status === "suspended" ? (
+                <button className="reactivate-button" onClick={() => { void reactivateUser(); }}>
+                  {suspendButtonIcon}
+                  {suspendButtonLabel}
+                </button>
+              ) : (
+                <button className="danger-secondary" onClick={() => {
+                  setSuspendModalOpen(true);
+                }}>
+                  {suspendButtonIcon}
+                  {suspendButtonLabel}
+                </button>
+              )}
               <button className="danger-primary" onClick={async () => {
                 setWithdrawModalOpen(true);
               }}>탈퇴 처리</button>
@@ -1531,39 +1590,43 @@ function SupportPanel({ inquiries, activeId, activeInquiry, reply, onSelect, onR
           </div>
         ) : null}
 
-        <label className="reply-label" htmlFor="support-reply">답변 작성</label>
-        <textarea
-          id="support-reply"
-          className="support-reply"
-          value={reply}
-          onChange={(event) => onReply(event.target.value)}
-          placeholder="고객에게 보낼 답변을 입력해 주세요."
-        />
-        <div className="reply-actions">
-          <label className="faq-check">
-            <input type="checkbox" checked={replyFaq} onChange={(event) => setReplyFaq(event.target.checked)} />
-            <span>답변을 FAQ로 등록</span>
-          </label>
-          <div className="reply-buttons">
-            <button className="reply-save" onClick={() => onToast("답변을 임시 저장했어요")}>임시 저장</button>
-            <button
-              className="reply-send"
-              onClick={async () => {
-                if (!reply.trim()) {
-                  onToast("답변 내용을 입력해 주세요");
-                  return;
-                }
-                await adminApi.replyTicket(activeInquiry.id, { body: reply, faq: replyFaq });
-                await onReload();
-                onReply("");
-                setReplyFaq(false);
-                onToast(replyFaq ? "답변을 전송하고 FAQ로 등록했어요" : "답변을 전송했어요");
-              }}
-            >
-              답변 전송
-            </button>
-          </div>
-        </div>
+        {!activeInquiry.replyContent ? (
+          <>
+            <label className="reply-label" htmlFor="support-reply">답변 작성</label>
+            <textarea
+              id="support-reply"
+              className="support-reply"
+              value={reply}
+              onChange={(event) => onReply(event.target.value)}
+              placeholder="고객에게 보낼 답변을 입력해 주세요."
+            />
+            <div className="reply-actions">
+              <label className="faq-check">
+                <input type="checkbox" checked={replyFaq} onChange={(event) => setReplyFaq(event.target.checked)} />
+                <span>답변을 FAQ로 등록</span>
+              </label>
+              <div className="reply-buttons">
+                <button className="reply-save" onClick={() => onToast("답변을 임시 저장했어요")}>임시 저장</button>
+                <button
+                  className="reply-send"
+                  onClick={async () => {
+                    if (!reply.trim()) {
+                      onToast("답변 내용을 입력해 주세요");
+                      return;
+                    }
+                    await adminApi.replyTicket(activeInquiry.id, { body: reply, faq: replyFaq });
+                    await onReload();
+                    onReply("");
+                    setReplyFaq(false);
+                    onToast(replyFaq ? "답변을 전송하고 FAQ로 등록했어요" : "답변을 전송했어요");
+                  }}
+                >
+                  답변 전송
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
       </section>
     </div>
   );
@@ -1734,8 +1797,11 @@ function BillingHistory({ transactions, onReload, onToast }: { transactions: Bil
         <RefundConfirmModal
           payment={refundTarget}
           onClose={() => setRefundTarget(null)}
-          onConfirm={async () => {
-            await adminApi.refundPayment(refundTarget.id);
+          onConfirm={async (reason) => {
+            await adminApi.refundPayment(refundTarget.id, {
+              amount: refundTarget.amount,
+              reason
+            });
             await onReload();
             onToast(`${refundTarget.user} 결제 환불을 처리했어요`);
             setRefundTarget(null);
@@ -1753,9 +1819,10 @@ function RefundConfirmModal({
 }: {
   payment: BillingTransaction;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: (reason: string) => Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [reason, setReason] = useState("관리자 환불 처리");
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -1768,13 +1835,33 @@ function RefundConfirmModal({
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 14, marginTop: 8 }}><span style={{ color: "#64748b" }}>사용자</span><b>{payment.user}</b></div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 14, marginTop: 8 }}><span style={{ color: "#64748b" }}>환불 금액</span><b>{money(payment.amount)}</b></div>
         </div>
+        <label className="price-label" style={{ display: "block", marginTop: 14 }}>
+          환불 사유
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            style={{
+              width: "100%",
+              marginTop: 8,
+              borderRadius: 12,
+              border: "1px solid #dbe2ea",
+              padding: "12px 14px",
+              resize: "vertical",
+              fontSize: 14,
+              outline: "none"
+            }}
+          />
+        </label>
         <div className="modal-actions">
           <button onClick={onClose} disabled={submitting}>취소</button>
           <button
             onClick={async () => {
               setSubmitting(true);
               try {
-                await onConfirm();
+                await onConfirm(reason.trim() || "관리자 환불 처리");
+              } catch (error) {
+                window.alert(error instanceof Error ? error.message : "환불 처리에 실패했어요.");
               } finally {
                 setSubmitting(false);
               }
@@ -1802,7 +1889,7 @@ function BillingSubscriptions({ subscriptions, onReload, onToast }: { subscripti
           <Avatar user={{ name: item.user } as AdminUser} size={38} />
           <div style={{ flex: 1 }}>
             <b>{item.user}</b>
-             <p>시작 {item.started} · 다음 결제 <strong>{item.next}</strong></p>
+             <p>시작 {item.started} · 다음 결제 <strong>{item.billingCycle === "yearly" ? `연간 ${item.next}` : `월간 ${item.next}`}</strong></p>
           </div>
           <div className="subscription-price">
           <Tag meta={planStyle[item.plan]}>{planLabel[item.plan] === "무료" ? "Free" : planLabel[item.plan]}</Tag>

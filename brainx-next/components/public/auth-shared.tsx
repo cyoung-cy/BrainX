@@ -174,14 +174,14 @@ export function AuthShell({ children }: { children: ReactNode }) {
     : "scroll relative flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-bg2 p-6";
 
   return (
-    <div className="relative grid min-h-[100dvh] overflow-hidden lg:grid-cols-2">
+    <div className="relative grid overflow-hidden lg:grid-cols-2">
       <div
-        className="relative hidden h-[100dvh] overflow-hidden border-r border-line/40 p-12 lg:flex lg:flex-col lg:justify-between"
+        className="relative hidden overflow-hidden border-r border-line/40 p-12 lg:flex lg:flex-col lg:justify-between"
         style={{ background: leftBackground }}
       >
         <div className="absolute inset-0 grid-bg opacity-35" />
         <div className="absolute inset-0">
-          <div className="absolute inset-0 mx-auto max-w-[720px]">
+          <div className="absolute inset-0">
             <HeroConstellation />
           </div>
         </div>
@@ -206,7 +206,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <div className="absolute right-5 top-5">
           <ThemeToggle />
         </div>
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="w-full max-w-md">{children}</div>
       </div>
     </div>
   );
