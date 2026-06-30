@@ -159,6 +159,8 @@ services:
       POSTGRES_HOST: postgres
       ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
       GATEWAY_SERVICE_URL: http://gateway-service:8088
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID: intelligence-service
     ports:
       - "8085:8085"
     depends_on:

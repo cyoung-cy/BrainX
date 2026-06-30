@@ -7,6 +7,14 @@ import com.brainx.admin.entity.AdminServiceHealthSnapshot;
 import com.brainx.admin.repository.AdminMonitoringSnapshotRepository;
 import com.brainx.admin.repository.AdminOperationEventRepository;
 import com.brainx.admin.repository.AdminServiceHealthSnapshotRepository;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ListOffsetsResult;
+import org.apache.kafka.clients.admin.OffsetSpec;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -28,12 +36,17 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class AdminService {
+    private static final Logger log = LoggerFactory.getLogger(AdminService.class);
     private static final OffsetDateTime BASE = OffsetDateTime.now();
+    private static final int HEALTH_UPTIME_SAMPLE_SIZE = 20;
+    private static final int OVERVIEW_TREND_DAYS = 14;
+    private static final long DEGRADED_LATENCY_THRESHOLD_MS = 1_000L;
 
     private final RestClient userRestClient;
     private final RestClient commerceRestClient;
@@ -57,6 +70,18 @@ public class AdminService {
     @Value("${brainx.services.ingestion-health-url}")
     private String ingestionHealthUrl;
 
+    @Value("${brainx.services.intelligence-health-url}")
+    private String intelligenceHealthUrl;
+
+    @Value("${brainx.service-token}")
+    private String serviceToken;
+
+    @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+    private String kafkaBootstrapServers;
+
+    @Value("${brainx.kafka.monitoring.consumer-group-id:intelligence-service}")
+    private String kafkaMonitoringConsumerGroupId;
+
     public AdminService(
             RestClient userRestClient,
             RestClient commerceRestClient,
@@ -79,25 +104,38 @@ public class AdminService {
 
     public AdminDashboardOverviewData dashboardOverview() {
         AdminBillingSummaryData summary = billingSummary();
-        int activeUsers = countActiveUsers();
+        TrendSeriesData revenueTrend = fetchRevenueTrend(summary.monthlyRevenue(), OVERVIEW_TREND_DAYS);
+        InternalUserGrowthSummaryDto userGrowthSummary = fetchUserGrowthSummary(OVERVIEW_TREND_DAYS);
+        InternalWorkspaceMonitoringSummaryDto workspaceSummary = fetchWorkspaceMonitoringSummary();
+        int activeUsers = userGrowthSummary != null ? userGrowthSummary.activeUsers() : countActiveUsers();
+        TrendSeriesData activeUserTrend = userGrowthSummary != null
+                ? toTrendSeriesData(userGrowthSummary.trend())
+                : buildActiveUserTrend(activeUsers);
+        SnapshotDelta delta = snapshotDelta();
 
         List<ServiceHealthData> healths = List.of(
                 checkAndRecordHealth("User-Service", userHealthUrl),
                 checkAndRecordHealth("Commerce-Service", commerceHealthUrl),
                 checkAndRecordHealth("Workspace-Service", workspaceHealthUrl),
-                checkAndRecordHealth("Ingestion-Service", ingestionHealthUrl)
+                checkAndRecordHealth("Ingestion-Service", ingestionHealthUrl),
+                checkAndRecordHealth("Intelligence-Service", intelligenceHealthUrl)
         );
 
+        KafkaLagObservation kafkaLag = collectKafkaLag(kafkaMonitoringConsumerGroupId);
         monitoringSnapshotRepository.save(new AdminMonitoringSnapshot(
                 summary.monthlyRevenue(),
                 summary.activeSubscriptions(),
                 summary.mrr(),
                 summary.failedPaymentCount(),
                 activeUsers,
+                kafkaLag.messages(),
+                kafkaLag.consumerGroupId(),
+                kafkaLag.state(),
+                kafkaLag.detail(),
                 OffsetDateTime.now()
         ));
 
-        List<KpiData> kpis = List.of(
+        List<KpiData> kpis = buildOverviewKpisLive(summary, activeUsers, delta); /*
                 new KpiData("이번 달 매출", formatMoney(summary.monthlyRevenue()), "live", "good", "Commerce-Service 집계"),
                 new KpiData("활성 구독", String.valueOf(summary.activeSubscriptions()), "live", "good", "현재 유료 구독"),
                 new KpiData("MRR", formatMoney(summary.mrr()), "live", "good", "월 반복 매출"),
@@ -108,54 +146,163 @@ public class AdminService {
                         summary.failedPaymentCount() > 0 ? "bad" : "good",
                         "재시도 또는 안내 필요"
                 )
-        );
+        ); */
 
         return new AdminDashboardOverviewData(
                 kpis,
                 healths,
-                buildDashboardLogs(),
-                buildRevenueTrend(summary.monthlyRevenue()),
-                buildActiveUserTrend(activeUsers)
+                buildDashboardLogs(workspaceSummary),
+                revenueTrend,
+                activeUserTrend,
+                new AdminOverviewSummaryData(
+                        summary.monthlyRevenue(),
+                        summary.activeSubscriptions(),
+                        summary.mrr(),
+                        summary.failedPaymentCount(),
+                        activeUsers,
+                        workspaceSummary.totalNotes(),
+                        workspaceSummary.totalStorageBytes(),
+                        workspaceSummary.notesCreatedToday(),
+                        "Asia/Seoul",
+                        "Commerce-Service",
+                        "User-Service",
+                        "Workspace-Service"
+                )
         );
     }
 
     private ServiceHealthData checkAndRecordHealth(String name, String url) {
         long start = System.currentTimeMillis();
-        String state = "ok";
+        ServiceHealthState state = ServiceHealthState.UP;
         long latencyMs;
 
         try {
             ResponseEntity<String> response = defaultRestClient.get()
                     .uri(url)
+                    .header("X-Service-Token", serviceToken)
                     .retrieve()
                     .toEntity(String.class);
             latencyMs = System.currentTimeMillis() - start;
             if (!response.getStatusCode().is2xxSuccessful()) {
-                state = "warn";
+                state = ServiceHealthState.DEGRADED;
+            } else if (latencyMs >= DEGRADED_LATENCY_THRESHOLD_MS) {
+                state = ServiceHealthState.DEGRADED;
             }
         } catch (Exception e) {
-            state = "warn";
+            state = ServiceHealthState.DOWN;
             latencyMs = System.currentTimeMillis() - start;
         }
 
-        healthSnapshotRepository.save(new AdminServiceHealthSnapshot(name, state, latencyMs, 99.9, OffsetDateTime.now()));
-        return new ServiceHealthData(name, latencyMs + "ms", "99.9%", state);
+        double uptimePercent = calculateUptimePercent(name, state);
+        healthSnapshotRepository.save(new AdminServiceHealthSnapshot(name, state.name(), latencyMs, uptimePercent, OffsetDateTime.now()));
+        return new ServiceHealthData(name, latencyMs + "ms", formatUptimePercent(uptimePercent), state.name());
     }
 
-    public List<AdminMonitoringSnapshot> getMonitoringSnapshots() {
-        return monitoringSnapshotRepository.findAll();
+    public AdminKafkaLagData getKafkaLag() {
+        return toKafkaLagData(collectKafkaLag(kafkaMonitoringConsumerGroupId));
+    }
+
+    private KafkaLagObservation collectKafkaLag(String consumerGroupId) {
+        if (consumerGroupId == null || consumerGroupId.isBlank()) {
+            return new KafkaLagObservation(null, null, KafkaLagState.CONFIG_MISSING, "Kafka consumer group id 설정이 필요합니다");
+        }
+
+        Map<String, Object> config = new HashMap<>();
+        config.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBootstrapServers);
+        config.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 3000);
+        config.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 3000);
+
+        try (AdminClient client = AdminClient.create(config)) {
+            Map<TopicPartition, OffsetAndMetadata> committedOffsets = client
+                    .listConsumerGroupOffsets(consumerGroupId)
+                    .partitionsToOffsetAndMetadata()
+                    .get();
+
+            if (committedOffsets == null || committedOffsets.isEmpty()) {
+                return new KafkaLagObservation(null, consumerGroupId, KafkaLagState.NO_COMMITTED_OFFSETS, "committed offset이 없어 아직 lag를 집계하지 못했습니다");
+            }
+
+            Map<TopicPartition, OffsetSpec> offsetSpecs = committedOffsets.keySet().stream()
+                    .collect(Collectors.toMap(partition -> partition, partition -> OffsetSpec.latest()));
+            Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latestOffsets = client.listOffsets(offsetSpecs).all().get();
+
+            long totalLag = 0L;
+            for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : committedOffsets.entrySet()) {
+                TopicPartition partition = entry.getKey();
+                long committedOffset = entry.getValue() != null ? entry.getValue().offset() : 0L;
+                ListOffsetsResult.ListOffsetsResultInfo endOffsetInfo = latestOffsets.get(partition);
+                long endOffset = endOffsetInfo != null ? endOffsetInfo.offset() : committedOffset;
+                totalLag += Math.max(0L, endOffset - committedOffset);
+            }
+
+            int kafkaLagMessages = totalLag > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) totalLag;
+            String detail = kafkaLagMessages == 0
+                    ? "현재 backlog가 없습니다"
+                    : "현재 lag " + kafkaLagMessages + " msgs";
+            return new KafkaLagObservation(kafkaLagMessages, consumerGroupId, KafkaLagState.HEALTHY, detail);
+        } catch (Exception exception) {
+            log.warn("Kafka lag collection failed for group {}: {}", consumerGroupId, exception.getMessage());
+            return new KafkaLagObservation(null, consumerGroupId, KafkaLagState.BROKER_UNREACHABLE, "Kafka broker 연결 실패 또는 offset 조회 실패");
+        }
+    }
+
+    private AdminMonitoringSnapshotData toMonitoringSnapshotData(AdminMonitoringSnapshot snapshot) {
+        return new AdminMonitoringSnapshotData(
+                snapshot.getSnapshotId(),
+                snapshot.getMonthlyRevenue(),
+                snapshot.getActiveSubscriptions(),
+                snapshot.getMrr(),
+                snapshot.getFailedPaymentCount(),
+                snapshot.getActiveUsers(),
+                snapshot.getKafkaLagMessages(),
+                snapshot.getKafkaConsumerGroupId(),
+                snapshot.getKafkaLagState(),
+                snapshot.getKafkaLagDetail(),
+                snapshot.getCapturedAt()
+        );
+    }
+
+    private AdminKafkaLagData toKafkaLagData(KafkaLagObservation observation) {
+        return new AdminKafkaLagData(
+                observation.consumerGroupId(),
+                observation.state(),
+                observation.messages(),
+                KAFKA_LAG_WARNING_THRESHOLD,
+                KAFKA_LAG_CRITICAL_THRESHOLD,
+                observation.detail(),
+                OffsetDateTime.now()
+        );
+    }
+
+    public List<AdminMonitoringSnapshotData> getMonitoringSnapshots() {
+        return monitoringSnapshotRepository.findAllByOrderByCapturedAtDesc().stream()
+                .map(this::toMonitoringSnapshotData)
+                .toList();
     }
 
     public void deleteMonitoringSnapshot(String id) {
         monitoringSnapshotRepository.deleteById(id);
     }
 
-    public List<AdminServiceHealthSnapshot> getHealthSnapshots() {
-        return healthSnapshotRepository.findAll();
+    public List<AdminServiceHealthSnapshotData> getHealthSnapshots() {
+        return healthSnapshotRepository.findAll().stream()
+                .map(this::toHealthSnapshotData)
+                .toList();
     }
 
     public void deleteHealthSnapshot(String id) {
         healthSnapshotRepository.deleteById(id);
+    }
+
+    private AdminServiceHealthSnapshotData toHealthSnapshotData(AdminServiceHealthSnapshot snapshot) {
+        return new AdminServiceHealthSnapshotData(
+                snapshot.getHealthSnapshotId(),
+                snapshot.getServiceName(),
+                normalizeHealthState(snapshot.getState()),
+                snapshot.getLatencyMs(),
+                snapshot.getUptimePercent(),
+                snapshot.getCapturedAt()
+        );
     }
 
     public AdminUsersData listUsers(String q, PlanId planId, ManagedUserStatus status, Integer joinedYear, int page, int size) {
@@ -409,6 +556,45 @@ public class AdminService {
                 .uri("/internal/v1/billing/summary")
                 .retrieve()
                 .body(AdminBillingSummaryData.class);
+    }
+
+    private TrendSeriesData fetchRevenueTrend(BigDecimal currentRevenue, int days) {
+        try {
+            InternalTrendSeriesDto trend = commerceRestClient.get()
+                    .uri("/internal/v1/billing/revenue-trend?days=" + days)
+                    .retrieve()
+                    .body(InternalTrendSeriesDto.class);
+            return trend != null ? toTrendSeriesData(trend) : buildRevenueTrend(currentRevenue);
+        } catch (Exception exception) {
+            log.warn("Falling back to snapshot revenue trend: {}", exception.getMessage());
+            return buildRevenueTrend(currentRevenue);
+        }
+    }
+
+    private InternalUserGrowthSummaryDto fetchUserGrowthSummary(int days) {
+        try {
+            return userRestClient.get()
+                    .uri("/internal/v1/users/growth-summary?days=" + days)
+                    .retrieve()
+                    .body(InternalUserGrowthSummaryDto.class);
+        } catch (Exception exception) {
+            log.warn("Falling back to snapshot user growth trend: {}", exception.getMessage());
+            return null;
+        }
+    }
+
+    private InternalWorkspaceMonitoringSummaryDto fetchWorkspaceMonitoringSummary() {
+        try {
+            InternalApiEnvelope<InternalWorkspaceMonitoringSummaryDto> envelope = workspaceRestClient.get()
+                    .uri("/internal/v1/workspace/monitoring/summary")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<InternalApiEnvelope<InternalWorkspaceMonitoringSummaryDto>>() {});
+            InternalWorkspaceMonitoringSummaryDto summary = envelope != null ? envelope.data() : null;
+            return summary != null ? summary : new InternalWorkspaceMonitoringSummaryDto(0, 0L, 0, List.of());
+        } catch (Exception exception) {
+            log.warn("Falling back to empty workspace monitoring summary: {}", exception.getMessage());
+            return new InternalWorkspaceMonitoringSummaryDto(0, 0L, 0, List.of());
+        }
     }
 
     public AdminPaymentsData listPayments(PaymentStatus status, PlanId planId, int page, int size) {
@@ -846,36 +1032,83 @@ public class AdminService {
                 .count();
     }
 
-    private List<LogData> buildDashboardLogs() {
-        return operationEvents.findTop20ByOrderByCreatedAtDesc().stream()
-                .limit(8)
-                .map(event -> new LogData(
+    private List<LogData> buildDashboardLogs(InternalWorkspaceMonitoringSummaryDto workspaceSummary) {
+        List<DashboardLogEntry> entries = new ArrayList<>();
+        operationEvents.findTop20ByOrderByCreatedAtDesc().forEach(event -> entries.add(new DashboardLogEntry(
+                event.getCreatedAt(),
+                new LogData(
                         logLevel(event.getAction()),
                         event.getTargetType(),
                         buildLogMessage(event),
                         event.getCreatedAt().toLocalTime().withNano(0).toString()
-                ))
+                )
+        )));
+
+        workspaceSummary.recentActivities().forEach(activity -> {
+            OffsetDateTime occurredAt = activity.occurredAt() != null
+                    ? activity.occurredAt().atZone(ZoneId.systemDefault()).toOffsetDateTime()
+                    : OffsetDateTime.now();
+            entries.add(new DashboardLogEntry(
+                    occurredAt,
+                    new LogData(
+                            "INFO",
+                            "Workspace-Service",
+                            workspaceActivityMessage(activity),
+                            occurredAt.toLocalTime().withNano(0).toString()
+                    )
+            ));
+        });
+
+        return entries.stream()
+                .sorted(Comparator.comparing(DashboardLogEntry::occurredAt).reversed())
+                .limit(8)
+                .map(DashboardLogEntry::data)
                 .toList();
     }
 
-    private List<Integer> buildRevenueTrend(BigDecimal currentRevenue) {
+    private TrendSeriesData buildRevenueTrend(BigDecimal currentRevenue) {
         List<Integer> values = monitoringSnapshotRepository.findAll().stream()
                 .sorted(Comparator.comparing(AdminMonitoringSnapshot::getCapturedAt))
                 .map(snapshot -> snapshot.getMonthlyRevenue().intValue())
                 .skip(Math.max(0, monitoringSnapshotRepository.findAll().size() - 13L))
                 .collect(Collectors.toCollection(ArrayList::new));
         values.add(currentRevenue.intValue());
-        return normalizeTrend(values);
+        return new TrendSeriesData(
+                "monthlyRevenue",
+                normalizeTrend(values),
+                "최근 14회 스냅샷",
+                14,
+                "Asia/Seoul",
+                "AdminMonitoringSnapshot + Commerce-Service"
+        );
     }
 
-    private List<Integer> buildActiveUserTrend(int activeUsers) {
+    private TrendSeriesData buildActiveUserTrend(int activeUsers) {
         List<Integer> values = monitoringSnapshotRepository.findAll().stream()
                 .sorted(Comparator.comparing(AdminMonitoringSnapshot::getCapturedAt))
                 .map(AdminMonitoringSnapshot::getActiveUsers)
                 .skip(Math.max(0, monitoringSnapshotRepository.findAll().size() - 13L))
                 .collect(Collectors.toCollection(ArrayList::new));
         values.add(activeUsers);
-        return normalizeTrend(values);
+        return new TrendSeriesData(
+                "activeUsers",
+                normalizeTrend(values),
+                "최근 14회 스냅샷",
+                14,
+                "Asia/Seoul",
+                "AdminMonitoringSnapshot + User-Service"
+        );
+    }
+
+    private TrendSeriesData toTrendSeriesData(InternalTrendSeriesDto trend) {
+        return new TrendSeriesData(
+                trend.metric(),
+                trend.values(),
+                trend.periodLabel(),
+                trend.pointCount(),
+                trend.timezone(),
+                trend.source()
+        );
     }
 
     private List<Integer> normalizeTrend(List<Integer> values) {
@@ -886,6 +1119,134 @@ public class AdminService {
             values.add(0, values.get(0));
         }
         return values;
+    }
+
+    /* private List<KpiData> buildOverviewKpis(AdminBillingSummaryData summary, SnapshotDelta delta) {
+        return List.of(
+                new KpiData("?대쾲 ??留ㅼ텧", formatMoney(summary.monthlyRevenue()), formatDelta(delta.monthlyRevenueDelta()), toneForGrowth(delta.monthlyRevenueDelta()), "직전 snapshot 대비"),
+                new KpiData("?쒖꽦 援щ룆", String.valueOf(summary.activeSubscriptions()), formatDelta(delta.activeSubscriptionsDelta()), toneForGrowth(delta.activeSubscriptionsDelta()), "직전 snapshot 대비"),
+                new KpiData("MRR", formatMoney(summary.mrr()), formatDelta(delta.mrrDelta()), toneForGrowth(delta.mrrDelta()), "직전 snapshot 대비"),
+                new KpiData("寃곗젣 ?ㅽ뙣", String.valueOf(summary.failedPaymentCount()), formatDelta(delta.failedPaymentCountDelta()), toneForInverseMetric(delta.failedPaymentCountDelta()), "직전 snapshot 대비")
+        );
+    }
+
+    } */
+
+    private List<KpiData> buildOverviewKpisLive(AdminBillingSummaryData summary, int activeUsers, SnapshotDelta delta) {
+        return List.of(
+                new KpiData("\uC774\uBC88 \uB2EC \uB9E4\uCD9C", formatMoney(summary.monthlyRevenue()), formatDeltaText(delta.monthlyRevenueDelta()), toneForGrowth(delta.monthlyRevenueDelta()), "\uC9C1\uC804 snapshot \uB300\uBE44"),
+                new KpiData("\uD65C\uC131 \uAD6C\uB3C5", String.valueOf(summary.activeSubscriptions()), formatDeltaText(delta.activeSubscriptionsDelta()), toneForGrowth(delta.activeSubscriptionsDelta()), "\uC9C1\uC804 snapshot \uB300\uBE44"),
+                new KpiData("MRR", formatMoney(summary.mrr()), formatDeltaText(delta.mrrDelta()), toneForGrowth(delta.mrrDelta()), "\uC9C1\uC804 snapshot \uB300\uBE44"),
+                new KpiData("\uD65C\uC131 \uC0AC\uC6A9\uC790", String.valueOf(activeUsers), formatDeltaText(delta.activeUsersDelta()), toneForGrowth(delta.activeUsersDelta()), "User-Service \uC9C1\uACC4"),
+                new KpiData("\uACB0\uC81C \uC2E4\uD328", String.valueOf(summary.failedPaymentCount()), formatDeltaText(delta.failedPaymentCountDelta()), toneForInverseMetric(delta.failedPaymentCountDelta()), "\uC9C1\uC804 snapshot \uB300\uBE44")
+        );
+    }
+
+    private SnapshotDelta snapshotDelta() {
+        List<AdminMonitoringSnapshot> snapshots = monitoringSnapshotRepository.findTop2ByOrderByCapturedAtDesc();
+        if (snapshots.size() < 2) {
+            return new SnapshotDelta(null, null, null, null, null);
+        }
+
+        AdminMonitoringSnapshot latest = snapshots.get(0);
+        AdminMonitoringSnapshot previous = snapshots.get(1);
+        return new SnapshotDelta(
+                percentChange(latest.getMonthlyRevenue(), previous.getMonthlyRevenue()),
+                percentChange(BigDecimal.valueOf(latest.getActiveSubscriptions()), BigDecimal.valueOf(previous.getActiveSubscriptions())),
+                percentChange(latest.getMrr(), previous.getMrr()),
+                percentChange(BigDecimal.valueOf(latest.getActiveUsers()), BigDecimal.valueOf(previous.getActiveUsers())),
+                percentChange(BigDecimal.valueOf(latest.getFailedPaymentCount()), BigDecimal.valueOf(previous.getFailedPaymentCount()))
+        );
+    }
+
+    private Double percentChange(BigDecimal current, BigDecimal previous) {
+        if (current == null || previous == null) {
+            return null;
+        }
+        if (previous.compareTo(BigDecimal.ZERO) == 0) {
+            if (current.compareTo(BigDecimal.ZERO) == 0) {
+                return 0d;
+            }
+            return 100d;
+        }
+        return current.subtract(previous)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(previous.abs(), 1, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private String formatDelta(Double value) {
+        if (value == null) {
+            return "기준 없음";
+        }
+        if (Math.abs(value) < 0.05d) {
+            return "0.0%";
+        }
+        return String.format(Locale.ROOT, "%+.1f%%", value);
+    }
+
+    private String formatDeltaText(Double value) {
+        if (value == null) {
+            return "\uAE30\uC900 \uC5C6\uC74C";
+        }
+        if (Math.abs(value) < 0.05d) {
+            return "0.0%";
+        }
+        return String.format(Locale.ROOT, "%+.1f%%", value);
+    }
+
+    private String toneForGrowth(Double value) {
+        if (value == null || value >= 0d) {
+            return "good";
+        }
+        return "bad";
+    }
+
+    private String toneForInverseMetric(Double value) {
+        if (value == null || value <= 0d) {
+            return "good";
+        }
+        return "bad";
+    }
+
+    private double calculateUptimePercent(String serviceName, ServiceHealthState currentState) {
+        List<AdminServiceHealthSnapshot> history = healthSnapshotRepository.findTop20ByServiceNameOrderByCapturedAtDesc(serviceName);
+        int successfulCount = isAvailableState(currentState.name()) ? 1 : 0;
+        for (AdminServiceHealthSnapshot snapshot : history) {
+            if (isAvailableState(snapshot.getState())) {
+                successfulCount++;
+            }
+        }
+        int sampleCount = Math.min(HEALTH_UPTIME_SAMPLE_SIZE, history.size() + 1);
+        if (sampleCount <= 0) {
+            return isAvailableState(currentState.name()) ? 100d : 0d;
+        }
+        return BigDecimal.valueOf(successfulCount)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(sampleCount), 1, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private boolean isAvailableState(String state) {
+        return ServiceHealthState.UP.name().equalsIgnoreCase(state)
+                || ServiceHealthState.DEGRADED.name().equalsIgnoreCase(state);
+    }
+
+    private String normalizeHealthState(String state) {
+        if (state == null || state.isBlank()) {
+            return ServiceHealthState.DOWN.name();
+        }
+        if ("ok".equalsIgnoreCase(state)) {
+            return ServiceHealthState.UP.name();
+        }
+        if ("warn".equalsIgnoreCase(state)) {
+            return ServiceHealthState.DEGRADED.name();
+        }
+        return state.toUpperCase(Locale.ROOT);
+    }
+
+    private String formatUptimePercent(double value) {
+        return String.format(Locale.ROOT, "%.1f%%", value);
     }
 
     private String formatMoney(BigDecimal value) {
@@ -1097,6 +1458,16 @@ public class AdminService {
         return "";
     }
 
+    private String workspaceActivityMessage(InternalWorkspaceActivityDto activity) {
+        String title = valueOr(activity.title(), "제목 없는 노트");
+        return switch (valueOr(activity.activityType(), "").toLowerCase(Locale.ROOT)) {
+            case "created" -> "노트 생성: " + title;
+            case "updated" -> "노트 수정: " + title;
+            case "viewed" -> "노트 열람: " + title;
+            default -> "워크스페이스 활동: " + title;
+        };
+    }
+
     private static String valueOr(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
@@ -1104,6 +1475,26 @@ public class AdminService {
     private void recordOperation(String action, String targetType, String targetId, String detail) {
         operationEvents.save(new AdminOperationEvent(action, targetType, targetId, "adm_001", detail));
     }
+
+    private static final int KAFKA_LAG_WARNING_THRESHOLD = 1_000;
+    private static final int KAFKA_LAG_CRITICAL_THRESHOLD = 5_000;
+
+    private record KafkaLagObservation(Integer messages, String consumerGroupId, KafkaLagState state, String detail) {}
+    private record DashboardLogEntry(OffsetDateTime occurredAt, LogData data) {}
+
+    public record InternalTrendSeriesDto(
+            String metric,
+            List<Integer> values,
+            String periodLabel,
+            int pointCount,
+            String timezone,
+            String source
+    ) {}
+
+    public record InternalUserGrowthSummaryDto(
+            int activeUsers,
+            InternalTrendSeriesDto trend
+    ) {}
 
     public record InternalUserDto(
             String userId,
@@ -1140,12 +1531,28 @@ public class AdminService {
             List<InternalUserActivityDto> activities
     ) {}
 
+    public record InternalWorkspaceMonitoringSummaryDto(
+            int totalNotes,
+            long totalStorageBytes,
+            int notesCreatedToday,
+            List<InternalWorkspaceActivityDto> recentActivities
+    ) {}
+
     public record InternalApiEnvelope<T>(boolean success, T data, String message) {}
 
     public record InternalUserActivityDto(
             String noteId,
             String type,
             String title,
+            Instant occurredAt
+    ) {}
+
+    public record InternalWorkspaceActivityDto(
+            String activityId,
+            String userId,
+            String noteId,
+            String title,
+            String activityType,
             Instant occurredAt
     ) {}
 
@@ -1235,5 +1642,13 @@ public class AdminService {
             String reason,
             int retryCount,
             Instant failedAt
+    ) {}
+
+    private record SnapshotDelta(
+            Double monthlyRevenueDelta,
+            Double activeSubscriptionsDelta,
+            Double mrrDelta,
+            Double activeUsersDelta,
+            Double failedPaymentCountDelta
     ) {}
 }

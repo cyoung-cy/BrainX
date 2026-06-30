@@ -119,6 +119,8 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDemoSession(session);
+  const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
 
   if (USE_MOCK_NOTES && session?.accessToken && isDemoSession(session)) {
     return demoWorkspaceResponse<T>(path);
@@ -131,8 +133,8 @@ async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(WORKSPACE_DEV_USER_ID ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
-      ...(session?.accessToken && !WORKSPACE_DEV_USER_ID ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}),
+      ...(useDevUserHeader ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
+      ...(useAuthenticatedSession ? { Authorization: `${session?.tokenType ?? "Bearer"} ${session?.accessToken}` } : {}),
       ...(init?.headers ?? {})
     }
   });
