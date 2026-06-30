@@ -489,11 +489,10 @@ channels:
     messages:
       NotesMoved:
         $ref: '#/components/messages/NotesMoved'
-    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: Intelligence-Service, Admin-Service,
+    description: 'Channel for NotesMoved. Producer: Workspace-Service. Consumers: Admin-Service,
       Workspace-Service.'
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   notificationRequested:
@@ -1298,7 +1297,6 @@ operations:
     summary: Workspace-Service publishes NotesMoved
     x-producer-service: Workspace-Service
     x-consumer-services:
-    - Intelligence-Service
     - Admin-Service
     - Workspace-Service
   sendNotificationRequested:
@@ -2781,7 +2779,6 @@ components:
               $ref: '#/components/schemas/NoteTagsChangedPayload'
       x-producer-service: Workspace-Service
       x-consumer-services:
-      - Intelligence-Service
       - Admin-Service
       - Workspace-Service
       x-delivery:
@@ -4236,22 +4233,26 @@ components:
     FolderDeletedPayload:
       type: object
       properties:
-        folderId:
-          type: string
         userId:
           type: string
-        childNoteAction:
+        folderIds:
+          type: array
+          items:
+            type: string
+        mode:
           type: string
           enum:
-          - MOVE
-          - TRASH
-        targetFolderId:
-          type: string
-          nullable: true
+          - trash
+          - permanent
+        noteIds:
+          type: array
+          items:
+            type: string
       required:
-      - folderId
       - userId
-      - childNoteAction
+      - folderIds
+      - mode
+      - noteIds
       additionalProperties: false
     NotesMovedPayload:
       type: object

@@ -1,14 +1,23 @@
 package com.brainx.intelligence.infrastructure.events.folder;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSummaryPort;
 import com.brainx.intelligence.infrastructure.events.consumer.BrainxEventHandler;
 import com.brainx.intelligence.infrastructure.events.consumer.EventProcessingContext;
 import com.brainx.intelligence.infrastructure.events.consumer.EventProcessingException;
+import com.brainx.intelligence.infrastructure.events.note.NoteChunkManifestStore;
+import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
+import com.brainx.intelligence.infrastructure.events.note.NoteProjectionStore;
+import com.brainx.intelligence.shared.domain.DocumentGroups;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,10 +30,25 @@ public class FolderEventHandler implements BrainxEventHandler {
 
     private final ObjectMapper objectMapper;
     private final FolderProjectionStore folderProjectionStore;
+    private final NoteProjectionStore noteProjectionStore;
+    private final NoteSearchIndexPort noteSearchIndexPort;
+    private final NoteChunkManifestStore noteChunkManifestStore;
+    private final NoteSummaryPort noteSummaryPort;
 
-    public FolderEventHandler(ObjectMapper objectMapper, FolderProjectionStore folderProjectionStore) {
+    public FolderEventHandler(
+        ObjectMapper objectMapper,
+        FolderProjectionStore folderProjectionStore,
+        NoteProjectionStore noteProjectionStore,
+        NoteSearchIndexPort noteSearchIndexPort,
+        NoteChunkManifestStore noteChunkManifestStore,
+        NoteSummaryPort noteSummaryPort
+    ) {
         this.objectMapper = objectMapper;
         this.folderProjectionStore = folderProjectionStore;
+        this.noteProjectionStore = noteProjectionStore;
+        this.noteSearchIndexPort = noteSearchIndexPort;
+        this.noteChunkManifestStore = noteChunkManifestStore;
+        this.noteSummaryPort = noteSummaryPort;
     }
 
     @Override
@@ -99,33 +123,77 @@ public class FolderEventHandler implements BrainxEventHandler {
 
     private void handleDeleted(EventProcessingContext context) {
         FolderDeletedPayload payload = readPayload(context, FolderDeletedPayload.class);
-        String folderId = requireText(payload.folderId(), "folderId");
         String userId = requireText(payload.userId(), "userId");
-        String childNoteAction = requireText(payload.childNoteAction(), "childNoteAction");
-        String targetFolderId = normalizeOptionalText(payload.targetFolderId());
+        List<String> folderIds = requireTextList(payload.folderIds(), "folderIds");
+        List<String> noteIds = requireTextList(payload.noteIds(), "noteIds");
+        String mode = requireDeleteMode(payload.mode());
+        String childNoteAction = mode.toUpperCase(Locale.ROOT);
 
-        var existing = folderProjectionStore.findByFolderId(folderId);
-        if (existing.isPresent()
-            && existing.get().sameFolder(existing.get().name(), existing.get().parentFolderId(), existing.get().order(), true, childNoteAction, targetFolderId)) {
-            return;
+        for (String folderId : folderIds) {
+            var existing = folderProjectionStore.findByFolderId(folderId);
+            if (existing.isPresent()
+                && existing.get().sameFolder(existing.get().name(), existing.get().parentFolderId(), existing.get().order(), true, childNoteAction, null)) {
+                continue;
+            }
+
+            FolderProjection projection = existing
+                .map(current -> current.deleted(childNoteAction, null, context.eventId(), context.envelope().occurredAt()))
+                .orElseGet(() -> new FolderProjection(
+                    folderId,
+                    userId,
+                    null,
+                    null,
+                    null,
+                    true,
+                    childNoteAction,
+                    null,
+                    context.eventId(),
+                    context.envelope().occurredAt()
+                ));
+            folderProjectionStore.save(projection);
         }
 
-        FolderProjection projection = existing
-            .map(current -> current.deleted(childNoteAction, targetFolderId, context.eventId(), context.envelope().occurredAt()))
-            .orElseGet(() -> new FolderProjection(
-                folderId,
+        for (String noteId : noteIds) {
+            cleanupNoteDeletedByFolder(userId, noteId, mode, context);
+        }
+        LOGGER.info("Folders deleted: folderIds={}, noteIds={}, userId={}, mode={}", folderIds.size(), noteIds.size(), userId, mode);
+    }
+
+    private void cleanupNoteDeletedByFolder(String userId, String noteId, String mode, EventProcessingContext context) {
+        String documentGroupId = DocumentGroups.DEFAULT_DOCUMENT_GROUP_ID;
+        NoteProjection base = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId(
                 userId,
+                documentGroupId,
+                noteId
+            )
+            .orElseGet(() -> new NoteProjection(
+                userId,
+                documentGroupId,
+                noteId,
+                "",
                 null,
-                null,
+                List.of(),
+                0,
                 null,
                 true,
-                childNoteAction,
-                targetFolderId,
+                false,
+                false,
+                false,
                 context.eventId(),
                 context.envelope().occurredAt()
             ));
-        folderProjectionStore.save(projection);
-        LOGGER.info("Folder deleted: folderId={}, userId={}", folderId, userId);
+
+        NoteProjection updated = "trash".equals(mode)
+            ? base.trashed(context.eventId(), context.envelope().occurredAt())
+            : base.deleted(context.eventId(), context.envelope().occurredAt());
+        noteProjectionStore.save(updated);
+
+        boolean removed = noteSearchIndexPort.deleteByUserIdAndDocumentGroupIdAndNoteId(userId, documentGroupId, noteId);
+        noteChunkManifestStore.deleteByUserIdAndDocumentGroupIdAndNoteId(userId, documentGroupId, noteId);
+        noteSummaryPort.deleteByUserIdAndNoteId(userId, noteId);
+        if (removed) {
+            noteProjectionStore.save(updated.indexRemoved(context.eventId(), context.envelope().occurredAt()));
+        }
     }
 
     private <T> T readPayload(EventProcessingContext context, Class<T> payloadType) {
@@ -150,6 +218,31 @@ public class FolderEventHandler implements BrainxEventHandler {
         return value.trim();
     }
 
+    private static List<String> requireTextList(List<String> values, String name) {
+        if (values == null || values.isEmpty()) {
+            throw EventProcessingException.nonRetryable("INVALID_PAYLOAD", name + " must not be empty.");
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String text = requireText(value, name + "[]");
+            if (!normalized.contains(text)) {
+                normalized.add(text);
+            }
+        }
+        if (normalized.isEmpty()) {
+            throw EventProcessingException.nonRetryable("INVALID_PAYLOAD", name + " must not be empty.");
+        }
+        return List.copyOf(normalized);
+    }
+
+    private static String requireDeleteMode(String mode) {
+        String normalized = requireText(mode, "mode").toLowerCase(Locale.ROOT);
+        if (!"trash".equals(normalized) && !"permanent".equals(normalized)) {
+            throw EventProcessingException.nonRetryable("INVALID_PAYLOAD", "mode must be trash or permanent.");
+        }
+        return normalized;
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     record FolderCreatedPayload(
         String folderId,
@@ -171,10 +264,10 @@ public class FolderEventHandler implements BrainxEventHandler {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record FolderDeletedPayload(
-        String folderId,
         String userId,
-        String childNoteAction,
-        String targetFolderId
+        List<String> folderIds,
+        String mode,
+        List<String> noteIds
     ) {
     }
 }
