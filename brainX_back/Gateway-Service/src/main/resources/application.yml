@@ -85,6 +85,13 @@ spring:
               filters:
                 - RewritePath=/internal/v1/health/ingestion,/actuator/health
 
+            - id: internal-intelligence-health
+              uri: ${INTELLIGENCE_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/internal/v1/health/intelligence
+              filters:
+                - RewritePath=/internal/v1/health/intelligence,/actuator/health
+
             - id: user-service-auth
               uri: ${USER_SERVICE_URL:http://localhost:8080}
               predicates:

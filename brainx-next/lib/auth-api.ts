@@ -80,9 +80,13 @@ type NoteDraftClaimData = {
   notes: ClaimedNoteDraft[];
 };
 
+export type ClaimedNoteIdMapping = { from: string; to: string };
+
 const AUTH_SESSION_KEY = "brainx_auth_session_v1";
 const LAST_SOCIAL_LOGIN_KEY = "brainx_last_social_login_provider_v1";
 const WORKSPACE_SESSION_KEY = "brainx_notes_workspace_v1";
+const PENDING_NOTE_CLAIM_KEY = "brainx_pending_note_claim_v1";
+const OAUTH_RETURN_TO_KEY = "brainx_oauth_return_to_v1";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const WORKSPACE_API_BASE_URL =
   process.env.NEXT_PUBLIC_WORKSPACE_API_BASE_URL ??
@@ -111,7 +115,6 @@ const DEV_AUTH_SESSION: AuthSession = {
   nickname: "BrainX Dev",
   provider: "email",
 };
-
 let clientLocationPromise: Promise<string | null> | null = null;
 
 async function resolveClientLocation() {
@@ -182,9 +185,91 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data as T;
 }
 
-async function claimGuestDraftsAfterAuth(session: AuthSession) {
-  if (!session.accessToken || isDemoSession(session)) return null;
+/** claim 응답의 noteId 매핑(draft id → 승계된 실제 noteId)을 sessionStorage에 잠깐 보관한다.
+    NotesWorkspace는 로그인/회원가입 화면과 별도 라우트라 컴포넌트가 매번 새로 마운트되므로,
+    claim이 끝나는 시점에 살아있는 이벤트 리스너로는 전달할 수 없다 — 다음 마운트(주로 리다이렉트
+    직후) 시점에 resolveActorPersistKey가 이 값을 꺼내 pane tree/tabs의 draft id를 갈아끼운다. */
+function stashPendingNoteClaim(mapping: ClaimedNoteIdMapping[]) {
+  if (typeof window === "undefined") return;
+  if (mapping.length === 0) {
+    window.sessionStorage.removeItem(PENDING_NOTE_CLAIM_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(PENDING_NOTE_CLAIM_KEY, JSON.stringify(mapping));
+}
 
+/** 저장된 매핑을 읽기만 한다(소비하지 않음) — 로그인/온보딩 화면이 redirect 대상 URL의
+    노트 id를 승계된 id로 바꿔 써야 할 때 사용한다. */
+export function peekPendingNoteClaim(): ClaimedNoteIdMapping[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_NOTE_CLAIM_KEY);
+    return raw ? (JSON.parse(raw) as ClaimedNoteIdMapping[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 저장된 매핑을 읽고 지운다 — NotesWorkspace가 실제로 pane tree에 매핑을 적용할 때 한 번만
+    소비한다(이후 재마운트에서 같은 매핑이 중복 적용되지 않도록). */
+export function consumePendingNoteClaim(): ClaimedNoteIdMapping[] {
+  const mapping = peekPendingNoteClaim();
+  if (typeof window !== "undefined") {
+    window.sessionStorage.removeItem(PENDING_NOTE_CLAIM_KEY);
+  }
+  return mapping;
+}
+
+/** returnTo가 `/notes/{id}` 형태면 claim 매핑을 적용해 승계된 noteId로 바꿔준다. claim이
+    있었는데(매핑이 비어있지 않은데) 이 id가 그 안에 없으면(만료/무효) `/notes`로 안전하게
+    내려간다. claim 자체가 없었으면(게스트 draft가 없던 경우 등) returnTo를 그대로 둔다. */
+export function resolveAuthReturnTo(returnTo: string): string {
+  const match = returnTo.match(/^\/notes\/([^/?#]+)(.*)$/);
+  if (!match) return returnTo;
+  const [, noteId, rest] = match;
+  const mapping = peekPendingNoteClaim();
+  const remapped = mapping.find((entry) => entry.from === noteId);
+  if (remapped) return `/notes/${remapped.to}${rest}`;
+  return mapping.length > 0 ? "/notes" : returnTo;
+}
+
+/** 게스트/로그인 화면 어디서든 호출 — 내부 경로(`/`로 시작, `//`는 아님)만 허용해 open redirect를 막는다. */
+export function readReturnToParam(fallback = "/home"): string {
+  if (typeof window === "undefined") return fallback;
+  const value = new URLSearchParams(window.location.search).get("returnTo");
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
+  return value;
+}
+
+/** 로그인/회원가입/온보딩 페이지로 이동하는 링크에 현재 페이지를 returnTo로 실어준다.
+    returnTo가 홈이면(기본값과 같으면) 굳이 쿼리스트링을 붙이지 않는다. */
+export function buildAuthPath(path: string, returnTo?: string | null): string {
+  if (!returnTo || returnTo === "/home") return path;
+  return `${path}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+/** Google 등 OAuth는 외부 제공자로 풀 페이지 이동 후 콜백 페이지로 돌아오므로 returnTo를
+    쿼리스트링이 아니라 sessionStorage에 잠깐 보관해야 살아남는다. */
+export function stashOAuthReturnTo(returnTo: string) {
+  if (typeof window === "undefined") return;
+  if (!returnTo || returnTo === "/home") {
+    window.sessionStorage.removeItem(OAUTH_RETURN_TO_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(OAUTH_RETURN_TO_KEY, returnTo);
+}
+
+export function consumeOAuthReturnTo(): string {
+  if (typeof window === "undefined") return "/home";
+  const value = window.sessionStorage.getItem(OAUTH_RETURN_TO_KEY);
+  window.sessionStorage.removeItem(OAUTH_RETURN_TO_KEY);
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/home";
+}
+
+async function claimGuestDraftsAfterAuth(session: AuthSession) {
+  if (!session.accessToken) return null;
+
+  let claimed: NoteDraftClaimData | null = null;
   try {
     const response = await fetch(`${WORKSPACE_API_BASE_URL}/api/v1/notes/drafts/claim`, {
       method: "POST",
@@ -201,7 +286,8 @@ async function claimGuestDraftsAfterAuth(session: AuthSession) {
       return null;
     }
 
-    return payload.data ?? null;
+    claimed = payload.data ?? null;
+    return claimed;
   } catch (error) {
     console.warn("Guest draft claim request failed after auth.", error);
     return null;
@@ -212,6 +298,11 @@ async function claimGuestDraftsAfterAuth(session: AuthSession) {
     // 시도(성공/스킵/실패 모두) 직후 기존 "brainx:notes-refresh" 이벤트를 재사용해 새 actor
     // 기준으로 노트 목록을 다시 불러오게 한다 — claim이 끝난 뒤에 발생시켜야 방금 승계된
     // 게스트 노트도 이 새로고침에서 바로 보인다(순서가 바뀌면 레이스가 생김).
+    const claimedNoteIds: ClaimedNoteIdMapping[] = claimed?.notes.map((note) => ({
+      from: note.sourceNoteId,
+      to: note.noteId,
+    })) ?? [];
+    stashPendingNoteClaim(claimedNoteIds);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { resetWorkspace: true } }));
     }
@@ -239,6 +330,10 @@ export function saveAuthSession(session: Partial<AuthSession>) {
     window.localStorage.setItem(LAST_SOCIAL_LOGIN_KEY, normalized.provider);
   }
   window.dispatchEvent(new Event("brainx-auth-session-changed"));
+}
+
+export function isDevAuthSession(session: AuthSession | null | undefined) {
+  return session?.accessToken === DEMO_AUTH_SESSION.accessToken;
 }
 
 export function readAuthSession() {
@@ -274,15 +369,6 @@ export function readRecentSocialLoginProvider() {
   if (typeof window === "undefined") return null;
   const value = window.localStorage.getItem(LAST_SOCIAL_LOGIN_KEY);
   return value === "google" || value === "kakao" || value === "naver" ? value : null;
-}
-
-export function startDemoSession() {
-  saveAuthSession({ ...DEMO_AUTH_SESSION, provider: "email" });
-  return DEMO_AUTH_SESSION;
-}
-
-export function isDemoSession(session: AuthSession | null = readAuthSession()) {
-  return session?.accessToken === DEMO_AUTH_SESSION.accessToken || session?.userId === DEMO_AUTH_SESSION.userId;
 }
 
 export async function requestEmailVerification(email: string, purpose: EmailVerificationPurpose) {
@@ -344,10 +430,6 @@ export async function loginLocal(email: string, password: string) {
 
 export async function logout() {
   const session = readAuthSession();
-  if (isDemoSession(session)) {
-    clearAuthSession();
-    return;
-  }
   await request<null>("/api/v1/auth/logout", {
       method: "POST",
       headers: await buildAuthHeaders(),
@@ -358,11 +440,6 @@ export async function logout() {
 
 export async function refreshToken() {
   const session = readAuthSession();
-  if (isDemoSession(session)) {
-    const demoSession = { ...DEMO_AUTH_SESSION, ...session };
-    saveAuthSession(demoSession);
-    return demoSession;
-  }
   const data = await request<AuthSession>("/api/v1/auth/token/refresh", {
       method: "POST",
       headers: await buildAuthHeaders(),

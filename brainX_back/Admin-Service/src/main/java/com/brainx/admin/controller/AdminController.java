@@ -56,8 +56,13 @@ public class AdminController {
     }
 
     @GetMapping("/monitoring/snapshots")
-    public ApiResponse<List<com.brainx.admin.entity.AdminMonitoringSnapshot>> getMonitoringSnapshots() {
+    public ApiResponse<List<AdminMonitoringSnapshotData>> getMonitoringSnapshots() {
         return ApiResponse.success(adminService.getMonitoringSnapshots());
+    }
+
+    @GetMapping("/monitoring/kafka-lag")
+    public ApiResponse<AdminKafkaLagData> getKafkaLag() {
+        return ApiResponse.success(adminService.getKafkaLag());
     }
 
     @DeleteMapping("/monitoring/snapshots/{id}")
@@ -67,7 +72,7 @@ public class AdminController {
     }
 
     @GetMapping("/monitoring/health")
-    public ApiResponse<List<com.brainx.admin.entity.AdminServiceHealthSnapshot>> getHealthSnapshots() {
+    public ApiResponse<List<AdminServiceHealthSnapshotData>> getHealthSnapshots() {
         return ApiResponse.success(adminService.getHealthSnapshots());
     }
 

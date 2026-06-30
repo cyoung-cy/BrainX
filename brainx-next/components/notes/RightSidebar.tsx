@@ -370,6 +370,8 @@ interface Props {
   onAiRequestHandled?: () => void;
   activeEditor?: NoteEditorHandle | null;
   activeEditorMode?: EditMode;
+  /** 목차 항목 클릭 → 현재 활성 패널의 에디터를 해당 heading으로 스크롤(NotesWorkspace.tsx). */
+  onHeadingSelect?: (index: number) => void;
 }
 
 export default function RightSidebar({
@@ -380,6 +382,7 @@ export default function RightSidebar({
   onAiRequestHandled,
   activeEditor,
   activeEditorMode = "edit",
+  onHeadingSelect,
 }: Props) {
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
@@ -803,7 +806,13 @@ export default function RightSidebar({
                   key={h.id}
                   heading={h}
                   isActive={activeTocId === h.id}
-                  onClick={() => setActiveTocId(h.id === activeTocId ? null : h.id)}
+                  onClick={() => {
+                    setActiveTocId(h.id);
+                    // heading.id는 parseHeadings가 문서 순서대로 매긴 "h-{index}" 형식이라
+                    // 그 숫자를 그대로 에디터 쪽 heading 인덱스로 재사용할 수 있다.
+                    const index = Number(h.id.slice(2));
+                    if (Number.isFinite(index)) onHeadingSelect?.(index);
+                  }}
                 />
               ))}
             </div>

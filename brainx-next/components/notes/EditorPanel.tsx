@@ -27,6 +27,7 @@ interface Props {
   dragPayload: DragPayload | null;
   mode: EditMode;
   saveSignal: number;
+  scrollToHeadingSignal: { nonce: number; index: number } | null;
   onModeChange: (tabId: string, mode: EditMode) => void;
   onActivate: () => void;
   onDrop: (zone: DropZone, noteId: string) => void;
@@ -71,6 +72,7 @@ export default function EditorPanel({
   dragPayload,
   mode,
   saveSignal,
+  scrollToHeadingSignal,
   onModeChange,
   onActivate,
   onDrop,
@@ -192,6 +194,18 @@ export default function EditorPanel({
     editorRef.current?.flushPendingSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveSignal]);
+
+  // 우측 목차(RightSidebar) 클릭 — 모든 패널에 같은 신호가 전달되지만, "현재 활성 패널"만
+  // 실제로 스크롤한다(Split View에서 클릭하지 않은 패널이 멋대로 움직이면 안 됨). saveSignal과
+  // 동일한 nonce 비교 패턴.
+  const prevScrollSignalRef = useRef(scrollToHeadingSignal?.nonce);
+  useEffect(() => {
+    if (!scrollToHeadingSignal || scrollToHeadingSignal.nonce === prevScrollSignalRef.current) return;
+    prevScrollSignalRef.current = scrollToHeadingSignal.nonce;
+    if (!isActive) return;
+    editorRef.current?.scrollToHeading(scrollToHeadingSignal.index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToHeadingSignal]);
 
   // 제목 입력창 포커스
   useEffect(() => {

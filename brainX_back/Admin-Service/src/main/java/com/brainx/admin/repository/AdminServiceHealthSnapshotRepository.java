@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface AdminServiceHealthSnapshotRepository extends JpaRepository<AdminServiceHealthSnapshot, String> {
     List<AdminServiceHealthSnapshot> findTop20ByOrderByCapturedAtDesc();
+    List<AdminServiceHealthSnapshot> findTop20ByServiceNameOrderByCapturedAtDesc(String serviceName);
 }

@@ -22,6 +22,7 @@ interface Props {
   paneTabs: Record<string, PaneTabsState>;
   quickSwitcher: QuickSwitcherTarget | null;
   saveSignal: number;
+  scrollToHeadingSignal: { nonce: number; index: number } | null;
   onActivate: (id: string) => void;
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
@@ -62,6 +63,7 @@ export default function PaneTreeRenderer({
   paneTabs,
   quickSwitcher,
   saveSignal,
+  scrollToHeadingSignal,
   onActivate,
   onDrop,
   onTitleChange,
@@ -120,6 +122,7 @@ export default function PaneTreeRenderer({
         dragPayload={dragPayload}
         mode={tabMode[activeTabId] ?? "edit"}
         saveSignal={saveSignal}
+        scrollToHeadingSignal={scrollToHeadingSignal}
         onModeChange={onModeChange}
         onActivate={() => onActivate(node.id)}
         onDrop={(zone, noteId) => onDrop(node.id, zone, noteId)}
@@ -173,6 +176,7 @@ export default function PaneTreeRenderer({
               paneTabs={paneTabs}
               quickSwitcher={quickSwitcher}
               saveSignal={saveSignal}
+              scrollToHeadingSignal={scrollToHeadingSignal}
               onActivate={onActivate}
               onDrop={onDrop}
               onTitleChange={onTitleChange}

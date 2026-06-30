@@ -11,14 +11,22 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/internal/v1/users")
 @RequiredArgsConstructor
 public class InternalUserController {
+    private static final ZoneId MONITORING_ZONE = ZoneId.of("Asia/Seoul");
+    private static final int DEFAULT_TREND_DAYS = 14;
+    private static final int MAX_TREND_DAYS = 31;
 
     private final UserRepository userRepository;
     private final UserLoginSessionService userLoginSessionService;
@@ -53,6 +61,55 @@ public class InternalUserController {
                 .map(LoginSessionDto::from)
                 .toList();
         return ResponseEntity.ok(sessions);
+    }
+
+    @GetMapping("/growth-summary")
+    public ResponseEntity<UserGrowthSummaryDto> getUserGrowthSummary(
+            @RequestParam(defaultValue = "14") Integer days
+    ) {
+        int normalizedDays = normalizeTrendDays(days);
+        LocalDate today = LocalDate.now(MONITORING_ZONE);
+        LocalDate startDate = today.minusDays(normalizedDays - 1L);
+
+        List<User> users = userRepository.findAll();
+        users.forEach(userService::normalizeExpiredSuspension);
+
+        List<User> activeUsers = users.stream()
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .toList();
+
+        Map<LocalDate, Set<String>> activeUsersByDay = new LinkedHashMap<>();
+        for (int i = 0; i < normalizedDays; i++) {
+            activeUsersByDay.put(startDate.plusDays(i), new LinkedHashSet<>());
+        }
+
+        for (User user : activeUsers) {
+            Set<LocalDate> userActiveDates = userLoginSessionService.listSessions(user.getUserId()).stream()
+                    .map(UserLoginSessionService.LoginSessionSnapshot::lastSeenAt)
+                    .filter(lastSeenAt -> lastSeenAt != null)
+                    .map(lastSeenAt -> lastSeenAt.atZone(MONITORING_ZONE).toLocalDate())
+                    .filter(activeDate -> !activeDate.isBefore(startDate) && !activeDate.isAfter(today))
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            for (LocalDate activeDate : userActiveDates) {
+                activeUsersByDay.get(activeDate).add(user.getUserId());
+            }
+        }
+
+        List<Integer> values = activeUsersByDay.values().stream()
+                .map(Set::size)
+                .toList();
+
+        return ResponseEntity.ok(new UserGrowthSummaryDto(
+                activeUsers.size(),
+                new TrendSeriesDto(
+                        "dailyActiveUsers",
+                        values,
+                        "최근 " + normalizedDays + "일 일별 활성 사용자",
+                        normalizedDays,
+                        MONITORING_ZONE.getId(),
+                        "User-Service"
+                )
+        ));
     }
 
     @PatchMapping("/{userId}/status")
@@ -204,5 +261,26 @@ public class InternalUserController {
                     snapshot.current()
             );
         }
+    }
+
+    public record TrendSeriesDto(
+            String metric,
+            List<Integer> values,
+            String periodLabel,
+            int pointCount,
+            String timezone,
+            String source
+    ) {}
+
+    public record UserGrowthSummaryDto(
+            int activeUsers,
+            TrendSeriesDto trend
+    ) {}
+
+    private int normalizeTrendDays(Integer days) {
+        if (days == null) {
+            return DEFAULT_TREND_DAYS;
+        }
+        return Math.max(1, Math.min(MAX_TREND_DAYS, days));
     }
 }
