@@ -186,6 +186,167 @@ aws ssm put-parameter --name /brainx/dev/SEED_ADMIN_NAME --type SecureString --v
 
 The RDS master username/password is generated and stored by AWS Secrets Manager through `manage_master_user_password`; do not copy it into GitHub secrets.
 
+## Runtime Environment Operations
+
+AWS dev runtime values are split by responsibility:
+
+- GitHub repository variables hold deploy infrastructure values used by `.github/workflows/brainx-dev-deploy.yml`, such as region, ECR registry, EC2 instance id, public URLs, and the SSM parameter prefix.
+- AWS SSM Parameter Store holds application runtime secrets and service configuration values under `/brainx/dev/*`.
+- `infra/aws-dev/scripts/deploy_remote.sh` reads SSM and RDS Secrets Manager, writes `/opt/brainx/env/runtime.env` on EC2, then runs Docker Compose with `--env-file`.
+- `infra/aws-dev/deploy/docker-compose.yml` decides which runtime env keys are actually passed into each container.
+
+### Reset An Existing SSM Value
+
+Use `--overwrite` to replace a value. Use `SecureString` unless the value is intentionally public.
+
+```powershell
+aws ssm put-parameter `
+  --region ap-northeast-2 `
+  --name /brainx/dev/OPENAI_API_KEY `
+  --type SecureString `
+  --value "<new value>" `
+  --overwrite
+```
+
+Verify that the parameter exists. Avoid printing decrypted secrets into shared terminals, screenshots, or issue comments.
+
+```powershell
+aws ssm get-parameter `
+  --region ap-northeast-2 `
+  --name /brainx/dev/OPENAI_API_KEY
+```
+
+An SSM-only change is not applied to running containers until the deploy workflow runs again. Use GitHub Actions `BrainX Dev Deploy` with `workflow_dispatch` and either `deploy_all=true` or `services` set to the affected service, for example:
+
+```text
+services: intelligence-service
+```
+
+### Add A Backend Runtime Env Variable
+
+For a new backend env var, update every layer that consumes or transports the value.
+
+1. Add the application-side env lookup in the target service, for example `application.yml` or `application.yaml`.
+
+```yaml
+brainx:
+  feature:
+    enabled: ${BRAINX_FEATURE_ENABLED:false}
+```
+
+2. Teach `deploy_remote.sh` to read the SSM parameter and write it to `runtime.env`.
+
+```bash
+BRAINX_FEATURE_ENABLED="$(get_parameter BRAINX_FEATURE_ENABLED false)"
+...
+write_env BRAINX_FEATURE_ENABLED "$BRAINX_FEATURE_ENABLED"
+```
+
+3. Pass the value into the target container in `infra/aws-dev/deploy/docker-compose.yml`.
+
+```yaml
+environment:
+  BRAINX_FEATURE_ENABLED: ${BRAINX_FEATURE_ENABLED:-false}
+```
+
+4. Register the value in SSM.
+
+```powershell
+aws ssm put-parameter `
+  --region ap-northeast-2 `
+  --name /brainx/dev/BRAINX_FEATURE_ENABLED `
+  --type SecureString `
+  --value "true" `
+  --overwrite
+```
+
+5. Document the parameter in this README when it is team-operated. Then run the deploy workflow for the affected service, or merge the code/config change to `main` and let the workflow detect it.
+
+Local checks before merging infra transport changes:
+
+```powershell
+docker compose -f infra/aws-dev/deploy/docker-compose.yml config --quiet
+bash -n infra/aws-dev/scripts/deploy_remote.sh
+git diff --check
+```
+
+### Add A Frontend `NEXT_PUBLIC_*` Value
+
+`NEXT_PUBLIC_*` values are public browser bundle values. Do not put secrets in them. In Next.js, these values are normally fixed at image build time, so SSM runtime changes alone are not enough.
+
+To add a new public frontend value:
+
+1. Add `ARG` and `ENV` in `infra/aws-dev/dockerfiles/brainx-next.Dockerfile`.
+
+```dockerfile
+ARG NEXT_PUBLIC_FEATURE_FLAG=false
+ENV NEXT_PUBLIC_FEATURE_FLAG=$NEXT_PUBLIC_FEATURE_FLAG
+```
+
+2. Add a frontend build arg in `.github/workflows/brainx-dev-deploy.yml`.
+
+```bash
+--build-arg "NEXT_PUBLIC_FEATURE_FLAG=false"
+```
+
+3. Add the key to `infra/aws-dev/deploy/docker-compose.yml` only when the server process also needs to read it at runtime.
+
+4. Rebuild the `frontend` image. A container restart without image rebuild will not change already-built client code.
+
+### Add Or Reset A GitHub Repository Variable
+
+Use GitHub repository variables for deploy infrastructure and non-secret build configuration that the workflow needs before it reaches EC2.
+
+```powershell
+gh variable set AWS_DEV_PUBLIC_BASE_URL --body "https://brainx.p-e.kr"
+```
+
+Do not store app API keys or passwords in GitHub repository variables for this deployment path. Use SSM Parameter Store instead.
+
+### Team Access For SSM Env Management
+
+Do not share one IAM user or one access key across teammates. If AWS Organizations/IAM Identity Center is not available, create one IAM user per person, enable MFA, and attach a minimum-scope policy such as:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageBrainxDevSsmParameters",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:DescribeParameters",
+        "ssm:PutParameter"
+      ],
+      "Resource": "arn:aws:ssm:ap-northeast-2:<AWS_ACCOUNT_ID>:parameter/brainx/dev/*"
+    }
+  ]
+}
+```
+
+Keep `ssm:DeleteParameter` out of the normal teammate policy. Delete operations should stay with an administrator.
+
+For CLI setup, each teammate should configure their own profile:
+
+```powershell
+aws configure --profile brainx-dev
+```
+
+Then use that profile for SSM updates:
+
+```powershell
+aws ssm put-parameter `
+  --profile brainx-dev `
+  --region ap-northeast-2 `
+  --name /brainx/dev/OPENAI_API_KEY `
+  --type SecureString `
+  --value "<new value>" `
+  --overwrite
+```
+
 ## CI/CD Behavior
 
 Workflow: `.github/workflows/brainx-dev-deploy.yml`
