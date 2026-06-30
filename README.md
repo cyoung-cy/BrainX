@@ -56,6 +56,7 @@ BrainX/
 │  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
 │  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
 ├─ contracts-v2/          # OpenAPI/AsyncAPI SSOT 계약 문서
+├─ infra/aws-dev/         # AWS 개발환경 Terraform + GitHub Actions 배포 구성
 └─ BrainX-Design/         # Next.js + iframe 기반 디자인 프로토타입 (포트 3000)
                           # Notion 가져오기 UI 구현됨 (BrainX-Design 전용, brainx-next와 별도)
 ```
@@ -122,7 +123,7 @@ BrainX/
 
 - `lib/auth-api.ts`: 이메일 인증, 회원가입, 로그인, 로그아웃, 토큰 갱신, OAuth, 온보딩
 - `lib/support-api.ts`: 문의 목록/생성/상세 조회
-- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API
+- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API, 관리자 공지 알림함 조회/읽음 처리
 - `lib/ingestion-api.ts`: Notion OAuth 연결/콜백, 페이지 목록 조회, 가져오기 작업 생성/상태 조회
 - `lib/workspace-api.ts`: 노트 단건 조회 (Notion 가져오기 결과를 노트 데모에 반영하는 용도)
 - `lib/commerce-api.ts`: 플랜 목록/내 구독 조회, 결제 체크아웃 세션 생성, Toss 결제 승인 confirm, 구독 변경/취소
@@ -419,7 +420,9 @@ User-Service의 Redis 역할은 다음과 같습니다.
 - 관리자 상세 조회용 실제 로그인 세션, IP, 기기, 위치 이력 제공
 - Redis 장애나 세션 이력 파싱 실패가 나더라도 auth 응답은 막지 않고, 이력 기록만 건너뜁니다.
 
-관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다.
+관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다. 실제 로그인 기록이 없으면 가짜 데이터로 채우지 않고 빈 목록을 그대로 반환합니다.
+
+사용자 상세의 메모 수/저장량/최근 활동은 `Admin-Service`가 `Workspace-Service`의 내부 API `GET /internal/v1/workspace/users/{userId}/stats`를 호출해 실데이터로 채웁니다(Gateway 라우트: `/internal/v1/workspace/**` → `WORKSPACE_SERVICE_URL`).
 
 ### Backend: Ingestion-Service (포트 8083)
 
@@ -473,21 +476,23 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 
 `BrainX-Admin/brainx-admin-next`가 실제 데이터로 동작하기 위한 관리자 API는 `contracts-v2/brainx-openapi.ssot.yaml`의 `/api/v1/admin/**`로 확정합니다. Admin-Service는 관리자 화면 전용 read model/orchestration layer이며, 원장 데이터는 각 소유 서비스가 유지합니다.
 
+현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다.
+
 | 화면 | Method | Path | 소유 데이터/연동 |
 | --- | --- | --- | --- |
 | 모니터링 | GET | `/api/v1/admin/dashboard/overview` | Gateway/User/Commerce 상태와 KPI 집계 |
 | 사용자 목록 | GET | `/api/v1/admin/users` | User-Service 계정 + Workspace note/storage + Commerce plan |
 | 사용자 상세 | GET | `/api/v1/admin/users/{userId}` | 프로필, 플랜, 로그인 세션, 활동 이력 |
 | 플랜 변경 | PATCH | `/api/v1/admin/users/{userId}/plan` | Commerce-Service 구독 변경, `SubscriptionChanged` |
-| 계정 상태 | PATCH | `/api/v1/admin/users/{userId}/status` | User-Service 상태 변경 |
+| 계정 상태 | PATCH | `/api/v1/admin/users/{userId}/status` | User-Service 상태 변경, 정지 사유/정지 일수 반영 |
 | 탈퇴 처리 | POST | `/api/v1/admin/users/{userId}/withdrawal` | User-Service 삭제 요청, `UserDeletionRequested` |
 | 일괄 처리 | POST | `/api/v1/admin/users/bulk-actions` | 플랜 변경/정지/재활성화/탈퇴/공지 |
 | 문의 목록 | GET | `/api/v1/admin/support/tickets` | 관리자 문의 목록 |
 | 문의 상세/배정 | GET/PATCH | `/api/v1/admin/support/tickets/{ticketId}` | 담당자/상태 변경, `SupportTicketUpdated` |
 | 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 로그인 관리자 이름으로 답변 등록, 사용자 문의 상세의 ADMIN 메시지로 표시 |
 | 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 이번 달 매출/활성 유료 구독/MRR/실패 건 집계 |
-| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 간편결제/신용카드/체크카드 결제수단 |
-| 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded` |
+| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 사용자 선택 결제수단(카카오페이, 토스페이, 신용카드, 체크카드 등) |
+| 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded`. `amount`/`reason`을 받아 Toss 환불을 호출하고 환불 완료 메일을 사용자에게 발송 |
 | 결제 재시도 | POST | `/api/v1/admin/billing/payments/{paymentId}/retry` | Commerce 결제 재시도, `PaymentSucceeded`/`PaymentFailed` |
 | 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장. 무료 플랜은 제외하고 유료 구독만 표시 |
 | 결제 실패 추적 | GET | `/api/v1/admin/billing/payment-failures` | Commerce 실패 사유/재시도 횟수 |
@@ -495,6 +500,12 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 요금제 가격 | PATCH | `/api/v1/admin/billing/plans/{planId}` | Commerce 플랜 가격 변경, `PlanPriceChanged` |
 | 관리자 프로필 | GET/PATCH | `/api/v1/admin/me`, `/api/v1/admin/me/profile` | 관리자 본인 정보 |
 | 관리자 비밀번호 | PATCH | `/api/v1/admin/me/password` | User-Service credential 변경, `PasswordChanged` |
+| 관리자 목록 | GET | `/api/v1/admin/admin-accounts` | 모든 관리자(owner 포함) 조회 가능, 모니터링 화면 관리자 목록에서 사용 |
+| 관리자 추가/수정/삭제 | POST/PATCH/DELETE | `/api/v1/admin/admin-accounts`, `/api/v1/admin/admin-accounts/{adminId}` | 최고관리자(owner)만 호출 가능 |
+
+사용자 알림함은 `brainx-next` 상단 종 아이콘과 연결되며, 관리자 `SEND_NOTICE` 일괄 액션이 실행되면 `GET /api/v1/users/me/notifications`, `POST /api/v1/users/me/notifications/{notificationId}/read`로 확인할 수 있습니다.
+
+관리자 목록 조회(GET)는 모든 관리자에게 열려 있지만, 계정 생성/수정/삭제는 owner 역할만 가능합니다. 최고관리자가 아닌 관리자는 관리자 관리 화면 자체에 진입할 수 없습니다(사이드바 메뉴 비노출 + 화면 가드).
 
 AsyncAPI에는 Admin 화면에서 새로 필요한 `PaymentRefunded`, `PlanPriceChanged`, `SupportTicketUpdated` 이벤트를 추가했습니다. 결제/플랜 이벤트는 Commerce-Service가 발행하고, 문의 상태 변경 이벤트는 Admin-Service가 발행합니다.
 
@@ -632,6 +643,7 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
     - 수정(`lib/auth-api.ts`): `DEMO_AUTH_SESSION`/`startDemoSession`/`isDemoSession`과 그 사용처(`claimGuestDraftsAfterAuth`, `logout`, `refreshToken`)를 제거했습니다. 이제 비회원은 어떤 `AuthSession`도 생성하지 않습니다.
     - 수정(`components/public/landing-screen.tsx`): "무료로 시작하기"/"둘러보기"가 `startDemoSession()` 없이 그냥 `/home`으로 이동하도록 변경(`enterGuestMode`). `/notes`로 이동해도 동일하게 동작합니다. 최초 진입 시 Gateway가 `brainx_guest_id` 쿠키 + `X-Guest-Id` 헤더를 발급하고, `lib/workspace-api.ts`의 `authedRequest`는 `session?.accessToken`이 없으면 `Authorization` 헤더 없이 `credentials: "include"`로만 호출하므로(기존 코드, 변경 없음) Workspace-Service가 GUEST actor로 노트/폴더 CRUD를 처리합니다. 회원가입/로그인 후 `claimGuestDraftsAfterAuth`(`/api/v1/notes/drafts/claim`) 호출과 actor별 localStorage 분리(`components/notes/NotesWorkspace.tsx`의 `resolveActorPersistKey`)는 그대로 동작합니다 — 오히려 가짜 데모 세션이 `userId: "usr_demo"`를 들고 있어 `:user:usr_demo` 키로 잘못 분리되던 문제가 이번 수정으로 함께 해소됩니다.
     - 수정(`components/workspace-shell.tsx`): 상단 프로필 버튼이 `session?.accessToken`이 없으면(Guest) "게스트"/"체험 중"을 표시하고 클릭 시 `AccountSettingsModal`을 열지 않는 대신 "체험 모드 사용 중 / 가입하면 노트가 계정에 저장됩니다" 안내와 회원가입·로그인 메뉴가 있는 드롭다운을 띕니다(opaque `bg-surface`, blur 없음). 로그인 사용자는 기존 프로필 UI/마이페이지 동작을 그대로 유지합니다. `/mypage` 직접 진입 시에도 세션이 없으면 설정 모달을 열지 않고 `/home`으로만 돌려보냅니다.
+    - 수정(`components/workspace-shell.tsx`, `lib/user-api.ts`): 상단 우측 액션 영역을 `알림 -> 프로필` 순서로 분리하고, 알림 패널과 Guest 프로필 드롭다운은 동시에 열리지 않게 상호 배타적으로 제어합니다. Guest도 무료 기능 안내/회원가입 유도 공지를 받을 수 있으므로 알림 버튼은 계속 노출합니다. `lib/user-api.ts`는 기본적으로 실제 API를 호출하되, 개발자가 `NEXT_PUBLIC_USER_USE_MOCK=true`를 설정하면 사용자/알림 API mock 응답을 켤 수 있게 했습니다.
     - 수정(`lib/commerce-api.ts`, `lib/ingestion-api.ts`, `lib/user-api.ts`, `lib/support-api.ts`, `components/utility/account-settings-modal.tsx`, `components/utility/import-screen.tsx`, `components/notes/NotesWorkspace.tsx`): 데모 세션에서만 타던 가짜 응답 분기(`demoCommerceResponse`/`isCommerceDemoSession`/`changeSubscriptionDemo`/`demoIngestionResponse`/`isNotionDemoSession`/`connectNotionDemo`/`demoUserResponse`/`demoProfile`/`demoSupportResponse`)를 모두 제거하고 항상 실제 API를 호출하도록 정리했습니다. Notion 가져오기·내보내기·결제 플랜 변경은 더 이상 가짜 데모 경로가 없으며, 로그인하지 않은 상태에서 이 기능들을 쓰면 백엔드가 정상적으로 인증 실패를 돌려줍니다(원래도 실제 계정 없이는 쓸 수 없는 기능들).
     - Google OAuth 로그인 흐름(`/oauth/[provider]/callback`, `completeOAuthLogin`)은 건드리지 않았습니다.
     - 직접 확인: `http://localhost:3000` → "무료로 시작하기" → `/home`(로그인 없음) → `/notes`에서 노트/폴더 생성 → 새로고침 후 유지 → 우측 상단 "게스트" 드롭다운에서 회원가입/로그인 → guest 노트가 새 계정으로 승계되는지 확인.
@@ -647,7 +659,7 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
     - `WorkspaceDemoDataSeeder`(`dev-test-user` 시드 데이터)는 이번 범위에서 수정하지 않았습니다 — `dev-fallback-enabled` 기본 `false`로 인해 그 데이터는 어떤 실제 Guest/User 흐름과도 연결되지 않는 고아 데이터로 남아 있습니다(별도 작업 권장).
 - **Commerce-Service (신규, 2026-06-19 추가)**:
   - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
-  - **(2026-06-28 수정)** Toss confirm 성공 응답의 `method`, `card.cardType`, `easyPay.provider`를 저장해 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `간편결제`, `신용카드`, `체크카드` 계열로 표시합니다. Admin-Service 사용자 목록의 플랜은 Commerce 활성 구독을 우선하고 성공 결제 이력으로 보정합니다.
+  - **(2026-06-29 수정)** Toss confirm/취소 응답을 기준으로 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `카카오페이`, `토스페이`, `신용카드`, `체크카드` 같은 실제 결제수단으로 표시하고, 관리자 환불 API는 `amount`/`reason`을 Commerce 내부 환불 호출에 전달한 뒤 사용자에게 환불 완료 메일을 발송합니다.
   - **(2026-06-28 수정)** 관리자 결제 관리의 구독 현황은 유료 구독만 표시하고, 사용자 표시는 시스템 문자열이 아니라 사람 이름으로 읽히는 표시명만 노출하도록 정리했습니다.
   - **(2026-06-28 수정)** 관리자 문의 답변은 로그인 관리자 이름으로 User-Service에 저장되며, 관리자 콘솔에는 "관리자명에 의해 답변 완료"와 답변 본문이 표시되고 사용자 마이페이지 문의 상세에는 ADMIN 메시지로 표시됩니다.
   - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.

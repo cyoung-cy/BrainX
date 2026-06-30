@@ -33,9 +33,26 @@ export type ConsentPayload = {
   behaviorAnalyticsOptional: boolean;
 };
 
+export type MyNotification = {
+  notificationId: string;
+  type: string;
+  title: string;
+  body: string;
+  sentByAdminName: string | null;
+  read: boolean;
+  createdAt: string;
+  readAt: string | null;
+};
+
+export type MyNotificationsResponse = {
+  notifications: MyNotification[];
+  unreadCount: number;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const LANGUAGE_KEY = "brainx_language_v1";
 const THEME_KEY = "brainx_theme_v1";
+const USE_MOCK_USER_API = process.env.NEXT_PUBLIC_USER_USE_MOCK === "true";
 
 export class AuthRequiredError extends Error {
   constructor(message = "로그인이 만료되었습니다. 다시 로그인해 주세요.") {
@@ -60,6 +77,10 @@ function readStoredTheme(): ThemeMode {
 }
 
 async function authedRequest<T>(path: string, init?: RequestInit) {
+  if (USE_MOCK_USER_API) {
+    return demoUserResponse<T>(path, init);
+  }
+
   const session = readAuthSession();
   if (!session?.accessToken) {
     throw new AuthRequiredError("로그인이 필요합니다.");
@@ -88,6 +109,125 @@ async function authedRequest<T>(path: string, init?: RequestInit) {
   return payload.data as T;
 }
 
+function parseBody<T>(init?: RequestInit): Partial<T> {
+  if (!init?.body || typeof init.body !== "string") return {};
+  try {
+    return JSON.parse(init.body) as Partial<T>;
+  } catch {
+    return {};
+  }
+}
+
+function demoProfile(): MyProfile {
+  const session = readAuthSession();
+  return {
+    userId: session?.userId ?? "usr_demo",
+    email: session?.email ?? "demo@brainx.local",
+    nickname: session?.nickname ?? "BrainX Demo",
+    profileImageUrl: session?.profileImageUrl ?? null,
+    language: readStoredLanguage(),
+    theme: readStoredTheme(),
+    role: session?.role ?? "ROLE_USER",
+    security: {
+      twoFactorEnabled: false,
+      linkedProviders: ["google"],
+      hasPassword: true
+    },
+    consents: {
+      termsRequired: true,
+      privacyRequired: true,
+      marketingOptional: true,
+      behaviorAnalyticsOptional: true,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
+function demoUserResponse<T>(path: string, init?: RequestInit): T {
+  const method = init?.method?.toUpperCase() ?? "GET";
+
+  if (path === "/api/v1/users/me" && method === "GET") {
+    return demoProfile() as T;
+  }
+
+  if (path === "/api/v1/users/me/profile" && method === "PATCH") {
+    const payload = parseBody<{ nickname?: string; language?: LanguageCode; theme?: ThemeMode }>(init);
+    const current = demoProfile();
+    const updated = {
+      userId: current.userId,
+      nickname: payload.nickname ?? current.nickname,
+      profileImageUrl: current.profileImageUrl,
+      language: payload.language ?? current.language,
+      theme: payload.theme ?? current.theme
+    };
+    saveAuthSession({ ...(readAuthSession() ?? {}), nickname: updated.nickname, profileImageUrl: updated.profileImageUrl });
+    return updated as T;
+  }
+
+  if (path === "/api/v1/users/me/password" && method === "PATCH") {
+    return null as T;
+  }
+
+  if (path === "/api/v1/users/me/2fa/email" && method === "POST") {
+    return { verificationId: "demo-verification" } as T;
+  }
+
+  if (path === "/api/v1/users/me/social-accounts" && method === "POST") {
+    const payload = parseBody<{ provider?: string }>(init);
+    return { provider: payload.provider ?? "google", linked: true } as T;
+  }
+
+  if (path.startsWith("/api/v1/users/me/social-accounts/") && method === "DELETE") {
+    return { provider: path.split("/").pop() ?? "google", linked: false } as T;
+  }
+
+  if (path === "/api/v1/users/me/consents" && method === "PUT") {
+    return { ...parseBody<ConsentPayload>(init), updatedAt: new Date().toISOString() } as T;
+  }
+
+  if (path === "/api/v1/users/me/deletion-request" && method === "POST") {
+    const deletionScheduledAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    return { deletionScheduledAt } as T;
+  }
+
+  if (path === "/api/v1/users/me/deletion-request" && method === "DELETE") {
+    return null as T;
+  }
+
+  if (path === "/api/v1/users/me/notifications" && method === "GET") {
+    return {
+      notifications: [
+        {
+          notificationId: "ntf_demo_1",
+          type: "ADMIN_NOTICE",
+          title: "[일반] BrainX 안내",
+          body: "새 공지가 도착하면 이 알림함에서 확인할 수 있습니다.",
+          sentByAdminName: "BrainX Admin",
+          read: false,
+          createdAt: new Date().toISOString(),
+          readAt: null
+        }
+      ],
+      unreadCount: 1
+    } as T;
+  }
+
+  if (path.startsWith("/api/v1/users/me/notifications/") && path.endsWith("/read") && method === "POST") {
+    const notificationId = path.split("/")[5] ?? "ntf_demo_1";
+    return {
+      notificationId,
+      type: "ADMIN_NOTICE",
+      title: "[일반] BrainX 안내",
+      body: "새 공지가 도착하면 이 알림함에서 확인할 수 있습니다.",
+      sentByAdminName: "BrainX Admin",
+      read: true,
+      createdAt: new Date().toISOString(),
+      readAt: new Date().toISOString()
+    } as T;
+  }
+
+  throw new Error("데모 모드에서 지원하지 않는 사용자 API입니다.");
+}
 export async function getMyProfile() {
   const data = await authedRequest<MyProfile | IdentityProfileResponse>("/api/v1/users/me");
   return normalizeProfile(data);
@@ -164,6 +304,16 @@ export async function requestAccountDeletion(reason: string) {
   return authedRequest<{ deletionScheduledAt: string }>("/api/v1/users/me/deletion-request", {
     method: "POST",
     body: JSON.stringify({ reason })
+  });
+}
+
+export async function getMyNotifications() {
+  return authedRequest<MyNotificationsResponse>("/api/v1/users/me/notifications");
+}
+
+export async function markMyNotificationRead(notificationId: string) {
+  return authedRequest<MyNotification>(`/api/v1/users/me/notifications/${notificationId}/read`, {
+    method: "POST"
   });
 }
 
