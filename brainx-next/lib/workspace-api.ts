@@ -45,6 +45,23 @@ export type NoteCreated = {
   createdAt: string;
 };
 
+export type WorkspaceNoteLinkCreateRequest = {
+  targetNoteId?: string | null;
+  targetTitle: string;
+  createIfMissing: boolean;
+  anchorText?: string | null;
+  headingAnchor?: string | null;
+};
+
+export type WorkspaceNoteLinkData = {
+  linkId: string;
+  sourceNoteId: string;
+  targetNoteId: string;
+  targetTitle: string;
+  anchorText?: string | null;
+  headingAnchor?: string | null;
+};
+
 export type NoteSaveResult = {
   noteId: string;
   version: number;
@@ -195,6 +212,13 @@ export async function createWorkspaceNote(note: MockNote) {
       folderId: note.folderId ?? null,
       tags: note.tags
     })
+  });
+}
+
+export async function createWorkspaceNoteLink(sourceNoteId: string, request: WorkspaceNoteLinkCreateRequest) {
+  return authedRequest<WorkspaceNoteLinkData>(`/api/v1/notes/${encodeURIComponent(sourceNoteId)}/links`, {
+    method: "POST",
+    body: JSON.stringify(request)
   });
 }
 
