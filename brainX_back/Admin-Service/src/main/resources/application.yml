@@ -8,6 +8,8 @@ spring:
       - optional:file:../env/admin-service.env[.properties]
   application:
     name: Admin-Service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}}
   datasource:
     url: ${DB_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${ADMIN_DB_NAME:brainx_admin}}
     username: ${POSTGRES_USER:postgres}
@@ -54,6 +56,10 @@ brainx:
     commerce-health-url: ${COMMERCE_HEALTH_URL:${brainx.services.gateway-service-url}/internal/v1/health/commerce}
     workspace-health-url: ${WORKSPACE_HEALTH_URL:${brainx.services.gateway-service-url}/internal/v1/health/workspace}
     ingestion-health-url: ${INGESTION_HEALTH_URL:${brainx.services.gateway-service-url}/internal/v1/health/ingestion}
+    intelligence-health-url: ${INTELLIGENCE_HEALTH_URL:${brainx.services.gateway-service-url}/internal/v1/health/intelligence}
+  kafka:
+    monitoring:
+      consumer-group-id: ${BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID:intelligence-service}
 
 management:
   endpoints:

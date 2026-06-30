@@ -1,6 +1,6 @@
 "use client";
 
-import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 import { CLUSTERS, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
 import type { NoteDraftData } from "@/lib/workspace-api";
 
@@ -45,13 +45,15 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function workspaceRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDemoSession(session);
+  const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
   const response = await fetch(`${WORKSPACE_API_BASE_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(WORKSPACE_DEV_USER_ID ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
-      ...(session?.accessToken && !WORKSPACE_DEV_USER_ID ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}),
+      ...(useDevUserHeader ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
+      ...(useAuthenticatedSession ? { Authorization: `${session?.tokenType ?? "Bearer"} ${session?.accessToken}` } : {}),
       ...(init?.headers ?? {})
     }
   });

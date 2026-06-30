@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -29,6 +30,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional
 public class WorkspaceService {
+    private static final ZoneId MONITORING_ZONE = ZoneId.of("Asia/Seoul");
+
     private final NoteRepository noteRepository;
     private final NoteVersionRepository noteVersionRepository;
     private final FolderRepository folderRepository;
@@ -587,6 +590,35 @@ public class WorkspaceService {
         return new InternalUserWorkspaceStatsData((int) noteCount, storageBytes, activities);
     }
 
+    @Transactional(readOnly = true)
+    public InternalWorkspaceMonitoringSummaryData getWorkspaceMonitoringSummary() {
+        List<Note> notes = noteRepository.findByDeletedFalseOrderByUpdatedAtDesc();
+        long totalStorageBytes = notes.stream()
+                .mapToLong(note -> note.getMarkdown().getBytes(StandardCharsets.UTF_8).length)
+                .sum();
+        LocalDate today = LocalDate.now(MONITORING_ZONE);
+        int notesCreatedToday = (int) notes.stream()
+                .filter(note -> note.getCreatedAt() != null)
+                .filter(note -> note.getCreatedAt().atZone(MONITORING_ZONE).toLocalDate().isEqual(today))
+                .count();
+        List<InternalWorkspaceActivityDto> recentActivities = recentActivityRepository.findTop10ByOrderByActivityAtDesc().stream()
+                .map(activity -> new InternalWorkspaceActivityDto(
+                        activity.getActivityId(),
+                        activity.getUserId(),
+                        activity.getNoteId(),
+                        activity.getTitle(),
+                        activity.getActivityType(),
+                        activity.getActivityAt()
+                ))
+                .toList();
+        return new InternalWorkspaceMonitoringSummaryData(
+                safeToInt(noteRepository.countByDeletedFalse()),
+                totalStorageBytes,
+                notesCreatedToday,
+                recentActivities
+        );
+    }
+
     public NoteContentSaveData patchContentInternal(String noteId, InternalNoteContentPatchRequest request) {
         Note note = noteRepository.findById(noteId).orElseThrow(() -> notFound("NOTE_NOT_FOUND", "Note not found."));
         Map<String, Object> patch = request.patch() == null ? Map.of() : request.patch();
@@ -604,6 +636,16 @@ public class WorkspaceService {
 
     private void activity(String userId, Note note, String type, Instant at) {
         recentActivityRepository.save(new RecentActivity(Ids.activity(), userId, note.getNoteId(), note.getTitle(), type, at));
+    }
+
+    private int safeToInt(long value) {
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        if (value < Integer.MIN_VALUE) {
+            return Integer.MIN_VALUE;
+        }
+        return (int) value;
     }
 
     private Note note(String userId, String noteId) {

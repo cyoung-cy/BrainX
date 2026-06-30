@@ -44,6 +44,7 @@ type ApiPlanId = "free" | "pro" | "max";
 type ApiUserStatus = "ACTIVE" | "SUSPENDED" | "WITHDRAWN";
 type ApiTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 type ApiPaymentStatus = "SUCCESS" | "FAILED" | "REFUNDED" | "CANCELED";
+type ApiKafkaLagState = "HEALTHY" | "NO_COMMITTED_OFFSETS" | "BROKER_UNREACHABLE" | "CONFIG_MISSING";
 
 type ApiUserRow = {
   userId: string;
@@ -151,6 +152,37 @@ export type AdminAccountRow = {
   lastLoginAt: string | null;
 };
 
+export type AdminServiceHealthSummary = {
+  name: string;
+  latency: string;
+  uptime: string;
+  state: string;
+};
+
+export type AdminTrendSeries = {
+  metric: string;
+  values: number[];
+  periodLabel: string;
+  pointCount: number;
+  timezone: string;
+  source: string;
+};
+
+export type AdminOverviewSummary = {
+  monthlyRevenue: number;
+  activeSubscriptions: number;
+  mrr: number;
+  failedPaymentCount: number;
+  activeUsers: number;
+  totalNotes: number;
+  totalStorageBytes: number;
+  notesCreatedToday: number;
+  timezone: string;
+  revenueSource: string;
+  userSource: string;
+  workspaceSource: string;
+};
+
 export type AdminMonitoringSnapshot = {
   snapshotId: string;
   monthlyRevenue: number;
@@ -158,6 +190,20 @@ export type AdminMonitoringSnapshot = {
   mrr: number;
   failedPaymentCount: number;
   activeUsers: number;
+  kafkaLagMessages: number | null;
+  kafkaConsumerGroupId: string | null;
+  kafkaLagState: ApiKafkaLagState;
+  kafkaLagDetail: string | null;
+  capturedAt: string;
+};
+
+export type AdminKafkaLagData = {
+  consumerGroupId: string | null;
+  kafkaLagState: ApiKafkaLagState;
+  kafkaLagMessages: number | null;
+  warningThreshold: number;
+  criticalThreshold: number;
+  kafkaLagDetail: string | null;
   capturedAt: string;
 };
 
@@ -172,16 +218,20 @@ export type AdminServiceHealthSnapshot = {
 
 export type AdminBootstrap = {
   kpis: ReadonlyArray<{ label: string; value: string; delta: string; tone: "good" | "bad"; sub: string }>;
-  services: typeof services;
+  services: ReadonlyArray<AdminServiceHealthSummary>;
   logs: typeof logs;
   revenueBars: number[];
-  traffic: number[];
+  activeUserSeries: number[];
+  revenueTrendMeta: AdminTrendSeries;
+  activeUserTrendMeta: AdminTrendSeries;
+  overviewSummary: AdminOverviewSummary;
   users: AdminUser[];
   inquiries: AdminInquiry[];
   billingTransactions: BillingTransaction[];
   billingSubscriptions: BillingSubscription[];
   failedBilling: FailedBilling[];
   planCards: PlanCard[];
+  monitoringSnapshots: AdminMonitoringSnapshot[];
   billingSummary: {
     monthlyRevenue: number;
     activeSubscriptions: number;
@@ -210,13 +260,44 @@ export const fallbackAdminBootstrap: AdminBootstrap = {
   services,
   logs,
   revenueBars,
-  traffic,
+  activeUserSeries: traffic,
+  revenueTrendMeta: {
+    metric: "monthlyRevenue",
+    values: revenueBars,
+    periodLabel: "최근 14회 스냅샷",
+    pointCount: revenueBars.length,
+    timezone: "Asia/Seoul",
+    source: "mock"
+  },
+  activeUserTrendMeta: {
+    metric: "activeUsers",
+    values: traffic,
+    periodLabel: "최근 14회 스냅샷",
+    pointCount: traffic.length,
+    timezone: "Asia/Seoul",
+    source: "mock"
+  },
+  overviewSummary: {
+    monthlyRevenue: 0,
+    activeSubscriptions: 0,
+    mrr: 0,
+    failedPaymentCount: 0,
+    activeUsers: 0,
+    totalNotes: 0,
+    totalStorageBytes: 0,
+    notesCreatedToday: 0,
+    timezone: "Asia/Seoul",
+    revenueSource: "mock",
+    userSource: "mock",
+    workspaceSource: "mock"
+  },
   users,
   inquiries,
   billingTransactions,
   billingSubscriptions,
   failedBilling,
   planCards,
+  monitoringSnapshots: [],
   billingSummary: {
     monthlyRevenue: 0,
     activeSubscriptions: 0,
@@ -384,51 +465,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (payload as ApiSuccess<T>).data;
 }
 
-function planRank(plan: Plan) {
-  return plan === "max" ? 3 : plan === "pro" ? 2 : 1;
-}
-
-function resolveUserKey(userId: string | undefined, userName: string | undefined, usersById: Map<string, { name: string }>, usersByName: Map<string, string>) {
-  const extracted = extractUserId(userName);
-  if (userId && usersById.has(userId)) return userId;
-  if (extracted && usersById.has(extracted)) return extracted;
-  if (userId && usersByName.get(userId)) return userId;
-  if (userName && usersByName.get(userName)) return usersByName.get(userName)!;
-  if (extracted && usersByName.get(extracted)) return usersByName.get(extracted)!;
-  return userId ?? extracted ?? "";
-}
-
-function buildPlanOverrides(
-  subscriptions: ApiSubscription[],
-  payments: ApiPayment[],
-  usersById: Map<string, { name: string }>,
-  usersByName: Map<string, string>
-) {
-  const overrides = new Map<string, Plan>();
-
-  subscriptions.forEach((subscription) => {
-    const key = resolveUserKey(subscription.userId, subscription.userName, usersById, usersByName);
-    if (!key) return;
-    overrides.set(key, planFromApi(subscription.planId));
-  });
-
-  payments.forEach((payment) => {
-    if (payment.status !== "SUCCESS") return;
-    const key = resolveUserKey(payment.userId, payment.userName, usersById, usersByName);
-    if (!key || overrides.has(key)) return;
-    overrides.set(key, planFromApi(payment.planId));
-  });
-
-  return overrides;
-}
-
-function mapUser(row: ApiUserRow, effectivePlan?: Plan): AdminUser {
+function mapUser(row: ApiUserRow): AdminUser {
   const recentActiveAt = row.lastActiveAt ?? row.lastLogin?.lastSeenAt ?? null;
   return {
     id: row.userId,
     name: row.name,
     email: row.email,
-    plan: effectivePlan ?? planFromApi(row.planId),
+    plan: planFromApi(row.planId),
     status: userStatusFromApi[row.status],
     joined: formatDate(row.joinedAt),
     notes: row.noteCount,
@@ -551,8 +594,15 @@ function mapPlan(plan: ApiPlan): PlanCard {
 }
 
 export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
-  const [dashboard, userData, supportData, billingSummary, paymentData, subscriptionData, failureData, planData, profile] = await Promise.all([
-    apiFetch<{ kpis: AdminBootstrap["kpis"]; services: typeof services; logs: typeof logs; revenueTrend: number[]; activeUserTrend: number[] }>("/api/v1/admin/dashboard/overview"),
+  const [dashboard, userData, supportData, billingSummary, paymentData, subscriptionData, failureData, planData, monitoringSnapshots, profile] = await Promise.all([
+    apiFetch<{
+      kpis: AdminBootstrap["kpis"];
+      services: ReadonlyArray<AdminServiceHealthSummary>;
+      logs: typeof logs;
+      revenueTrend: AdminTrendSeries;
+      activeUserTrend: AdminTrendSeries;
+      summary: AdminOverviewSummary;
+    }>("/api/v1/admin/dashboard/overview"),
     apiFetch<{ users: ApiUserRow[] }>("/api/v1/admin/users"),
     apiFetch<{ tickets: ApiTicket[] }>("/api/v1/admin/support/tickets"),
     apiFetch<{ monthlyRevenue: number; activeSubscriptions: number; mrr: number; failedPaymentCount: number }>("/api/v1/admin/billing/summary"),
@@ -560,26 +610,30 @@ export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
     apiFetch<{ subscriptions: ApiSubscription[] }>("/api/v1/admin/billing/subscriptions"),
     apiFetch<{ failures: ApiPaymentFailure[] }>("/api/v1/admin/billing/payment-failures"),
     apiFetch<{ plans: ApiPlan[] }>("/api/v1/admin/billing/plans"),
+    apiFetch<AdminMonitoringSnapshot[]>("/api/v1/admin/monitoring/snapshots"),
     apiFetch<AdminProfile>("/api/v1/admin/me")
   ]);
 
   const usersById = new Map(userData.users.map((user) => [user.userId, { name: user.name }]));
-  const usersByName = new Map(userData.users.map((user) => [user.name, user.userId]));
-  const planOverrides = buildPlanOverrides(subscriptionData.subscriptions, paymentData.payments, usersById, usersByName);
 
   return {
+    kpis: dashboard.kpis,
     services: dashboard.services,
     logs: dashboard.logs,
-    revenueBars: dashboard.revenueTrend,
-    traffic: dashboard.activeUserTrend,
-    users: userData.users.map((user) => mapUser(user, planOverrides.get(user.userId))),
+    revenueBars: dashboard.revenueTrend.values,
+    activeUserSeries: dashboard.activeUserTrend.values,
+    revenueTrendMeta: dashboard.revenueTrend,
+    activeUserTrendMeta: dashboard.activeUserTrend,
+    overviewSummary: dashboard.summary,
+    users: userData.users.map((user) => mapUser(user)),
     inquiries: supportData.tickets.map(mapTicket),
     billingTransactions: paymentData.payments.map((payment) => mapPayment(payment, usersById)),
     billingSubscriptions: subscriptionData.subscriptions.map((subscription) => mapSubscription(subscription, usersById)),
     failedBilling: failureData.failures.map((failure) => mapPaymentFailure(failure, usersById)),
     planCards: planData.plans.map(mapPlan),
+    monitoringSnapshots,
     billingSummary,
-    adminProfile: profile,
+    adminProfile: profile, /*
     // Touch summary in the client so the contract shape is exercised even before
     // the KPI text is fully moved out of the presentational component.
     kpis: [
@@ -587,7 +641,7 @@ export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
       { label: "활성 구독", value: billingSummary.activeSubscriptions.toLocaleString("ko-KR"), delta: "+3.1%", tone: "good", sub: "현재 유료 구독" },
       { label: "MRR", value: `₩${(billingSummary.mrr / 1000000).toFixed(1)}M`, delta: "+18.4%", tone: "good", sub: "월 반복 매출" },
       { label: "결제 실패", value: billingSummary.failedPaymentCount.toLocaleString("ko-KR"), delta: "-0.3%", tone: "bad", sub: "재시도 필요" }
-    ]
+    ] */
   };
 }
 
@@ -668,6 +722,7 @@ export const adminApi = {
       body: JSON.stringify({ price, currency: "KRW", applyTiming })
     }),
   getMonitoringSnapshots: () => apiFetch<AdminMonitoringSnapshot[]>("/api/v1/admin/monitoring/snapshots"),
+  getKafkaLag: () => apiFetch<AdminKafkaLagData>("/api/v1/admin/monitoring/kafka-lag"),
   deleteMonitoringSnapshot: (id: string) =>
     apiFetch<void>("/api/v1/admin/monitoring/snapshots/" + id, { method: "DELETE" }),
   getHealthSnapshots: () => apiFetch<AdminServiceHealthSnapshot[]>("/api/v1/admin/monitoring/health"),

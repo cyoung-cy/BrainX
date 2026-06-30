@@ -1,7 +1,9 @@
 package com.brainx.admin.entity;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.EnumType;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -32,18 +34,46 @@ public class AdminMonitoringSnapshot {
     @Column(nullable = false)
     private int activeUsers;
 
+    @Column(nullable = true)
+    private Integer kafkaLagMessages;
+
+    @Column(nullable = true, length = 120)
+    private String kafkaConsumerGroupId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = true, length = 40)
+    private com.brainx.admin.dto.AdminDtos.KafkaLagState kafkaLagState;
+
+    @Column(nullable = true, length = 255)
+    private String kafkaLagDetail;
+
     @Column(nullable = false)
     private OffsetDateTime capturedAt;
 
     protected AdminMonitoringSnapshot() {
     }
 
-    public AdminMonitoringSnapshot(BigDecimal monthlyRevenue, int activeSubscriptions, BigDecimal mrr, int failedPaymentCount, int activeUsers, OffsetDateTime capturedAt) {
+    public AdminMonitoringSnapshot(
+            BigDecimal monthlyRevenue,
+            int activeSubscriptions,
+            BigDecimal mrr,
+            int failedPaymentCount,
+            int activeUsers,
+            Integer kafkaLagMessages,
+            String kafkaConsumerGroupId,
+            com.brainx.admin.dto.AdminDtos.KafkaLagState kafkaLagState,
+            String kafkaLagDetail,
+            OffsetDateTime capturedAt
+    ) {
         this.monthlyRevenue = monthlyRevenue;
         this.activeSubscriptions = activeSubscriptions;
         this.mrr = mrr;
         this.failedPaymentCount = failedPaymentCount;
         this.activeUsers = activeUsers;
+        this.kafkaLagMessages = kafkaLagMessages;
+        this.kafkaConsumerGroupId = kafkaConsumerGroupId;
+        this.kafkaLagState = kafkaLagState;
+        this.kafkaLagDetail = kafkaLagDetail;
         this.capturedAt = capturedAt;
     }
 
@@ -79,6 +109,22 @@ public class AdminMonitoringSnapshot {
 
     public int getActiveUsers() {
         return activeUsers;
+    }
+
+    public Integer getKafkaLagMessages() {
+        return kafkaLagMessages;
+    }
+
+    public String getKafkaConsumerGroupId() {
+        return kafkaConsumerGroupId;
+    }
+
+    public com.brainx.admin.dto.AdminDtos.KafkaLagState getKafkaLagState() {
+        return kafkaLagState;
+    }
+
+    public String getKafkaLagDetail() {
+        return kafkaLagDetail;
     }
 
     public OffsetDateTime getCapturedAt() {
