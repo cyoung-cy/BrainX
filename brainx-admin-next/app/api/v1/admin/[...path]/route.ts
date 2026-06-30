@@ -9,11 +9,7 @@ type RouteContext = {
 const FORWARDED_REQUEST_HEADERS = ["authorization", "content-type", "accept", "idempotency-key"] as const;
 
 function shouldUseAdminMock() {
-  if (process.env.NODE_ENV === "production") {
-    return false;
-  }
-
-  return process.env.ADMIN_MOCK_ENABLED !== "false";
+  return process.env.NODE_ENV !== "production" && process.env.ADMIN_MOCK_ENABLED === "true";
 }
 
 async function dispatch(request: Request, context: RouteContext) {

@@ -23,6 +23,7 @@ import {
   adminApi,
   loadAdminBootstrap,
   type AdminBootstrap,
+  type AdminKafkaLagData,
   type AdminMonitoringSnapshot,
   type AdminServiceHealthSnapshot,
   type AdminUserDetail
@@ -96,17 +97,111 @@ function money(value: number) {
   return `₩${value.toLocaleString("ko-KR")}`;
 }
 
+function formatStorage(bytes: number) {
+  if (!bytes) return "0MB";
+  const gb = bytes / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${gb.toFixed(1)}GB`;
+  return `${Math.max(1, Math.round(bytes / 1024 / 1024))}MB`;
+}
+
 function linePath(values: number[]) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return "M0,150 L560,150";
+  }
   const width = 560;
   const height = 150;
-  const max = Math.max(...values) * 1.12;
+  const max = Math.max(...values, 1) * 1.12;
   return values
     .map((value, index) => {
-      const x = (index / (values.length - 1)) * width;
+      const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
       const y = height - (value / max) * height;
       return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
+}
+
+function normalizeSeries(values: unknown, fallback: number[] = [0]) {
+  if (!Array.isArray(values)) {
+    return fallback;
+  }
+  const normalized = values
+    .map((value) => (typeof value === "number" && Number.isFinite(value) ? value : Number(value)))
+    .filter((value) => Number.isFinite(value));
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+const KAFKA_LAG_WARNING_THRESHOLD = 1_000;
+const KAFKA_LAG_CRITICAL_THRESHOLD = 5_000;
+
+type KafkaLagView = {
+  consumerGroupId: string | null;
+  kafkaLagState: AdminKafkaLagData["kafkaLagState"] | null;
+  kafkaLagMessages: number | null;
+  kafkaLagDetail: string | null;
+  warningThreshold?: number;
+  criticalThreshold?: number;
+};
+
+type KafkaLagSnapshotLike = Pick<AdminMonitoringSnapshot, "kafkaLagState" | "kafkaLagMessages" | "kafkaLagDetail" | "kafkaConsumerGroupId">;
+
+function kafkaLagThresholds(view: KafkaLagView | null | undefined) {
+  return {
+    warningThreshold: view?.warningThreshold ?? KAFKA_LAG_WARNING_THRESHOLD,
+    criticalThreshold: view?.criticalThreshold ?? KAFKA_LAG_CRITICAL_THRESHOLD
+  };
+}
+
+function kafkaLagTone(view: KafkaLagView | null | undefined): { background: string; color: string; dot?: string } {
+  if (!view || view.kafkaLagState == null) return { background: "#f5f5f4", color: "#57534e" };
+  if (view.kafkaLagState === "BROKER_UNREACHABLE") return { background: "#fef2f2", color: "#dc2626", dot: "#ef4444" };
+  if (view.kafkaLagState === "NO_COMMITTED_OFFSETS" || view.kafkaLagState === "CONFIG_MISSING") {
+    return { background: "#f5f5f4", color: "#57534e" };
+  }
+  const lag = view.kafkaLagMessages ?? 0;
+  const { warningThreshold, criticalThreshold } = kafkaLagThresholds(view);
+  if (lag >= criticalThreshold) return { background: "#fef2f2", color: "#dc2626", dot: "#ef4444" };
+  if (lag >= warningThreshold) return { background: "#fef3c7", color: "#b45309", dot: "#f59e0b" };
+  return { background: "#f0fdf4", color: "#15803d", dot: "#22c55e" };
+}
+
+function kafkaLagLabel(view: KafkaLagView | null | undefined) {
+  if (!view || view.kafkaLagState == null) return "연결 필요";
+  if (view.kafkaLagState === "BROKER_UNREACHABLE") return "연결 실패";
+  if (view.kafkaLagState === "NO_COMMITTED_OFFSETS") return "미집계";
+  if (view.kafkaLagState === "CONFIG_MISSING") return "설정 필요";
+  const lag = view.kafkaLagMessages ?? 0;
+  const { warningThreshold, criticalThreshold } = kafkaLagThresholds(view);
+  if (lag >= criticalThreshold) return "위험";
+  if (lag >= warningThreshold) return "경고";
+  return "정상";
+}
+
+function kafkaLagDetail(view: KafkaLagView | null | undefined) {
+  if (!view || view.kafkaLagState == null) return "Kafka lag 데이터 대기 중";
+  if (view.kafkaLagState === "BROKER_UNREACHABLE") return "브로커 연결 실패";
+  if (view.kafkaLagState === "NO_COMMITTED_OFFSETS") return "커밋된 offset이 없어 미집계 상태";
+  if (view.kafkaLagState === "CONFIG_MISSING") return "consumer group id 설정이 필요합니다";
+  if (view.kafkaLagMessages == null) return "lag를 읽지 못했습니다";
+  return view.kafkaLagDetail ?? "최신 consumer group lag";
+}
+
+function kafkaLagDisplay(view: KafkaLagView | KafkaLagSnapshotLike | null | undefined): KafkaLagView | null {
+  if (!view) return null;
+  return {
+    consumerGroupId: "consumerGroupId" in view ? view.consumerGroupId ?? null : view.kafkaConsumerGroupId ?? null,
+    kafkaLagState: view.kafkaLagState,
+    kafkaLagMessages: view.kafkaLagMessages,
+    kafkaLagDetail: view.kafkaLagDetail ?? null,
+    warningThreshold: "warningThreshold" in view ? view.warningThreshold : undefined,
+    criticalThreshold: "criticalThreshold" in view ? view.criticalThreshold : undefined
+  };
+}
+
+function healthMeta(state: string | null | undefined) {
+  if (state === "UP") return { dot: "#22c55e", text: "#15803d", tone: "good" as const, label: "정상" };
+  if (state === "DEGRADED") return { dot: "#f59e0b", text: "#b45309", tone: "warn" as const, label: "저하" };
+  if (state === "DOWN") return { dot: "#ef4444", text: "#dc2626", tone: "neutral" as const, label: "중단" };
+  return { dot: "#a8a29e", text: "#78716c", tone: "neutral" as const, label: "미확인" };
 }
 
 function Tag({ meta, children }: { meta: { background: string; color: string; dot?: string }; children: React.ReactNode }) {
@@ -359,13 +454,50 @@ function AdminDataState({ loading, error, onRetry }: { loading: boolean; error: 
 }
 
 function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message: string) => void }) {
-  const path = linePath(data.traffic);
-  const area = `${path} L560,150 L0,150 Z`;
-  const maxRevenueBar = Math.max(...data.revenueBars, 1);
-  const [snapshots, setSnapshots] = useState<AdminMonitoringSnapshot[]>([]);
+  const overviewSummary = data.overviewSummary ?? {
+    monthlyRevenue: 0,
+    activeSubscriptions: 0,
+    mrr: 0,
+    failedPaymentCount: 0,
+    activeUsers: 0,
+    totalNotes: 0,
+    totalStorageBytes: 0,
+    notesCreatedToday: 0,
+    timezone: "Asia/Seoul",
+    revenueSource: "unknown",
+    userSource: "unknown",
+    workspaceSource: "unknown"
+  };
+  const activeUserTrendMeta = data.activeUserTrendMeta ?? {
+    metric: "activeUsers",
+    values: [],
+    periodLabel: "최근 데이터 없음",
+    pointCount: 0,
+    timezone: "Asia/Seoul",
+    source: "unknown"
+  };
+  const revenueTrendMeta = data.revenueTrendMeta ?? {
+    metric: "monthlyRevenue",
+    values: [],
+    periodLabel: "최근 데이터 없음",
+    pointCount: 0,
+    timezone: "Asia/Seoul",
+    source: "unknown"
+  };
+  const activeUserSeries = normalizeSeries(
+    (data as AdminBootstrap & { traffic?: number[] }).activeUserSeries ?? (data as AdminBootstrap & { traffic?: number[] }).traffic,
+    normalizeSeries(activeUserTrendMeta.values, [0])
+  );
+  const revenueBars = normalizeSeries(data.revenueBars, normalizeSeries(revenueTrendMeta.values, [0]));
+  const activeUserPath = linePath(activeUserSeries);
+  const activeUserArea = `${activeUserPath} L560,150 L0,150 Z`;
+  const maxRevenueBar = Math.max(...revenueBars, 1);
+  const [snapshots, setSnapshots] = useState<AdminMonitoringSnapshot[]>(() => data.monitoringSnapshots);
   const [healthSnapshots, setHealthSnapshots] = useState<AdminServiceHealthSnapshot[]>([]);
+  const [kafkaLag, setKafkaLag] = useState<AdminKafkaLagData | null>(null);
   const [openModal, setOpenModal] = useState<"snapshots" | "health" | "logs" | null>(null);
   const HISTORY_PREVIEW_COUNT = 5;
+  const intelligenceService = data.services.find((service) => service.name === "Intelligence-Service") ?? data.services.find((service) => service.name === "AI-Service") ?? null;
 
   const loadHistory = () => {
     adminApi.getMonitoringSnapshots().then(setSnapshots).catch(() => setSnapshots([]));
@@ -375,6 +507,27 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
   useEffect(() => {
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadKafkaLag = () => {
+      adminApi
+        .getKafkaLag()
+        .then((value) => {
+          if (active) setKafkaLag(value);
+        })
+        .catch(() => {});
+    };
+
+    loadKafkaLag();
+    const timer = window.setInterval(loadKafkaLag, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const deleteSnapshot = async (id: string) => {
@@ -389,20 +542,36 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
     onToast("서비스 체크 기록을 삭제했어요");
   };
 
-  const reversedSnapshots = snapshots.slice().reverse();
-  const reversedHealthSnapshots = healthSnapshots.slice().reverse();
+  const orderedSnapshots = snapshots.slice().sort((left, right) => new Date(left.capturedAt).getTime() - new Date(right.capturedAt).getTime());
+  const orderedHealthSnapshots = healthSnapshots.slice().sort((left, right) => new Date(left.capturedAt).getTime() - new Date(right.capturedAt).getTime());
+  const latestMonitoringSnapshot =
+    orderedSnapshots[orderedSnapshots.length - 1] ??
+    data.monitoringSnapshots[data.monitoringSnapshots.length - 1] ??
+    null;
+  const latestKafkaLag =
+    kafkaLag ?? (latestMonitoringSnapshot ? {
+      consumerGroupId: latestMonitoringSnapshot.kafkaConsumerGroupId,
+      kafkaLagState: latestMonitoringSnapshot.kafkaLagState,
+      kafkaLagMessages: latestMonitoringSnapshot.kafkaLagMessages,
+      kafkaLagDetail: latestMonitoringSnapshot.kafkaLagDetail
+    } : null);
+  const latestKafkaLagView = kafkaLagDisplay(latestKafkaLag);
+  const reversedSnapshots = orderedSnapshots.slice().reverse();
+  const reversedHealthSnapshots = orderedHealthSnapshots.slice().reverse();
 
   const renderSnapshotRow = (snapshot: AdminMonitoringSnapshot) => (
     <div key={snapshot.snapshotId} style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #f5f5f4", padding: "8px 0" }}>
       <span className="mono" style={{ width: 130, color: "#78716c", fontSize: 11 }}>{formatHistoryTime(snapshot.capturedAt)}</span>
-      <span className="mono" style={{ flex: 1, fontSize: 12 }}>매출 {money(snapshot.monthlyRevenue)} · 구독 {snapshot.activeSubscriptions} · MRR {money(snapshot.mrr)} · 활성 {snapshot.activeUsers}</span>
+      <span className="mono" style={{ flex: 1, fontSize: 12 }}>
+        매출 {money(snapshot.monthlyRevenue)} · 구독 {snapshot.activeSubscriptions} · MRR {money(snapshot.mrr)} · 활성 {snapshot.activeUsers} · Kafka {kafkaLagLabel(kafkaLagDisplay(snapshot))} {snapshot.kafkaLagMessages == null ? "" : `(${snapshot.kafkaLagMessages.toLocaleString("ko-KR")} msgs)`}
+      </span>
       <button className="btn danger" title="삭제" onClick={() => deleteSnapshot(snapshot.snapshotId)} style={{ width: 30, height: 30, padding: 0, justifyContent: "center" }}><Trash2 size={14} /></button>
     </div>
   );
 
   const renderHealthRow = (snapshot: AdminServiceHealthSnapshot) => (
     <div key={snapshot.healthSnapshotId} style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #f5f5f4", padding: "8px 0" }}>
-      <span className="dot" style={{ background: snapshot.state === "ok" ? "#22c55e" : "#f59e0b" }} />
+      <span className="dot" style={{ background: healthMeta(snapshot.state).dot }} />
       <span className="mono" style={{ width: 130, color: "#78716c", fontSize: 11 }}>{formatHistoryTime(snapshot.capturedAt)}</span>
       <span className="mono" style={{ flex: 1, fontSize: 12 }}>{snapshot.serviceName} · {snapshot.latencyMs}ms</span>
       <button className="btn danger" title="삭제" onClick={() => deleteHealthSnapshot(snapshot.healthSnapshotId)} style={{ width: 30, height: 30, padding: 0, justifyContent: "center" }}><Trash2 size={14} /></button>
@@ -443,54 +612,81 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <div>
-              <div className="card-title">매출 추이</div>
-              <div style={{ marginTop: 2, color: "#a8a29e", fontSize: 12 }}>총 방문 <b className="mono" style={{ color: "#44403c" }}>12,984</b> · 순 방문 <b className="mono" style={{ color: "#44403c" }}>8,421</b></div>
+              <div className="card-title">활성 사용자 추이</div>
+              <div style={{ marginTop: 2, color: "#a8a29e", fontSize: 12 }}>
+                현재 활성 사용자 <b className="mono" style={{ color: "#44403c" }}>{overviewSummary.activeUsers.toLocaleString("ko-KR")}</b> · {activeUserTrendMeta.periodLabel} · {activeUserTrendMeta.source}
+              </div>
             </div>
             <Tag meta={{ background: "#f0fdf4", color: "#15803d" }}>실시간</Tag>
           </div>
           <svg className="chart-line" viewBox="0 0 560 150" preserveAspectRatio="none">
             <defs><linearGradient id="trafficFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0d9488" stopOpacity="0.18" /><stop offset="100%" stopColor="#0d9488" stopOpacity="0" /></linearGradient></defs>
-            <path d={area} fill="url(#trafficFill)" />
-            <path d={path} fill="none" stroke="#0d9488" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+            <path d={activeUserArea} fill="url(#trafficFill)" />
+            <path d={activeUserPath} fill="none" stroke="#0d9488" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
           </svg>
         </div>
-        <div className="card">
+          <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
             <div className="card-title">서비스 체크</div>
-            <span style={{ color: "#a8a29e", fontSize: 11 }}>5개 서비스</span>
+            <span style={{ color: "#a8a29e", fontSize: 11 }}>{data.services.length}개 서비스</span>
           </div>
           {data.services.map((service) => (
             <div key={service.name} style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #f5f5f4", padding: "9px 0" }}>
-              <span className="dot" style={{ background: service.state === "ok" ? "#22c55e" : "#f59e0b" }} />
+              <span className="dot" style={{ background: healthMeta(service.state).dot }} />
               <span className="mono" style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{service.name}</span>
-              <span className="mono" style={{ color: service.state === "ok" ? "#15803d" : "#b45309", fontSize: 12, fontWeight: 600 }}>{service.latency}</span>
+              <span className="mono" style={{ color: healthMeta(service.state).text, fontSize: 12, fontWeight: 600 }}>{service.latency}</span>
               <span className="mono" style={{ width: 54, color: "#a8a29e", fontSize: 11, textAlign: "right" }}>{service.uptime}</span>
             </div>
           ))}
         </div>
       </div>
       <div className="grid-bottom">
-        <div className="card">
+          <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-            <div className="card-title">매출 분석 <span style={{ color: "#a8a29e", fontSize: 12, fontWeight: 500 }}>최근 14일</span></div>
-            <span className="mono" style={{ color: "#0d9488", fontSize: 13, fontWeight: 600 }}>+18.4%</span>
+            <div className="card-title">매출 분석 <span style={{ color: "#a8a29e", fontSize: 12, fontWeight: 500 }}>{revenueTrendMeta.periodLabel}</span></div>
+            <span className="mono" style={{ color: "#0d9488", fontSize: 13, fontWeight: 600 }}>{revenueTrendMeta.timezone}</span>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 7, height: 150 }}>
-            {data.revenueBars.map((bar, index) => (
+            {revenueBars.map((bar, index) => (
               <div key={`${bar}-${index}`} style={{ flex: 1, height: `${Math.max(4, (bar / maxRevenueBar) * 100)}%`, borderRadius: "7px 7px 3px 3px", background: index > 10 ? "#0d9488" : "#d6d3d1" }} />
             ))}
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <AlertMetric title="AI-Service 응답" left="실패율" leftValue="0.8%" right="P95 지연" rightValue="1.24s" />
+          <AlertMetric
+            title={intelligenceService ? "Intelligence-Service 응답" : "AI 응답 서비스"}
+            left="상태"
+            leftValue={healthMeta(intelligenceService?.state).label}
+            right="지연"
+            rightValue={intelligenceService?.latency ?? "-"}
+            tone={healthMeta(intelligenceService?.state).tone}
+          />
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Kafka 큐 대기 Lag</div>
-              <Tag meta={{ background: "#fef3c7", color: "#b45309" }}>경고</Tag>
+              <Tag meta={kafkaLagTone(latestKafkaLagView)}>
+                {kafkaLagLabel(latestKafkaLagView)}
+              </Tag>
             </div>
-            <div className="mono" style={{ marginTop: 8, fontSize: 24, fontWeight: 600 }}>1,842 <span style={{ color: "#a8a29e", fontSize: 12 }}>msgs</span></div>
-            <div style={{ marginTop: 2, color: "#a8a29e", fontSize: 11 }}>ingestion-topic · 큐 대기 1,000 초과</div>
+            <div className="mono" style={{ marginTop: 8, fontSize: 24, fontWeight: 600 }}>
+              {latestKafkaLagView?.kafkaLagMessages == null ? "-" : latestKafkaLagView.kafkaLagMessages.toLocaleString("ko-KR")} <span style={{ color: "#a8a29e", fontSize: 12 }}>msgs</span>
+            </div>
+            <div style={{ marginTop: 2, color: "#a8a29e", fontSize: 11 }}>
+              {latestKafkaLagView?.consumerGroupId ?? "intelligence-service"} · {kafkaLagDetail(latestKafkaLagView)}
+            </div>
+            <div style={{ marginTop: 4, color: "#a8a29e", fontSize: 11 }}>
+              경고 기준 {kafkaLagThresholds(latestKafkaLagView).warningThreshold.toLocaleString("ko-KR")} msgs · 심각 기준 {kafkaLagThresholds(latestKafkaLagView).criticalThreshold.toLocaleString("ko-KR")} msgs
+            </div>
           </div>
+          <AlertMetric
+            title="Workspace 원장"
+            left="전체 노트"
+            leftValue={overviewSummary.totalNotes.toLocaleString("ko-KR")}
+            right="오늘 생성"
+            rightValue={overviewSummary.notesCreatedToday.toLocaleString("ko-KR")}
+            tone="neutral"
+            detail={`총 저장량 ${formatStorage(overviewSummary.totalStorageBytes)} · ${overviewSummary.workspaceSource}`}
+          />
         </div>
       </div>
       <div className="table-wrap">
@@ -887,7 +1083,25 @@ function formatHistoryTime(value: string) {
   return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function AlertMetric({ title, left, leftValue, right, rightValue }: { title: string; left: string; leftValue: string; right: string; rightValue: string }) {
+function AlertMetric({
+  title,
+  left,
+  leftValue,
+  right,
+  rightValue,
+  detail,
+  tone = "warn"
+}: {
+  title: string;
+  left: string;
+  leftValue: string;
+  right: string;
+  rightValue: string;
+  detail?: string;
+  tone?: "good" | "warn" | "neutral";
+}) {
+  const bar = tone === "good" ? { width: "82%", background: "linear-gradient(90deg,#14b8a6,#0f766e)" } : tone === "warn" ? { width: "76%", background: "linear-gradient(90deg,#f59e0b,#d97706)" } : { width: "62%", background: "linear-gradient(90deg,#94a3b8,#64748b)" };
+  const valueColor = tone === "good" ? "#0f766e" : tone === "warn" ? "#d97706" : "#64748b";
   return (
     <div className="card">
       <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{title}</div>
@@ -895,11 +1109,12 @@ function AlertMetric({ title, left, leftValue, right, rightValue }: { title: str
         {[{ label: left, value: leftValue }, { label: right, value: rightValue }].map((item) => (
           <div key={item.label} style={{ flex: 1 }}>
             <div style={{ color: "#a8a29e", fontSize: 11 }}>{item.label}</div>
-            <div className="mono" style={{ color: "#d97706", fontSize: 22, fontWeight: 600 }}>{item.value}</div>
+            <div className="mono" style={{ color: valueColor, fontSize: 22, fontWeight: 600 }}>{item.value}</div>
           </div>
         ))}
       </div>
-      <div style={{ height: 6, overflow: "hidden", borderRadius: 4, background: "#f5f5f4", marginTop: 14 }}><div style={{ width: "76%", height: "100%", background: "linear-gradient(90deg,#f59e0b,#d97706)" }} /></div>
+      {detail ? <div style={{ marginTop: 8, color: "#a8a29e", fontSize: 11 }}>{detail}</div> : null}
+      <div style={{ height: 6, overflow: "hidden", borderRadius: 4, background: "#f5f5f4", marginTop: 14 }}><div style={bar} /></div>
     </div>
   );
 }

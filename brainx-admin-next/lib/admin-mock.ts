@@ -246,12 +246,48 @@ export async function handleAdminMockRequest(request: Request, segments: string[
   const path = segments.join("/");
 
   if (method === "GET" && path === "dashboard/overview") {
+    const activeUsers = traffic[traffic.length - 1] ?? 0;
+    const monthlyRevenue = 184200000;
+    const activeSubscriptions = 1026;
+    const mrr = 28400000;
+    const failedPaymentCount = mockBillingTransactions.filter((item) => item.status === "failed").length;
+    const totalNotes = mockUsers.reduce((sum, user) => sum + user.notes, 0);
+    const totalStorageBytes = 18 * 1024 * 1024 * 1024;
+    const notesCreatedToday = 27;
     return json({
       kpis,
       services,
       logs,
-      revenueTrend: revenueBars,
-      activeUserTrend: traffic
+      revenueTrend: {
+        metric: "monthlyRevenue",
+        values: revenueBars,
+        periodLabel: "최근 14일 일별 매출",
+        pointCount: revenueBars.length,
+        timezone: "Asia/Seoul",
+        source: "mock"
+      },
+      activeUserTrend: {
+        metric: "dailyActiveUsers",
+        values: traffic,
+        periodLabel: "최근 14일 일별 활성 사용자",
+        pointCount: traffic.length,
+        timezone: "Asia/Seoul",
+        source: "mock"
+      },
+      summary: {
+        monthlyRevenue,
+        activeSubscriptions,
+        mrr,
+        failedPaymentCount,
+        activeUsers,
+        totalNotes,
+        totalStorageBytes,
+        notesCreatedToday,
+        timezone: "Asia/Seoul",
+        revenueSource: "mock",
+        userSource: "mock",
+        workspaceSource: "mock"
+      }
     });
   }
 
@@ -264,9 +300,25 @@ export async function handleAdminMockRequest(request: Request, segments: string[
         mrr: 28400000,
         failedPaymentCount: mockBillingTransactions.filter((item) => item.status === "failed").length,
         activeUsers: traffic[traffic.length - 1] ?? 0,
+        kafkaLagMessages: 1842,
+        kafkaConsumerGroupId: "intelligence-service",
+        kafkaLagState: "HEALTHY",
+        kafkaLagDetail: "현재 lag 1842 msgs",
         capturedAt: now
       }
     ]);
+  }
+
+  if (method === "GET" && path === "monitoring/kafka-lag") {
+    return json({
+      consumerGroupId: "intelligence-service",
+      kafkaLagState: "HEALTHY",
+      kafkaLagMessages: 1842,
+      warningThreshold: 1000,
+      criticalThreshold: 5000,
+      kafkaLagDetail: "현재 lag 1842 msgs",
+      capturedAt: now
+    });
   }
 
   if (method === "DELETE" && segments[0] === "monitoring" && segments[1] === "snapshots" && segments[2]) {

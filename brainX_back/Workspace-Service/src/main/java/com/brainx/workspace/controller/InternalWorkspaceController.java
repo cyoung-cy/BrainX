@@ -32,4 +32,9 @@ public class InternalWorkspaceController {
     public ApiResponse<InternalUserWorkspaceStatsData> getUserWorkspaceStatsInternal(@PathVariable String userId) {
         return ApiResponse.success(workspaceService.getUserWorkspaceStats(userId));
     }
+
+    @GetMapping("/internal/v1/workspace/monitoring/summary")
+    public ApiResponse<InternalWorkspaceMonitoringSummaryData> getWorkspaceMonitoringSummaryInternal() {
+        return ApiResponse.success(workspaceService.getWorkspaceMonitoringSummary());
+    }
 }

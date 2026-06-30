@@ -8,4 +8,5 @@ import java.util.List;
 
 public interface RecentActivityRepository extends JpaRepository<RecentActivity, String> {
     List<RecentActivity> findByUserIdOrderByActivityAtDesc(String userId, Pageable pageable);
+    List<RecentActivity> findTop10ByOrderByActivityAtDesc();
 }
