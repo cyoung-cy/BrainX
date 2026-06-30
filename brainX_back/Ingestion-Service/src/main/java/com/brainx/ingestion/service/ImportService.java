@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -168,23 +169,86 @@ public class ImportService {
 
     private List<String> importPageRecursive(String userId, String pageId, String folderId,
                                              String accessToken, String jwtToken) {
+        String title = notionApiService.getPageTitle(pageId, accessToken);
+        // 가져온 노트 전체를 담을 전용 폴더 생성 (페이지 제목과 동일한 이름)
+        String importFolderId;
+        try {
+            importFolderId = workspaceApiClient.createFolder(title, folderId, jwtToken);
+            log.info("임포트 폴더 생성: title='{}', folderId={}", title, importFolderId);
+        } catch (Exception e) {
+            log.warn("임포트 폴더 생성 실패, 대상 폴더로 대체: error={}", e.getMessage());
+            importFolderId = folderId;
+        }
+        return importPageWithTitle(userId, pageId, title, importFolderId, accessToken, jwtToken);
+    }
+
+    /**
+     * 이미 알고 있는 제목(title)으로 노트를 생성한 뒤 하위 페이지를 재귀 임포트한다.
+     * 하위 페이지는 parent 블록 데이터에 이미 제목이 담겨 있어(ChildPageRef.title()) 별도
+     * getPageTitle API 호출이 필요 없다 — Notion 연동이 하위 페이지 직접 접근 권한 없이
+     * parent 페이지만 공유된 경우에도 올바른 제목으로 노트를 만들어 위키링크가 끊기지 않는다.
+     */
+    private List<String> importPageWithTitle(String userId, String pageId, String title,
+                                              String folderId, String accessToken, String jwtToken) {
         List<String> allNoteIds = new ArrayList<>();
 
-        String title = notionApiService.getPageTitle(pageId, accessToken);
         String markdown = notionApiService.getPageMarkdown(pageId, accessToken, userId);
         String noteId = workspaceApiClient.createNote(title, markdown, folderId, null, jwtToken);
+        log.info("노트 생성: title='{}', noteId={}", title, noteId);
         allNoteIds.add(noteId);
 
-        List<NotionApiService.ChildPageRef> childPages = notionApiService.getChildPages(pageId, accessToken);
+        // child_page 블록으로 직접 내장된 하위 페이지 임포트 (column/toggle 중첩 구조도 재귀 탐색)
+        Set<String> importedIds = new java.util.LinkedHashSet<>();
+        List<NotionApiService.ChildPageRef> childPages = notionApiService.getAllChildPagesDeep(pageId, accessToken);
+        log.info("child_page 탐색 결과: pageId={}, 발견된 하위 페이지 수={}", pageId, childPages.size());
         for (NotionApiService.ChildPageRef child : childPages) {
+            importedIds.add(child.id());
             try {
-                List<String> childNoteIds = importPageRecursive(userId, child.id(), folderId, accessToken, jwtToken);
+                List<String> childNoteIds = importPageWithTitle(
+                        userId, child.id(), child.title(), folderId, accessToken, jwtToken);
                 if (!childNoteIds.isEmpty()) {
                     workspaceApiClient.createNoteLink(noteId, childNoteIds.get(0), child.title(), jwtToken);
                     allNoteIds.addAll(childNoteIds);
                 }
             } catch (Exception e) {
                 log.warn("하위 페이지 가져오기 실패: childPageId={}, error={}", child.id(), e.getMessage());
+            }
+        }
+
+        // child_database 행(row)도 [[wikilink]]로 변환되므로 함께 가져온다
+        List<NotionApiService.ChildDatabaseRef> childDatabases = notionApiService.getAllChildDatabasesDeep(pageId, accessToken);
+        log.info("child_database 탐색 결과: pageId={}, 발견된 데이터베이스 수={}", pageId, childDatabases.size());
+        for (NotionApiService.ChildDatabaseRef db : childDatabases) {
+            List<NotionApiService.ChildPageRef> rows = notionApiService.queryDatabaseRowRefs(db.id(), accessToken);
+            log.info("데이터베이스 행 조회: dbTitle='{}', 행 수={}", db.title(), rows.size());
+            for (NotionApiService.ChildPageRef row : rows) {
+                if (importedIds.contains(row.id())) continue;
+                importedIds.add(row.id());
+                try {
+                    String rowMarkdown = notionApiService.getPageMarkdown(row.id(), accessToken, userId);
+                    String rowNoteId = workspaceApiClient.createNote(row.title(), rowMarkdown, folderId, null, jwtToken);
+                    workspaceApiClient.createNoteLink(noteId, rowNoteId, row.title(), jwtToken);
+                    allNoteIds.add(rowNoteId);
+                    log.info("데이터베이스 행 노트 생성: title='{}', noteId={}", row.title(), rowNoteId);
+                } catch (Exception e) {
+                    log.warn("데이터베이스 행 가져오기 실패: rowId={}, error={}", row.id(), e.getMessage());
+                }
+            }
+        }
+
+        // mention.page(@멘션 링크)로 참조된 페이지도 임포트 (child_page로 이미 처리한 건 제외)
+        List<NotionApiService.ChildPageRef> mentionRefs = notionApiService.getMentionPageRefs(pageId, accessToken);
+        for (NotionApiService.ChildPageRef ref : mentionRefs) {
+            if (importedIds.contains(ref.id())) continue;
+            importedIds.add(ref.id());
+            try {
+                // mention 참조는 1단계만 임포트(참조된 페이지의 하위까지 재귀하지 않음)
+                String refMarkdown = notionApiService.getPageMarkdown(ref.id(), accessToken, userId);
+                String refNoteId = workspaceApiClient.createNote(ref.title(), refMarkdown, folderId, null, jwtToken);
+                workspaceApiClient.createNoteLink(noteId, refNoteId, ref.title(), jwtToken);
+                allNoteIds.add(refNoteId);
+            } catch (Exception e) {
+                log.warn("mention 페이지 가져오기 실패: pageId={}, error={}", ref.id(), e.getMessage());
             }
         }
 

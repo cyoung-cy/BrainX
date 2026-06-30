@@ -50,6 +50,7 @@ interface Props {
   hasSplitPanels: boolean;
   contextOpen?: boolean;
   onContextToggle?: () => void;
+  onScrollToHeadingRegister?: (noteId: string | null, fn: ((text: string) => void) | null) => void;
 }
 
 export default function PaneTreeRenderer({
@@ -89,6 +90,7 @@ export default function PaneTreeRenderer({
   hasSplitPanels,
   contextOpen,
   onContextToggle,
+  onScrollToHeadingRegister,
 }: Props) {
   if (node.type === "leaf") {
     const tabsState = paneTabs[node.id];
@@ -152,6 +154,7 @@ export default function PaneTreeRenderer({
         canSplitWorkspace={canSplitPane}
         contextOpen={contextOpen}
         onContextToggle={onContextToggle}
+        onScrollToHeadingRegister={onScrollToHeadingRegister}
       />
     );
   }
@@ -200,6 +203,7 @@ export default function PaneTreeRenderer({
               hasSplitPanels={hasSplitPanels}
               contextOpen={contextOpen}
               onContextToggle={onContextToggle}
+              onScrollToHeadingRegister={onScrollToHeadingRegister}
             />
           </Panel>
 
