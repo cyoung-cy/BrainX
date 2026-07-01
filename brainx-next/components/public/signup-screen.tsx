@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { allConsents, EMPTY_CONSENTS, LEGAL_DOCUMENTS, type ConsentKey, type ConsentState } from "@/lib/legal";
-import { checkEmailAvailability, requestEmailVerification, signupWithEmail, verifyEmailCode } from "@/lib/auth-api";
+import { buildAuthPath, checkEmailAvailability, readReturnToParam, requestEmailVerification, signupWithEmail, verifyEmailCode } from "@/lib/auth-api";
 import { cx } from "@/lib/utils";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn, Icon } from "@/components/brainx-ui";
@@ -165,6 +165,7 @@ export function SignupScreen() {
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>("idle");
   const [consents, setConsents] = useState<ConsentState>(EMPTY_CONSENTS);
   const [expandedSlugs, setExpandedSlugs] = useState<string[]>([]);
+  const [returnTo] = useState(() => readReturnToParam());
 
   const allConsented = LEGAL_DOCUMENTS.every((document) => consents[document.consentKey]);
 
@@ -312,7 +313,7 @@ export function SignupScreen() {
         }
       });
       pushToast("회원가입이 완료되었습니다.", "ok");
-      router.push("/onboarding");
+      router.push(buildAuthPath("/onboarding", returnTo));
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "회원가입에 실패했습니다.", "err");
     } finally {
@@ -323,7 +324,7 @@ export function SignupScreen() {
   return (
     <div className="grid h-screen overflow-hidden bg-bg">
     <AuthShell>
-      <div className="w-full max-w-[600px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
+      <div className="w-full max-w-[700px] px-6 py-5 [&_input]:h-9 [&_input]:rounded-lg [&_input]:text-[14px]">
           <h1 className="mb-1 text-[24px] font-bold tracking-tight text-txt">두뇌를 깨우는 1분</h1>
           <p className="mb-4 text-[14px] text-txt2">무료로 BrainX를 시작하세요.</p>
       <div className="mb-1 flex items-start gap-2">
@@ -522,7 +523,7 @@ export function SignupScreen() {
       </Btn>
       <p className="mt-4 text-center text-[13.5px] text-txt2">
         이미 계정이 있으신가요?{" "}
-        <button type="button" onClick={() => router.push("/login")} className="font-medium text-primary">
+        <button type="button" onClick={() => router.push(buildAuthPath("/login", returnTo))} className="font-medium text-primary">
           로그인
         </button>
       </p>

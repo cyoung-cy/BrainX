@@ -19,12 +19,13 @@ public class NoteDraftFlushScheduler {
     public void flushIdleUserDrafts() {
         try {
             NoteDraftFlushData result = noteDraftPersistenceService.flushIdleUserDrafts();
-            if (result.flushedCount() > 0) {
-                log.info("Flushed {} workspace note drafts to PostgreSQL. skipped={}",
+            if (result.flushedCount() > 0 || result.skippedCount() > 0) {
+                log.info("[draft-flush-scheduler] status=cycle-finished flushedCount={} skippedCount={}",
                         result.flushedCount(), result.skippedCount());
             }
         } catch (Exception exception) {
-            log.warn("Failed to flush workspace note drafts.", exception);
+            log.warn("[draft-flush-scheduler] status=failed reason={}",
+                    exception.getClass().getSimpleName(), exception);
         }
     }
 }

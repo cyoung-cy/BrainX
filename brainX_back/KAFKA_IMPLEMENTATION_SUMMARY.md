@@ -21,7 +21,7 @@
   - `NoteLinkDeleted`
   - `FolderCreated`
   - `FolderChanged`
-  - `FolderDeleted`
+  - `FolderDeleted` (Workspace cascade payload 기준 folder projection과 포함 note index/summary 정리)
   - `UserDeletionRequested`
 
 ## 구현 우선순위
@@ -34,7 +34,7 @@
 ## 남은 의미 작업
 
 - `NoteLinkCreated`, `NoteLinkDeleted`: 그래프 갱신과 이웃 캐시 무효화
-- `FolderCreated`, `FolderChanged`, `FolderDeleted`: 하위 경로 전파와 폴더 구조 반영
+- `FolderCreated`, `FolderChanged`, `FolderDeleted`: 하위 경로 전파와 folder tree projection 보강
 - `UserDeletionRequested`: AI 설정, 스타일 프로필, vector/search/chat 데이터 일괄 정리
 
 ## 검증

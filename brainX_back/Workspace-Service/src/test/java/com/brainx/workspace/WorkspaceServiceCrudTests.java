@@ -147,4 +147,30 @@ class WorkspaceServiceCrudTests {
         InternalNoteSnapshotData afterPatch = workspaceService.snapshot(noteId);
         assertThat(afterPatch.markdown()).contains("appended");
     }
+
+    @Test
+    void duplicateFolderAndNoteNamesAreAutoSuffixedWithinTheSameParent() {
+        FolderData first = workspaceService.createFolder(USER_ID, new FolderCreateRequest("폴더", null));
+        FolderData second = workspaceService.createFolder(USER_ID, new FolderCreateRequest("폴더", null));
+        FolderData third = workspaceService.createFolder(USER_ID, new FolderCreateRequest("폴더", null));
+        assertThat(first.name()).isEqualTo("폴더");
+        assertThat(second.name()).isEqualTo("폴더 2");
+        assertThat(third.name()).isEqualTo("폴더 3");
+
+        // depth가 다르면(하위 폴더) 같은 이름을 허용한다.
+        FolderData nested = workspaceService.createFolder(USER_ID, new FolderCreateRequest("폴더", first.folderId()));
+        assertThat(nested.name()).isEqualTo("폴더");
+
+        FolderData renamed = workspaceService.patchFolder(USER_ID, third.folderId(), new FolderPatchRequest("폴더", null));
+        assertThat(renamed.name()).isEqualTo("폴더 3");
+
+        NoteCreatedData firstNote = workspaceService.createNote(USER_ID, new NoteCreateRequest("노트", "", first.folderId(), List.of()));
+        NoteCreatedData secondNote = workspaceService.createNote(USER_ID, new NoteCreateRequest("노트", "", first.folderId(), List.of()));
+        assertThat(firstNote.title()).isEqualTo("노트");
+        assertThat(secondNote.title()).isEqualTo("노트 2");
+
+        // 다른 폴더에서는 같은 제목을 허용한다.
+        NoteCreatedData noteInOtherFolder = workspaceService.createNote(USER_ID, new NoteCreateRequest("노트", "", second.folderId(), List.of()));
+        assertThat(noteInOtherFolder.title()).isEqualTo("노트");
+    }
 }

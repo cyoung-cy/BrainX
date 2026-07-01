@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
-import { completeOAuthLogin, type OAuthProvider } from "@/lib/auth-api";
+import { buildAuthPath, completeOAuthLogin, consumeOAuthReturnTo, resolveAuthReturnTo, type OAuthProvider } from "@/lib/auth-api";
 import { AuthRequiredError, linkSocialAccount } from "@/lib/user-api";
 import { useBrainX } from "@/components/brainx-provider";
 
@@ -81,7 +81,8 @@ function OAuthCallbackContent() {
       .then((data) => {
         if (!activeRef.current) return;
         pushToast("소셜 로그인이 완료되었습니다.", "ok");
-        router.replace(data.next === "ONBOARDING" ? "/onboarding" : "/home");
+        const returnTo = consumeOAuthReturnTo();
+        router.replace(data.next === "ONBOARDING" ? buildAuthPath("/onboarding", returnTo) : resolveAuthReturnTo(returnTo));
       })
       .catch((error) => {
         if (!activeRef.current) return;

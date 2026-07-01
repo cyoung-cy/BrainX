@@ -83,12 +83,12 @@ export const AUTO_THEME: ThemeTokens = {
   bgCode:         "rgb(var(--surface2))",
 
   // ── 테두리 ──
-  border:             "rgb(var(--border) / 0.7)",
+  border:             "rgb(var(--border) / 0.82)",
   borderActive:       "rgb(var(--primary))",
-  borderHeader:       "rgb(var(--border) / 0.45)",
+  borderHeader:       "rgb(var(--border) / 0.62)",
   borderHeaderActive: "rgb(var(--primary) / 0.3)",
-  borderCode:         "rgb(var(--border) / 0.7)",
-  borderSep:          "rgb(var(--border) / 0.5)",
+  borderCode:         "rgb(var(--border) / 0.82)",
+  borderSep:          "rgb(var(--border) / 0.62)",
   borderSepHover:     "rgb(var(--primary) / 0.4)",
 
   // ── 텍스트 ──
@@ -106,7 +106,7 @@ export const AUTO_THEME: ThemeTokens = {
   selectColorInactive: "rgb(var(--txt3))",
   tagBg:          "rgb(var(--surface2))",
   tagText:        "rgb(var(--txt3))",
-  btnBorder:      "rgb(var(--border) / 0.7)",
+  btnBorder:      "rgb(var(--border) / 0.82)",
   btnText:        "rgb(var(--txt3))",
   btnTextHover:   "rgb(var(--primary))",
   btnBorderHover: "rgb(var(--primary) / 0.45)",
@@ -116,7 +116,7 @@ export const AUTO_THEME: ThemeTokens = {
   closeBorderHover: "rgb(239 68 68 / 0.7)",
 
   // ── 사이드바 ──
-  sidebarBorder:      "rgb(var(--border) / 0.5)",
+  sidebarBorder:      "rgb(var(--border) / 0.62)",
   sidebarItemBg:      "transparent",
   sidebarItemBgHover: "rgb(var(--surface2) / 0.7)",
   sidebarItemText:    "rgb(var(--txt2))",

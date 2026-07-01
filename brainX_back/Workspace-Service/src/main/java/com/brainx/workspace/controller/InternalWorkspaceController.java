@@ -27,4 +27,14 @@ public class InternalWorkspaceController {
                                                                      @Valid @RequestBody InternalNoteContentPatchRequest request) {
         return ApiResponse.success(workspaceService.patchContentInternal(noteId, request));
     }
+
+    @GetMapping("/internal/v1/workspace/users/{userId}/stats")
+    public ApiResponse<InternalUserWorkspaceStatsData> getUserWorkspaceStatsInternal(@PathVariable String userId) {
+        return ApiResponse.success(workspaceService.getUserWorkspaceStats(userId));
+    }
+
+    @GetMapping("/internal/v1/workspace/monitoring/summary")
+    public ApiResponse<InternalWorkspaceMonitoringSummaryData> getWorkspaceMonitoringSummaryInternal() {
+        return ApiResponse.success(workspaceService.getWorkspaceMonitoringSummary());
+    }
 }

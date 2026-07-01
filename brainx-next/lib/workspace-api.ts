@@ -1,10 +1,11 @@
 "use client";
 
-import { clearAuthSession, isDemoSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDevAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 import type { MockFolder, MockNote, NoteTypography } from "@/lib/notes/noteTypes";
 
 const WORKSPACE_API_BASE_URL = process.env.NEXT_PUBLIC_WORKSPACE_API_BASE_URL ?? "http://localhost:8082";
 export const USE_MOCK_NOTES = process.env.NEXT_PUBLIC_NOTES_USE_MOCK !== "false";
+const WORKSPACE_DEV_USER_ID = process.env.NEXT_PUBLIC_WORKSPACE_DEV_USER_ID?.trim();
 
 export type NoteDetail = {
   noteId: string;
@@ -118,19 +119,18 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDevAuthSession(session);
+  const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
 
-  if (USE_MOCK_NOTES && session?.accessToken && isDemoSession(session)) {
-    return demoWorkspaceResponse<T>(path);
-  }
-
-  // TEMP: 로그인 없이 Notion 가져오기 기능 테스트용. 실제 로그인 연동 완료 후
-  // 아래 두 줄을 제거하고 session?.accessToken이 없으면 에러를 던지도록 되돌릴 것.
+  // session이 없으면(비회원) Authorization 헤더 없이 호출한다 — Gateway가 guest cookie/
+  // X-Guest-Id를 발급해 Workspace-Service가 GUEST actor로 처리한다.
   const response = await fetch(`${WORKSPACE_API_BASE_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(session?.accessToken ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}),
+      ...(useDevUserHeader ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
+      ...(useAuthenticatedSession ? { Authorization: `${session?.tokenType ?? "Bearer"} ${session?.accessToken}` } : {}),
       ...(init?.headers ?? {})
     }
   });
@@ -147,20 +147,6 @@ async function authedRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(messageFromResponse(payload, "요청 처리에 실패했습니다."));
   }
   return payload.data as T;
-}
-
-function demoWorkspaceResponse<T>(path: string): T {
-  const noteId = path.split("/").pop() ?? "demo-note";
-  return {
-    noteId,
-    title: "데모 노트",
-    markdown: "Notion에서 가져온 데모 노트 본문입니다.",
-    folder: null,
-    tags: ["notion"],
-    version: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  } as T;
 }
 
 export async function getNote(noteId: string) {

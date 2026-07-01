@@ -1,0 +1,32 @@
+aws_region        = "ap-northeast-2"
+project_name      = "brainx"
+environment       = "dev"
+github_repository = "Final-BrainX/BrainX"
+github_branch     = "main"
+
+# Use an existing account-wide GitHub OIDC provider if one already exists.
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+instance_type           = "r7i.xlarge"
+ec2_root_volume_gb      = 200
+ec2_runtime_state       = "running"
+rds_instance_class      = "db.t4g.medium"
+rds_allocated_storage_gb = 50
+rds_runtime_state       = "running"
+
+asset_bucket_name          = ""
+asset_bucket_force_destroy = false
+# asset_bucket_cors_allowed_origins = ["https://example.com", "https://admin.example.com"]
+
+# Bump this when rds_runtime_state is unchanged but the RDS start/stop helper
+# needs to be re-run, for example after AWS auto-starts a stopped DB.
+rds_runtime_state_operation_nonce = "0"
+
+# Restrict this to your office/home CIDR if possible.
+allowed_http_cidr_blocks = ["0.0.0.0/0"]
+
+public_domain_name = "example.com"
+admin_domain_name  = "admin.example.com"
+acme_email         = "admin@example.com"
+
+ssm_parameter_prefix = "/brainx/dev"

@@ -214,7 +214,7 @@ Qdrant 검색은 chunk 단위로 수행한다. 하지만 공개 `POST /api/v1/in
 - tokenizer 기준이 아니라 문자 기준이므로 모델별 token limit과 정확히 일치하지 않는다.
 - markdown table, code block, list 구조를 별도 semantic block으로 보존하지 않는다.
 - `maxChunks=80`을 넘는 매우 긴 note의 뒤쪽 내용은 색인되지 않는다.
-- `NotesMoved`는 projection folderId만 갱신하고 Qdrant chunk metadata의 folder field는 아직 없다.
+- `FolderDeleted` cascade 삭제는 Workspace가 보낸 `noteIds`를 `default` document group에서 제거한다. Workspace가 `documentGroupId`를 보내기 전까지 다른 group projection은 이 이벤트만으로 정리되지 않는다.
 - identical duplicate chunk 앞에 같은 내용이 추가되면 `duplicateOrdinal`이 밀릴 수 있어 해당 duplicate 구간은 재색인될 수 있다.
 - public semantic search는 note 단위 dedupe만 제공하므로, chunk 단위 결과 디버깅 API는 없다.
 - 검색용 Qdrant chunk는 정규화된 `doc_content`를 저장하므로 raw markdown offset을 보존하지 않는다. 유사 노트 자동 연결의 anchor 위치는 `intelligence_note_projections.markdown` read model에서 계산한다.

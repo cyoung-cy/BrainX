@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { issueTemporaryPassword, loginLocal, readRecentSocialLoginProvider, requestEmailVerification, verifyEmailCode } from "@/lib/auth-api";
+import {
+  buildAuthPath,
+  issueTemporaryPassword,
+  loginLocal,
+  readRecentSocialLoginProvider,
+  readReturnToParam,
+  requestEmailVerification,
+  resolveAuthReturnTo,
+  verifyEmailCode,
+} from "@/lib/auth-api";
 import { useBrainX } from "@/components/brainx-provider";
 import { Btn } from "@/components/brainx-ui";
 import { AuthShell, Field, SocialButtons } from "@/components/public/auth-shared";
@@ -29,6 +38,7 @@ export function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [recentLogin, setRecentLogin] = useState<"google" | "kakao" | "naver" | null>(() => readRecentSocialLoginProvider());
+  const [returnTo] = useState(() => readReturnToParam());
 
   useEffect(() => {
     const syncRecentLogin = () => {
@@ -61,7 +71,7 @@ export function LoginScreen() {
         return;
       }
       pushToast("로그인 성공", "ok");
-      router.push(data.next === "ONBOARDING" ? "/onboarding" : "/home");
+      router.push(data.next === "ONBOARDING" ? buildAuthPath("/onboarding", returnTo) : resolveAuthReturnTo(returnTo));
     } catch (error) {
       const message = error instanceof Error ? error.message : "로그인에 실패했습니다.";
       if (message.includes("존재하지 않는 이메일")) {
@@ -221,10 +231,10 @@ export function LoginScreen() {
         또는
         <div className="h-px flex-1 bg-line/60" />
       </div>
-      <SocialButtons recentLogin={recentLogin} />
+      <SocialButtons recentLogin={recentLogin} returnTo={returnTo} />
       <p className="mt-12 text-center text-[15px] text-txt2">
         계정이 없으신가요?{" "}
-        <button type="button" onClick={() => router.push("/signup")} className="font-medium text-primary">
+        <button type="button" onClick={() => router.push(buildAuthPath("/signup", returnTo))} className="font-medium text-primary">
           회원가입
         </button>
       </p>

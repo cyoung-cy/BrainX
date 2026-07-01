@@ -1,26 +1,54 @@
 package com.brainx.intelligence.infrastructure.events.folder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSearchIndexPort;
+import com.brainx.intelligence.exploration.application.port.outbound.NoteSummaryPort;
+import com.brainx.intelligence.exploration.domain.NoteSearchDocument;
+import com.brainx.intelligence.exploration.domain.NoteSummary;
+import com.brainx.intelligence.exploration.domain.SemanticSearchResult;
 import com.brainx.intelligence.infrastructure.events.consumer.BrainxEventEnvelope;
 import com.brainx.intelligence.infrastructure.events.consumer.EventProcessingContext;
+import com.brainx.intelligence.infrastructure.events.consumer.EventProcessingException;
+import com.brainx.intelligence.infrastructure.events.note.NoteChunkManifestStore;
+import com.brainx.intelligence.infrastructure.events.note.NoteIndexChunkManifest;
+import com.brainx.intelligence.infrastructure.events.note.NoteProjection;
+import com.brainx.intelligence.infrastructure.events.note.NoteProjectionStore;
+import com.brainx.intelligence.infrastructure.events.note.NoteSearchIndexStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 class FolderEventHandlerTest {
 
+    private static final Instant NOW = Instant.parse("2026-06-28T00:00:00Z");
+
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private final FakeFolderProjectionStore folderProjectionStore = new FakeFolderProjectionStore();
-    private final FolderEventHandler handler = new FolderEventHandler(objectMapper, folderProjectionStore);
+    private final FakeNoteProjectionStore noteProjectionStore = new FakeNoteProjectionStore();
+    private final FakeSearchIndex searchIndex = new FakeSearchIndex();
+    private final FakeChunkManifestStore chunkManifestStore = new FakeChunkManifestStore();
+    private final FakeSummaryPort summaryPort = new FakeSummaryPort();
+    private final FolderEventHandler handler = new FolderEventHandler(
+        objectMapper,
+        folderProjectionStore,
+        noteProjectionStore,
+        searchIndex,
+        chunkManifestStore,
+        summaryPort
+    );
 
     @Test
-    void storesFolderProjectionAndTracksDeletionState() {
+    void storesFolderProjectionChanges() {
         handler.handle(context("evt-1", "FolderCreated", """
             {
               "folderId": "folder-1",
@@ -46,20 +74,117 @@ class FolderEventHandlerTest {
         FolderProjection changed = folderProjectionStore.findByFolderId("folder-1").orElseThrow();
         assertThat(changed.name()).isEqualTo("Projects 2026");
         assertThat(changed.order()).isEqualTo(7);
+    }
+
+    @Test
+    void folderDeletedTrashPayloadDeletesFoldersAndTrashesNotes() {
+        folderProjectionStore.save(FolderProjection.created("folder-1", "user-1", "Projects", null, "evt-old", NOW));
+        noteProjectionStore.save(indexedProjection("note-1"));
+        noteProjectionStore.save(indexedProjection("note-2"));
 
         handler.handle(context("evt-3", "FolderDeleted", """
             {
-              "folderId": "folder-1",
               "userId": "user-1",
-              "childNoteAction": "MOVE",
-              "targetFolderId": "folder-archive"
+              "folderIds": ["folder-1", "folder-child"],
+              "mode": "trash",
+              "noteIds": ["note-1", "note-2"]
             }
             """));
 
-        FolderProjection deleted = folderProjectionStore.findByFolderId("folder-1").orElseThrow();
-        assertThat(deleted.deleted()).isTrue();
-        assertThat(deleted.childNoteAction()).isEqualTo("MOVE");
-        assertThat(deleted.targetFolderId()).isEqualTo("folder-archive");
+        assertThat(folderProjectionStore.findByFolderId("folder-1").orElseThrow().deleted()).isTrue();
+        assertThat(folderProjectionStore.findByFolderId("folder-child").orElseThrow().deleted()).isTrue();
+        assertThat(folderProjectionStore.findByFolderId("folder-1").orElseThrow().childNoteAction()).isEqualTo("TRASH");
+
+        NoteProjection note1 = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "default", "note-1").orElseThrow();
+        NoteProjection note2 = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "default", "note-2").orElseThrow();
+        assertThat(note1.trashed()).isTrue();
+        assertThat(note2.trashed()).isTrue();
+        assertThat(note1.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.REMOVED);
+        assertThat(searchIndex.deletedKeys).containsExactly("user-1::default::note-1", "user-1::default::note-2");
+        assertThat(chunkManifestStore.deletedKeys).containsExactly("user-1::default::note-1", "user-1::default::note-2");
+        assertThat(summaryPort.deletedKeys).containsExactly("user-1::note-1", "user-1::note-2");
+    }
+
+    @Test
+    void folderDeletedPermanentPayloadMarksNotesDeleted() {
+        noteProjectionStore.save(indexedProjection("note-1"));
+
+        handler.handle(context("evt-4", "FolderDeleted", """
+            {
+              "userId": "user-1",
+              "folderIds": ["folder-1"],
+              "mode": "permanent",
+              "noteIds": ["note-1"]
+            }
+            """));
+
+        FolderProjection deletedFolder = folderProjectionStore.findByFolderId("folder-1").orElseThrow();
+        NoteProjection deletedNote = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "default", "note-1").orElseThrow();
+        assertThat(deletedFolder.childNoteAction()).isEqualTo("PERMANENT");
+        assertThat(deletedNote.deleted()).isTrue();
+        assertThat(deletedNote.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.REMOVED);
+    }
+
+    @Test
+    void indexDeleteFalseKeepsProjectionStateWithoutRemovedStatus() {
+        searchIndex.mutationApplied = false;
+        noteProjectionStore.save(indexedProjection("note-1"));
+
+        handler.handle(context("evt-5", "FolderDeleted", """
+            {
+              "userId": "user-1",
+              "folderIds": ["folder-1"],
+              "mode": "trash",
+              "noteIds": ["note-1"]
+            }
+            """));
+
+        NoteProjection projection = noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteId("user-1", "default", "note-1").orElseThrow();
+        assertThat(projection.trashed()).isTrue();
+        assertThat(projection.searchIndexStatus()).isEqualTo(NoteSearchIndexStatus.STALE);
+        assertThat(chunkManifestStore.deletedKeys).containsExactly("user-1::default::note-1");
+        assertThat(summaryPort.deletedKeys).containsExactly("user-1::note-1");
+    }
+
+    @Test
+    void folderDeletedRejectsInvalidPayloads() {
+        assertThatThrownBy(() -> handler.handle(context("evt-6", "FolderDeleted", """
+            {"userId":"user-1","folderIds":[],"mode":"trash","noteIds":["note-1"]}
+            """)))
+            .isInstanceOf(EventProcessingException.class)
+            .hasMessageContaining("folderIds must not be empty");
+
+        assertThatThrownBy(() -> handler.handle(context("evt-7", "FolderDeleted", """
+            {"userId":"user-1","folderIds":["folder-1"],"mode":"move","noteIds":["note-1"]}
+            """)))
+            .isInstanceOf(EventProcessingException.class)
+            .hasMessageContaining("mode must be trash or permanent");
+
+        assertThatThrownBy(() -> handler.handle(context("evt-8", "FolderDeleted", """
+            {"userId":"user-1","folderIds":["folder-1"],"mode":"trash","noteIds":[]}
+            """)))
+            .isInstanceOf(EventProcessingException.class)
+            .hasMessageContaining("noteIds must not be empty");
+    }
+
+    private static NoteProjection indexedProjection(String noteId) {
+        return new NoteProjection(
+            "user-1",
+            "default",
+            noteId,
+            "Title",
+            "folder-1",
+            List.of(),
+            2,
+            "hash-2",
+            "markdown",
+            false,
+            false,
+            false,
+            false,
+            "evt-old",
+            NOW
+        ).indexed(2, "hash-2", NOW);
     }
 
     private EventProcessingContext context(String eventId, String eventType, String payloadJson) {
@@ -95,6 +220,126 @@ class FolderEventHandlerTest {
         public FolderProjection save(FolderProjection projection) {
             projections.put(projection.folderId(), projection);
             return projection;
+        }
+    }
+
+    private static final class FakeNoteProjectionStore implements NoteProjectionStore {
+
+        private final Map<String, NoteProjection> projections = new LinkedHashMap<>();
+
+        @Override
+        public Optional<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteId(
+            String userId,
+            String documentGroupId,
+            String noteId
+        ) {
+            return Optional.ofNullable(projections.get(key(userId, documentGroupId, noteId)));
+        }
+
+        @Override
+        public List<NoteProjection> findByUserIdAndDocumentGroupIdAndNoteIds(
+            String userId,
+            String documentGroupId,
+            List<String> noteIds
+        ) {
+            return noteIds.stream()
+                .map(noteId -> projections.get(key(userId, documentGroupId, noteId)))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        }
+
+        @Override
+        public List<NoteProjection> findSearchableByUserIdAndDocumentGroupId(
+            String userId,
+            String documentGroupId,
+            int limit
+        ) {
+            return List.of();
+        }
+
+        @Override
+        public NoteProjection save(NoteProjection projection) {
+            projections.put(key(projection.userId(), projection.documentGroupId(), projection.noteId()), projection);
+            return projection;
+        }
+
+        private static String key(String userId, String documentGroupId, String noteId) {
+            return userId + "::" + documentGroupId + "::" + noteId;
+        }
+    }
+
+    private static final class FakeSearchIndex implements NoteSearchIndexPort {
+
+        private final List<String> deletedKeys = new ArrayList<>();
+        private boolean mutationApplied = true;
+
+        @Override
+        public List<SemanticSearchResult> search(NoteSearchQuery query) {
+            return List.of();
+        }
+
+        @Override
+        public NoteSearchDocument save(NoteSearchDocument document) {
+            return document;
+        }
+
+        @Override
+        public boolean replaceNoteChunks(String userId, String documentGroupId, String noteId, List<NoteSearchDocument> chunks) {
+            return mutationApplied;
+        }
+
+        @Override
+        public boolean deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
+            deletedKeys.add(userId + "::" + documentGroupId + "::" + noteId);
+            return mutationApplied;
+        }
+    }
+
+    private static final class FakeChunkManifestStore implements NoteChunkManifestStore {
+
+        private final List<String> deletedKeys = new ArrayList<>();
+
+        @Override
+        public List<NoteIndexChunkManifest> findByUserIdAndDocumentGroupIdAndNoteId(
+            String userId,
+            String documentGroupId,
+            String noteId
+        ) {
+            return List.of();
+        }
+
+        @Override
+        public void replaceForNote(
+            String userId,
+            String documentGroupId,
+            String noteId,
+            List<NoteIndexChunkManifest> manifests
+        ) {
+        }
+
+        @Override
+        public void deleteByUserIdAndDocumentGroupIdAndNoteId(String userId, String documentGroupId, String noteId) {
+            deletedKeys.add(userId + "::" + documentGroupId + "::" + noteId);
+        }
+    }
+
+    private static final class FakeSummaryPort implements NoteSummaryPort {
+
+        private final List<String> deletedKeys = new ArrayList<>();
+
+        @Override
+        public Optional<NoteSummary> findByUserIdAndNoteId(String userId, String noteId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public NoteSummary save(NoteSummary summary) {
+            return summary;
+        }
+
+        @Override
+        public void deleteByUserIdAndNoteId(String userId, String noteId) {
+            deletedKeys.add(userId + "::" + noteId);
         }
     }
 }

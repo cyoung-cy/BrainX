@@ -56,6 +56,7 @@ BrainX/
 │  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
 │  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
 ├─ contracts-v2/          # OpenAPI/AsyncAPI SSOT 계약 문서
+├─ infra/aws-dev/         # AWS 개발환경 Terraform + GitHub Actions 배포 구성
 └─ BrainX-Design/         # Next.js + iframe 기반 디자인 프로토타입 (포트 3000)
                           # Notion 가져오기 UI 구현됨 (BrainX-Design 전용, brainx-next와 별도)
 ```
@@ -65,10 +66,18 @@ BrainX/
 ### 로컬 Kafka
 
 `brainX_back/docker-compose.yml`에는 로컬 Kafka broker가 들어 있습니다. 호스트에서는 `localhost:9092`, 컨테이너 내부에서는 `kafka:9092`로 접근합니다. 1차 Kafka 범위에서는 기존 동기 흐름을 그대로 유지하고, 이벤트 발행은 서비스 플래그로 켜는 방식입니다. `BRAINX_EVENTS_OUTBOX_ENABLED=true`이면 Workspace-Service와 Commerce-Service가 outbox row를 Kafka로 흘리고, `BRAINX_EVENTS_PRODUCER_ENABLED=true`이면 Ingestion-Service가 `IntegrationConnected`, `ImportJobCompleted`, `ImportJobFailed`를 발행합니다. `BRAINX_EVENTS_CONSUMER_ENABLED=true`이면 Intelligence-Service가 workspace note 이벤트, `CaptureReceived`, note link 이벤트, folder 이벤트, `UserDeletionRequested`를 소비합니다. 작업 요약은 [`brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md`](brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md)에 둡니다. `ImportJobRequested`는 앞으로의 async worker 흐름에서 다룹니다.
+`Admin-Service`가 Docker Compose로 뜰 때 관리자 모니터링의 Kafka lag는 `SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, `BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID=intelligence-service` 기준으로 읽습니다. 호스트에서 직접 `Admin-Service`를 실행할 때만 `localhost:9092` 기본값을 사용합니다.
 
 ## Frontend: brainx-next
 
 `brainx-next`는 BrainX의 현재 주력 프론트엔드입니다. Next.js App Router 기반이며, 실제 백엔드 연결 전에도 localStorage와 mock seed data로 주요 사용 흐름을 체험할 수 있게 구성되어 있습니다.
+
+- `next.config.mjs`에서 Turbopack root를 `brainx-next` 폴더로 고정해, 루트에 다른 lockfile이 있어도 개발 서버가 잘못된 워크스페이스 루트를 잡지 않도록 했습니다.
+- 관리자 콘솔 mock 기준으로 관리자 계정 이메일 입력, 미확인 문의 수 배지, 답변 완료 문의의 답변 입력 숨김, 환불 시 무료 플랜 전환, 로그인 기기 국가만 표시, 구독 다음 결제일의 월간/연간 표기를 반영했습니다.
+- 관리자 모니터링 우측 레일에는 관리자 목록 아래 게임 채팅형 메시지함이 있으며, 전체 발송/선택 발송과 unread `SMS` 건수, `읽음` 모달을 함께 지원합니다.
+- 환불은 관리자 사유를 함께 전달하고, 환불 안내 메일 발송과 Commerce 구독의 `free` 전환을 기준으로 사용자 화면이 주기적으로 최신 플랜을 다시 읽어오도록 맞췄습니다.
+- Commerce 환불은 `REFUNDED` 상태를 DB 체크 제약에 포함하도록 보정했고, 결제사에서 이미 취소된 결제라면 로컬 원장과 구독 상태를 `환불 완료 + free 전환`으로 재동기화하도록 처리했습니다.
+- `/notes` 우측 인라인 AI는 질문 모드와 작성 모드를 지원하며, 작성 요청은 Intelligence Service의 `DRAFT` inline assist action으로 현재 편집기 커서에 스트리밍 삽입됩니다.
 
 ### Tech Stack
 
@@ -122,7 +131,7 @@ BrainX/
 
 - `lib/auth-api.ts`: 이메일 인증, 회원가입, 로그인, 로그아웃, 토큰 갱신, OAuth, 온보딩
 - `lib/support-api.ts`: 문의 목록/생성/상세 조회
-- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API
+- `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API, 관리자 공지 알림함 조회/읽음 처리
 - `lib/ingestion-api.ts`: Notion OAuth 연결/콜백, 페이지 목록 조회, 가져오기 작업 생성/상태 조회
 - `lib/workspace-api.ts`: 노트 단건 조회 (Notion 가져오기 결과를 노트 데모에 반영하는 용도)
 - `lib/commerce-api.ts`: 플랜 목록/내 구독 조회, 결제 체크아웃 세션 생성, Toss 결제 승인 confirm, 구독 변경/취소
@@ -299,7 +308,7 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build admin-service
 ```
 
-관리자 프론트(`BrainX-Admin/brainx-admin-next`)에서 실제 Admin-Service를 사용하려면 `.env.local`에 `ADMIN_MOCK_ENABLED=false`, `ADMIN_SERVICE_URL=http://localhost:8085`를 설정한 뒤 Next 개발 서버를 재시작합니다.
+관리자 프론트(`BrainX-Admin/brainx-admin-next`)는 기본적으로 실제 Admin-Service 프록시를 사용합니다. 개발 중에만 `.env.local`에 `ADMIN_MOCK_ENABLED=true`를 명시했을 때 mock API를 켜고, 그 외에는 `ADMIN_SERVICE_URL=http://localhost:8085`로 프록시합니다. 단, 관리자 메시지(`/api/v1/admin/messages*`)는 Admin-Service가 아직 준비되지 않은 개발 구간에서도 레일 채팅을 검증할 수 있도록 `brainx-admin-next`의 API route가 `.dev-data/admin-messages.json` 공용 로컬 파일 저장소를 직접 처리하며, 브라우저별 localStorage fallback 없이 같은 메시지 원장을 공유합니다.
 
 각 서비스는 자기 폴더 기준으로 실행하면 아래 파일을 자동으로 읽습니다.
 
@@ -313,6 +322,7 @@ docker compose --profile apps up -d --build admin-service
 | Commerce-Service | `../.env`, `../env/commerce-service.env` |
 
 `JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`으로 관리합니다.
+Admin-Service는 관리자 시드용 `SEED_ADMIN_LOGIN_ID`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`도 `../env/admin-service.env`에서 함께 읽습니다.
 Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=postgres`를 자동으로 덮어씁니다. 로컬 Gradle/IDE 실행은 `.env`의 `POSTGRES_HOST=localhost`를 그대로 사용합니다.
 
 기본 DB 접속 정보:
@@ -369,6 +379,7 @@ Workspace-Service는 내부 식별 헤더를 `CurrentActor`로 해석합니다.
 
 - 회원 요청: `X-User-Id`가 있으면 `actorType=USER`, `actorId=<userId>`
 - 비회원 요청: `X-Guest-Id`가 있으면 `actorType=GUEST`, `actorId=<guestId>`
+- 프런트의 `NEXT_PUBLIC_WORKSPACE_DEV_USER_ID`는 로컬 비로그인 개발 우회용으로만 사용합니다. 실제 로그인 세션(access token)이 있으면 이 dev header로 덮어쓰지 말고 bearer 토큰 기준 사용자 컨텍스트를 그대로 전달해야 사용자별 Workspace/PostgreSQL 데이터가 섞이지 않습니다.
 
 비회원 노트/폴더/링크/그래프 데이터는 체험용 임시 데이터로 취급합니다. Redis in-memory 저장소가 도입되면 guest actor의 Workspace 데이터는 Redis에 저장하고 TTL 만료 또는 세션 종료로 사라지게 합니다. 회원 데이터는 계속 Workspace-Service의 PostgreSQL 원장에 저장합니다.
 
@@ -383,7 +394,7 @@ cd C:\Edu\Final\BrainX\brainX_back\Gateway-Service
 ### Frontend
 
 ```powershell
-cd C:\Edu\Final_Project\BrainX\brainx-next
+cd C:\Edu\BrainX\brainx-next
 npm install
 npm run dev
 ```
@@ -393,7 +404,7 @@ npm run dev
 타입 체크:
 
 ```powershell
-cd C:\Edu\Final_Project\BrainX\brainx-next
+cd C:\Edu\BrainX\brainx-next
 npm run typecheck
 ```
 
@@ -418,8 +429,11 @@ User-Service의 Redis 역할은 다음과 같습니다.
 - 로그아웃/세션 종료 시 세션 상태 종료 표시
 - 관리자 상세 조회용 실제 로그인 세션, IP, 기기, 위치 이력 제공
 - Redis 장애나 세션 이력 파싱 실패가 나더라도 auth 응답은 막지 않고, 이력 기록만 건너뜁니다.
+- `SecurityConfig`와 `PasswordEncoderConfig`를 분리하고 `CustomUserDetailsService`가 `UserService`를 직접 의존하지 않도록 정리해, 인증 필터 생성 과정에서 순환 참조가 생기지 않도록 했습니다.
 
-관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다.
+관리자 페이지는 `Admin-Service`를 통해 `User-Service`의 내부 API `/internal/v1/users/{userId}/login-sessions`를 조회합니다. 실제 로그인 기록이 없으면 가짜 데이터로 채우지 않고 빈 목록을 그대로 반환합니다.
+
+사용자 상세의 메모 수/저장량/최근 활동은 `Admin-Service`가 `Workspace-Service`의 내부 API `GET /internal/v1/workspace/users/{userId}/stats`를 호출해 실데이터로 채웁니다(Gateway 라우트: `/internal/v1/workspace/**` → `WORKSPACE_SERVICE_URL`).
 
 ### Backend: Ingestion-Service (포트 8083)
 
@@ -473,21 +487,35 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 
 `BrainX-Admin/brainx-admin-next`가 실제 데이터로 동작하기 위한 관리자 API는 `contracts-v2/brainx-openapi.ssot.yaml`의 `/api/v1/admin/**`로 확정합니다. Admin-Service는 관리자 화면 전용 read model/orchestration layer이며, 원장 데이터는 각 소유 서비스가 유지합니다.
 
+현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 플랜은 결제/환불 이력으로 추정하지 않고 Commerce-Service의 현재 구독 상태를 그대로 보여 주며, 상세 패널과 같은 값이 나오도록 맞췄습니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다. 사용자 관리 화면에서는 정지된 계정을 바로 정지 취소할 수 있습니다.
+관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
+현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
+관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
+모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, snapshot에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
+Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
+모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다.
+서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
+overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
+overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.
+관리자 모니터링 화면은 상단 선형 차트를 활성 사용자 추이로, 하단 막대 차트를 매출 분석으로 분리해 overview의 `activeUserTrend`와 `revenueTrend`를 각각 실데이터 그대로 사용합니다.
+overview summary는 결제/사용자 지표 외에 `Workspace-Service`의 `/internal/v1/workspace/monitoring/summary`를 통해 전체 노트 수, 총 저장량, 오늘 생성된 노트 수를 함께 내려줍니다. 관리자 모니터링의 Workspace 원장 카드와 일부 실시간 로그는 이 내부 API의 최근 활동 목록을 사용합니다.
+
 | 화면 | Method | Path | 소유 데이터/연동 |
 | --- | --- | --- | --- |
-| 모니터링 | GET | `/api/v1/admin/dashboard/overview` | Gateway/User/Commerce 상태와 KPI 집계 |
-| 사용자 목록 | GET | `/api/v1/admin/users` | User-Service 계정 + Workspace note/storage + Commerce plan |
+| 모니터링 | GET | `/api/v1/admin/dashboard/overview` | Gateway/User/Commerce/Workspace/Ingestion/Intelligence 상태와 KPI 집계, Kafka lag |
+| 사용자 목록 | GET | `/api/v1/admin/users` | User-Service 계정 + Workspace note/storage + Commerce current subscription plan |
 | 사용자 상세 | GET | `/api/v1/admin/users/{userId}` | 프로필, 플랜, 로그인 세션, 활동 이력 |
 | 플랜 변경 | PATCH | `/api/v1/admin/users/{userId}/plan` | Commerce-Service 구독 변경, `SubscriptionChanged` |
-| 계정 상태 | PATCH | `/api/v1/admin/users/{userId}/status` | User-Service 상태 변경 |
+| 계정 상태 | PATCH | `/api/v1/admin/users/{userId}/status` | User-Service 상태 변경, 정지 사유/정지 일수 반영 |
 | 탈퇴 처리 | POST | `/api/v1/admin/users/{userId}/withdrawal` | User-Service 삭제 요청, `UserDeletionRequested` |
 | 일괄 처리 | POST | `/api/v1/admin/users/bulk-actions` | 플랜 변경/정지/재활성화/탈퇴/공지 |
 | 문의 목록 | GET | `/api/v1/admin/support/tickets` | 관리자 문의 목록 |
 | 문의 상세/배정 | GET/PATCH | `/api/v1/admin/support/tickets/{ticketId}` | 담당자/상태 변경, `SupportTicketUpdated` |
 | 문의 답변 | POST | `/api/v1/admin/support/tickets/{ticketId}/replies` | 로그인 관리자 이름으로 답변 등록, 사용자 문의 상세의 ADMIN 메시지로 표시 |
 | 결제 KPI | GET | `/api/v1/admin/billing/summary` | Commerce 이번 달 매출/활성 유료 구독/MRR/실패 건 집계 |
-| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 간편결제/신용카드/체크카드 결제수단 |
-| 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded` |
+| 결제 내역 | GET | `/api/v1/admin/billing/payments` | Commerce 결제 원장. `method`는 PG 제공자명이 아니라 Toss 응답에서 해석한 사용자 선택 결제수단(카카오페이, 토스페이, 신용카드, 체크카드 등) |
+| 환불 | POST | `/api/v1/admin/billing/payments/{paymentId}/refund` | Commerce 환불, `PaymentRefunded`. `amount`/`reason`을 받아 Toss 환불을 호출하고 환불 완료 메일을 사용자에게 발송 |
 | 결제 재시도 | POST | `/api/v1/admin/billing/payments/{paymentId}/retry` | Commerce 결제 재시도, `PaymentSucceeded`/`PaymentFailed` |
 | 구독 현황 | GET | `/api/v1/admin/billing/subscriptions` | Commerce 구독 원장. 무료 플랜은 제외하고 유료 구독만 표시 |
 | 결제 실패 추적 | GET | `/api/v1/admin/billing/payment-failures` | Commerce 실패 사유/재시도 횟수 |
@@ -495,6 +523,14 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 요금제 가격 | PATCH | `/api/v1/admin/billing/plans/{planId}` | Commerce 플랜 가격 변경, `PlanPriceChanged` |
 | 관리자 프로필 | GET/PATCH | `/api/v1/admin/me`, `/api/v1/admin/me/profile` | 관리자 본인 정보 |
 | 관리자 비밀번호 | PATCH | `/api/v1/admin/me/password` | User-Service credential 변경, `PasswordChanged` |
+| 관리자 목록 | GET | `/api/v1/admin/admin-accounts` | 모든 관리자(owner 포함) 조회 가능, 모니터링 화면 관리자 목록에서 사용 |
+| 관리자 추가/수정/삭제 | POST/PATCH/DELETE | `/api/v1/admin/admin-accounts`, `/api/v1/admin/admin-accounts/{adminId}` | 최고관리자(owner)만 호출 가능 |
+| 관리자 메시지 목록/전송 | GET/POST | `/api/v1/admin/messages` | 모니터링 우측 레일 채팅창, 전체 발송/선택 발송 |
+| 관리자 메시지 읽음 | POST | `/api/v1/admin/messages/{messageId}/read` | 우측 프로필 `SMS` 건수와 `읽음` 모달 |
+
+사용자 알림함은 `brainx-next` 상단 종 아이콘과 연결되며, 관리자 `SEND_NOTICE` 일괄 액션이 실행되면 `GET /api/v1/users/me/notifications`, `POST /api/v1/users/me/notifications/{notificationId}/read`로 확인할 수 있습니다.
+
+관리자 목록 조회(GET)는 모든 관리자에게 열려 있지만, 계정 생성/수정/삭제는 owner 역할만 가능합니다. 최고관리자가 아닌 관리자는 관리자 관리 화면 자체에 진입할 수 없습니다(사이드바 메뉴 비노출 + 화면 가드). 관리자 메시지는 모든 관리자가 조회/전송/읽음 처리할 수 있고, 선택 발송 메시지는 수신 대상과 발신자에게만 노출됩니다.
 
 AsyncAPI에는 Admin 화면에서 새로 필요한 `PaymentRefunded`, `PlanPriceChanged`, `SupportTicketUpdated` 이벤트를 추가했습니다. 결제/플랜 이벤트는 Commerce-Service가 발행하고, 문의 상태 변경 이벤트는 Admin-Service가 발행합니다.
 
@@ -620,10 +656,35 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
     - 수정(프런트): `markdownToHtml`에 `![alt](url)` 줄을 인식하는 분기를 추가해 `<div data-image-block="true">...</div>`(기존 `ImageBlock` 노드)로 변환합니다. url이 `asset://{assetId}` 의사 스킴이면 절대 URL을 본문에 박아두지 않고 PdfBlock/HtmlBlock과 동일하게 `data-asset-id`만 채워서 렌더링 시점에 `getAssetFileUrl(assetId)`로 해석되게 합니다(`ImageBlockNode.tsx`가 이미 지원하던 패턴 재사용).
     - 수정(백엔드, `NotionApiService`): 이미지 블록이 `"file"` 타입이면 즉시 다운로드해 우리 자산(Asset)으로 영구 저장하고, 노트 마크다운에는 Notion url 대신 `![](asset://{assetId})`를 넣습니다. `"external"` 타입(Notion 바깥에 호스팅된 이미지)은 만료되지 않으므로 원본 url을 그대로 둡니다. 다운로드가 실패하면 가져오기 전체를 실패시키지 않고 원본(만료될 수 있는) url로 폴백합니다. `getPageMarkdown`/`convertBlocksToMarkdown`/`convertBlock`에 `userId` 파라미터를 추가해 `AssetService.persistDerivedAsset` 호출에 필요한 소유자를 전달합니다.
     - SSOT(`brainx-openapi.ssot.yaml`): `requestNotionImportJob`의 implementation-note에 이미지 처리 동작(presigned URL 만료 문제, `asset://` 의사 스킴, external/file 구분, 다운로드 실패 시 폴백)을 추가했습니다.
-- **Workspace-Service**: Gateway가 전달한 `X-User-Id`/`X-Guest-Id`를 `CurrentActor`로 해석하는 흐름을 기준으로 전환 중입니다. Redis 도입 전까지 직접 Workspace-Service를 호출하는 개발 편의 경로에는 `dev-test-user` fallback이 남아 있으나, 정식 흐름은 Gateway를 통해 회원은 USER actor, 비회원은 GUEST actor로 처리합니다.
+- **Workspace-Service**: Gateway가 전달한 `X-User-Id`/`X-Guest-Id`를 `CurrentActor`로 해석하는 흐름을 기준으로 전환 중입니다. 정식 흐름은 Gateway를 통해 회원은 USER actor, 비회원은 GUEST actor로 처리합니다.
+  - **(2026-06-29 수정, SSOT 계약 변경 없음) `dev-test-user` 무조건 fallback 제거**:
+    - 문제: `CurrentActor.actor()`가 `X-User-Id`/`X-Guest-Id`/JWT가 모두 없을 때 무조건 `dev-test-user`(USER actor)로 처리했습니다. Workspace-Service는 docker-compose에서 8082 포트가 호스트에 직접 노출되어 있어, Gateway를 거치지 않은 식별 정보 없는 요청도 항상 같은 `dev-test-user` 신원으로 성공 처리되는 문제가 있었습니다.
+    - 수정(`brainX_back/Workspace-Service/src/main/java/com/brainx/workspace/security/CurrentActor.java`): fallback을 `brainx.workspace.dev-fallback-enabled`(기본값 `false`) 설정으로 게이트했습니다. 이 값이 `false`이면 `X-User-Id`/`X-Guest-Id`/유효한 `Authorization` JWT가 모두 없을 때 `WorkspaceException(401, ACTOR_IDENTIFICATION_FAILED)`를 던져 더 이상 임의의 신원으로 통과시키지 않습니다. Gateway를 거치지 않고 로컬에서 Workspace-Service(8082)를 직접 호출해야 하는 개발 편의가 필요하면 `WORKSPACE_DEV_FALLBACK_ENABLED=true`로 명시적으로 켜야 합니다(`application.yml`에 기본값 `false`로 추가).
+    - USER/GUEST actor 판별 우선순위(`X-User-Id` > `X-Guest-Id` > JWT `Authorization` > dev fallback)와 Redis SCAN 기반 dirty draft 탐색, guest→user draft claim 로직은 변경하지 않았습니다.
+    - SSOT: OpenAPI는 이미 모든 Workspace 엔드포인트에 `401`(`ApiErrorResponse`) 응답과 `bearerAuth`/`guestSessionAuth` 보안 요구사항을 문서화하고 있어, 이번 수정은 기존 계약을 더 정확히 충족시킬 뿐 SSOT YAML 변경은 필요하지 않습니다.
+    - 테스트: `Workspace-Service/src/test/java/com/brainx/workspace/security/CurrentActorTest.java` 신규 추가(헤더 우선순위, JWT fallback, dev fallback 비활성 시 401, dev fallback 활성 시 `dev-test-user` 허용 케이스).
+  - **(2026-06-29 수정, SSOT 계약 변경 없음) 비회원 체험을 가짜 `BrainX Demo` 로그인이 아닌 실제 Guest actor로 전환**:
+    - 문제: `brainx-next` "무료로 시작하기"가 `startDemoSession()`으로 `accessToken: "demo-access-token"`, `email: "demo@brainx.local"`, `nickname: "BrainX Demo"`인 가짜 `AuthSession`을 localStorage에 저장해 비회원 체험을 "로그인된 사용자"처럼 보이게 했습니다(우측 상단 프로필에 `BrainX Demo`/`demo@brainx.local`이 노출되고, 마이페이지 계정 연동 화면은 `linkedProviders: ["google"]`를 하드코딩해 Google 계정과 연동된 것처럼 보였음 — 실제 연동 없음). 이 가짜 토큰은 Gateway JWT 검증에 실패해 결과적으로 Workspace-Service에는 GUEST actor로 들어갔지만(`JwtAuthenticationGlobalFilter`가 검증 실패 시 guest fallback으로 빠짐), 프런트엔드는 `isDemoSession()` 분기로 commerce/ingestion/user/support API를 모두 가짜 응답으로 대체해 실제 백엔드를 전혀 타지 않았습니다. 이로 인해 "비회원처럼 동작하지만 내부적으로는 로그인 사용자처럼 보이는" 혼란이 있었습니다. `dev-test-user`는 이 가짜 데모 계정과는 별개의 개념입니다(아래 항목 참고).
+    - 수정(`lib/auth-api.ts`): `DEMO_AUTH_SESSION`/`startDemoSession`/`isDemoSession`과 그 사용처(`claimGuestDraftsAfterAuth`, `logout`, `refreshToken`)를 제거했습니다. 이제 비회원은 어떤 `AuthSession`도 생성하지 않습니다.
+    - 수정(`components/public/landing-screen.tsx`): "무료로 시작하기"/"둘러보기"가 `startDemoSession()` 없이 그냥 `/home`으로 이동하도록 변경(`enterGuestMode`). `/notes`로 이동해도 동일하게 동작합니다. 최초 진입 시 Gateway가 `brainx_guest_id` 쿠키 + `X-Guest-Id` 헤더를 발급하고, `lib/workspace-api.ts`의 `authedRequest`는 `session?.accessToken`이 없으면 `Authorization` 헤더 없이 `credentials: "include"`로만 호출하므로(기존 코드, 변경 없음) Workspace-Service가 GUEST actor로 노트/폴더 CRUD를 처리합니다. 회원가입/로그인 후 `claimGuestDraftsAfterAuth`(`/api/v1/notes/drafts/claim`) 호출과 actor별 localStorage 분리(`components/notes/NotesWorkspace.tsx`의 `resolveActorPersistKey`)는 그대로 동작합니다 — 오히려 가짜 데모 세션이 `userId: "usr_demo"`를 들고 있어 `:user:usr_demo` 키로 잘못 분리되던 문제가 이번 수정으로 함께 해소됩니다.
+    - 수정(`components/workspace-shell.tsx`): 상단 프로필 버튼이 `session?.accessToken`이 없으면(Guest) "게스트"/"체험 중"을 표시하고 클릭 시 `AccountSettingsModal`을 열지 않는 대신 "체험 모드 사용 중 / 가입하면 노트가 계정에 저장됩니다" 안내와 회원가입·로그인 메뉴가 있는 드롭다운을 띕니다(opaque `bg-surface`, blur 없음). 로그인 사용자는 기존 프로필 UI/마이페이지 동작을 그대로 유지합니다. `/mypage` 직접 진입 시에도 세션이 없으면 설정 모달을 열지 않고 `/home`으로만 돌려보냅니다.
+    - 수정(`components/workspace-shell.tsx`, `lib/user-api.ts`): 상단 우측 액션 영역을 `알림 -> 프로필` 순서로 분리하고, 알림 패널과 Guest 프로필 드롭다운은 동시에 열리지 않게 상호 배타적으로 제어합니다. Guest도 무료 기능 안내/회원가입 유도 공지를 받을 수 있으므로 알림 버튼은 계속 노출합니다. `lib/user-api.ts`는 기본적으로 실제 API를 호출하되, 개발자가 `NEXT_PUBLIC_USER_USE_MOCK=true`를 설정하면 사용자/알림 API mock 응답을 켤 수 있게 했습니다.
+    - 수정(`lib/commerce-api.ts`, `lib/ingestion-api.ts`, `lib/user-api.ts`, `lib/support-api.ts`, `components/utility/account-settings-modal.tsx`, `components/utility/import-screen.tsx`, `components/notes/NotesWorkspace.tsx`): 데모 세션에서만 타던 가짜 응답 분기(`demoCommerceResponse`/`isCommerceDemoSession`/`changeSubscriptionDemo`/`demoIngestionResponse`/`isNotionDemoSession`/`connectNotionDemo`/`demoUserResponse`/`demoProfile`/`demoSupportResponse`)를 모두 제거하고 항상 실제 API를 호출하도록 정리했습니다. Notion 가져오기·내보내기·결제 플랜 변경은 더 이상 가짜 데모 경로가 없으며, 로그인하지 않은 상태에서 이 기능들을 쓰면 백엔드가 정상적으로 인증 실패를 돌려줍니다(원래도 실제 계정 없이는 쓸 수 없는 기능들).
+    - Google OAuth 로그인 흐름(`/oauth/[provider]/callback`, `completeOAuthLogin`)은 건드리지 않았습니다.
+    - 직접 확인: `http://localhost:3000` → "무료로 시작하기" → `/home`(로그인 없음) → `/notes`에서 노트/폴더 생성 → 새로고침 후 유지 → 우측 상단 "게스트" 드롭다운에서 회원가입/로그인 → guest 노트가 새 계정으로 승계되는지 확인.
+  - **(2026-06-29 추가 개선, SSOT 계약 변경 없음) Guest 전환 후 남은 UX 항목 정리**:
+    - 로그인/회원가입 redirect: `lib/auth-api.ts`에 `readReturnToParam`/`buildAuthPath`/`resolveAuthReturnTo`(claim된 noteId로 `/notes/{id}` 치환, 매핑이 있는데 없으면 `/notes`로 폴백)/`stashOAuthReturnTo`/`consumeOAuthReturnTo`(Google 등 외부 리다이렉트 왕복용 sessionStorage)를 추가했습니다. Guest 프로필 드롭다운·로그인/회원가입 화면·온보딩·OAuth 콜백이 현재 경로를 `returnTo`로 주고받아, 로그인 후 원래 보던 페이지로 돌아갑니다.
+    - 화면분할 상태 보존: `claimGuestDraftsAfterAuth`가 claim 응답의 `sourceNoteId → noteId` 매핑을 sessionStorage(`brainx_pending_note_claim_v1`)에 잠깐 저장하고, `NotesWorkspace.tsx`의 `resolveActorPersistKey`(guest→user localStorage 승계 지점)가 그 매핑으로 pane tree/tabs의 draft id를 실제 noteId로 갈아끼웁니다(기존 `replaceNoteIdInNode`/`replaceNoteIdInTabs` 재사용). Redis SCAN/claim 트랜잭션 자체는 변경하지 않았습니다.
+    - Guest 마인드맵: `/api/v1/graph`는 Postgres 기반이라 Redis draft만 있는 guest에겐 항상 비어 보였습니다. `lib/graph-api.ts`에 `draftsToBrainXNotes`를 추가해 guest는 `listWorkspaceNoteDrafts()`(기존 actor-aware 엔드포인트) 결과를 연결선 없는 노드로 보여주고, 로그인 사용자는 기존 `getGraph()` 그대로 동작합니다.
+    - 같은 depth 폴더/노트 이름 중복: `Workspace-Service`의 `createFolder`/`patchFolder`/`createNote`/`patchMetadata`/`persistDraft`(최초 생성 시점만)에 자동 접미사 정책(차단이 아니라 "이름", "이름 2"…, Notion/Obsidian과 동일)을 추가했습니다. `FolderRepository`/`NoteRepository`에 같은 parentFolderId/folderId(루트 포함) 형제만 조회하는 JPQL 메서드를 추가했고, 프런트(`NotesWorkspace.tsx`)는 폴더 rename/move 응답의 실제 이름을 화면에 반영하도록 고쳤습니다(전엔 입력값을 그대로 표시해 서버가 자동으로 바꾼 이름과 어긋날 수 있었음). Guest Redis draft 자체의 중복은 검사하지 않습니다(NoteDraftService/SCAN 미변경 원칙).
+    - 이어쓰기 위치: `NoteEditor.tsx`의 `InlineContinueFloatingWidget` 앵커 계산을 caret `bottom + 4px`에서 caret이 있는 줄의 실제 `line-height + 10px`(화면 아래 경계 보정 포함) 기준으로 바꿔 다음 줄 텍스트와 겹치지 않게 했습니다.
+    - 목차 클릭 이동: 우측 목차(`RightSidebar.tsx`)는 클릭해도 아무 동작이 없었습니다. `parseHeadings`가 매기는 문서 순서 인덱스를 그대로 재사용해 `NoteEditor.tsx`에 `scrollToHeading(index)`(에디터 DOM의 h1~h3을 순서대로 찾아 `scrollIntoView` + 잠깐 강조)를 추가했고, `saveSignal`과 같은 nonce 패턴(`EditorPanel`/`PaneTreeRenderer`)으로 전달해 Split View에서도 활성 패널만 반응합니다.
+    - 버블 툴바 커스텀 색상: `components/notes/ColorPalette.tsx`의 `MoreColorPopover`에 네이티브 `<input type="color">` 커스텀 색상 선택기와 최근 사용 색상이 이미 구현되어 있었습니다(텍스트 색상/형광펜 각각 분리, 다크모드 안전한 BrainX 토큰 사용) — 추가 구현 없이 확인만 했습니다.
+    - Guest `/billing` 401: 우측 상단 프로필이 guest일 때 `AccountSettingsModal`(실제 구독 API 호출)을 열지 않고 드롭다운만 띄우도록 이미 바뀌어 있었고(직전 데모 제거 작업), `/mypage` 직접 진입도 세션이 없으면 모달을 열지 않습니다 — 이번 작업에서 추가 수정 없이 재확인했습니다. `(app)/billing` 페이지(`BillingScreen`) 자체는 처음부터 mock 화면이라 실제 API를 호출하지 않습니다.
+    - `WorkspaceDemoDataSeeder`(`dev-test-user` 시드 데이터)는 이번 범위에서 수정하지 않았습니다 — `dev-fallback-enabled` 기본 `false`로 인해 그 데이터는 어떤 실제 Guest/User 흐름과도 연결되지 않는 고아 데이터로 남아 있습니다(별도 작업 권장).
 - **Commerce-Service (신규, 2026-06-19 추가)**:
   - Toss Payments 연동: SSOT의 `CheckoutSessionData`에 `checkoutUrl` 단일 필드만 있던 것을 `clientKey`/`orderId`/`orderName`/`amount` 필드로 확장하고, `POST /api/v1/subscriptions/checkout-sessions/{id}/confirm` 엔드포인트를 SSOT에 신규 추가했습니다 (Toss는 호스팅 체크아웃 URL이 아니라 SDK + 서버 confirm 모델이기 때문). AsyncAPI는 변경하지 않았습니다 (기존 이벤트 스키마로 충분).
-  - **(2026-06-28 수정)** Toss confirm 성공 응답의 `method`, `card.cardType`, `easyPay.provider`를 저장해 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `간편결제`, `신용카드`, `체크카드` 계열로 표시합니다. Admin-Service 사용자 목록의 플랜은 Commerce 활성 구독을 우선하고 성공 결제 이력으로 보정합니다.
+  - **(2026-06-29 수정)** Toss confirm/취소 응답을 기준으로 관리자 결제 내역의 결제수단을 `TOSS` 고정값이 아니라 `카카오페이`, `토스페이`, `신용카드`, `체크카드` 같은 실제 결제수단으로 표시하고, 관리자 환불 API는 `amount`/`reason`을 Commerce 내부 환불 호출에 전달한 뒤 사용자에게 환불 완료 메일을 발송합니다.
   - **(2026-06-28 수정)** 관리자 결제 관리의 구독 현황은 유료 구독만 표시하고, 사용자 표시는 시스템 문자열이 아니라 사람 이름으로 읽히는 표시명만 노출하도록 정리했습니다.
   - **(2026-06-28 수정)** 관리자 문의 답변은 로그인 관리자 이름으로 User-Service에 저장되며, 관리자 콘솔에는 "관리자명에 의해 답변 완료"와 답변 본문이 표시되고 사용자 마이페이지 문의 상세에는 ADMIN 메시지로 표시됩니다.
   - **TEMP**: 다른 서비스와 동일하게 `/api/v1/plans`, `/api/v1/users/me/subscription`, `/api/v1/subscriptions/**`를 인증 없이 허용. 실제 로그인 연동 전까지는 누가 테스트하든 같은 `dev-test-user` 계정의 구독만 바뀝니다.
