@@ -30,6 +30,11 @@ export type GraphEdgeData = {
   type?: "RELATED" | "PARENT" | "CHILD" | "CAUSE" | "RESULT" | "WORKFLOW" | "REFERENCE" | "PROJECT" | "TAG" | "SIMILAR" | string;
   weight?: number | null;
   reason?: string | null;
+  metadata?: {
+    anchorText?: string | null;
+    headingAnchor?: string | null;
+    [key: string]: unknown;
+  } | null;
 };
 
 export type GraphData = {

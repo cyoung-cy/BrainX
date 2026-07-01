@@ -62,7 +62,8 @@ public final class AdminDtos {
             String kafkaConsumerGroupId,
             KafkaLagState kafkaLagState,
             String kafkaLagDetail,
-            OffsetDateTime capturedAt
+            OffsetDateTime capturedAt,
+            boolean persisted
     ) {}
 
     public record AdminKafkaLagData(

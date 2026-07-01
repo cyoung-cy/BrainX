@@ -26,6 +26,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -34,6 +36,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class WorkspaceService {
     private static final ZoneId MONITORING_ZONE = ZoneId.of("Asia/Seoul");
+    private static final Pattern HTML_WIKI_LINK_PATTERN = Pattern.compile("<span\\b[^>]*data-wiki-link[^>]*>.*?</span>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern RAW_WIKI_LINK_PATTERN = Pattern.compile("\\[\\[([^\\[\\]]+)]]");
+    private static final Pattern HTML_ATTRIBUTE_PATTERN = Pattern.compile("([\\w:-]+)\\s*=\\s*([\"'])(.*?)\\2", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private final NoteRepository noteRepository;
     private final NoteVersionRepository noteVersionRepository;
@@ -128,6 +133,8 @@ public class WorkspaceService {
         String title = dedupeNoteTitle(userId, request.folderId(), request.title(), null);
         Note note = new Note(Ids.note(), userId, title, request.markdown(), request.folderId(), request.tags(), now);
         noteRepository.save(note);
+        syncWikiLinksForNote(note, now);
+        syncIncomingWikiLinksForTitle(userId, note.getTitle(), note.getNoteId(), now);
         snapshot(note, now);
         activity(userId, note, "created", now);
         eventPublisher.publish("NoteCreated", userId, payload(
@@ -154,6 +161,8 @@ public class WorkspaceService {
             title = dedupeNoteTitle(userId, draft.folderId(), title, null);
             note = new Note(noteId, userId, title, markdown, draft.folderId(), List.of(), now);
             noteRepository.save(note);
+            syncWikiLinksForNote(note, now);
+            syncIncomingWikiLinksForTitle(userId, note.getTitle(), note.getNoteId(), now);
             eventPublisher.publish("NoteCreated", userId, payload(
                     "noteId", note.getNoteId(),
                     "userId", userId,
@@ -164,6 +173,7 @@ public class WorkspaceService {
             ));
         } else {
             note.applyDraft(title, markdown, draft.folderId(), now);
+            syncWikiLinksForNote(note, now);
             eventPublisher.publish("NoteContentSaved", userId, Map.of(
                     "noteId", note.getNoteId(),
                     "userId", userId,
@@ -217,6 +227,7 @@ public class WorkspaceService {
         }
         Instant now = Instant.now();
         note.saveContent(request.markdown(), now);
+        syncWikiLinksForNote(note, now);
         snapshot(note, now);
         activity(userId, note, "updated", now);
         eventPublisher.publish("NoteContentSaved", userId, Map.of(
@@ -232,6 +243,7 @@ public class WorkspaceService {
     public NoteMetadataData patchMetadata(String userId, String noteId, NoteMetadataPatchRequest request) {
         Note note = note(userId, noteId);
         Instant now = Instant.now();
+        String previousTitle = note.getTitle();
         // 제목/폴더 중 바뀌는 쪽만 반영한 "최종" 값 기준으로 같은 폴더 안 중복을 검사해야 한다 —
         // 폴더만 옮기고 제목은 그대로인 이동도 목적지에서 충돌할 수 있다.
         String targetFolderId = request.folderId() != null
@@ -240,6 +252,10 @@ public class WorkspaceService {
         String desiredTitle = (request.title() != null && !request.title().isBlank()) ? request.title() : note.getTitle();
         String finalTitle = dedupeNoteTitle(userId, targetFolderId, desiredTitle, noteId);
         note.patchMetadata(finalTitle, request.folderId(), request.tags(), request.archived(), typographyJson(request.typography()), now);
+        if (!Objects.equals(previousTitle, note.getTitle())) {
+            syncIncomingWikiLinksForTitle(userId, previousTitle, noteId, now);
+            syncIncomingWikiLinksForTitle(userId, note.getTitle(), noteId, now);
+        }
         snapshot(note, now);
         activity(userId, note, "updated", now);
         eventPublisher.publish("NoteMetadataChanged", userId, payload(
@@ -268,6 +284,7 @@ public class WorkspaceService {
                 .orElseThrow(() -> notFound("NOTE_VERSION_NOT_FOUND", "Note version not found."));
         Instant now = Instant.now();
         note.saveContent(version.getMarkdown(), now);
+        syncWikiLinksForNote(note, now);
         snapshot(note, now);
         eventPublisher.publish("NoteContentSaved", userId, Map.of(
                 "noteId", noteId,
@@ -436,6 +453,14 @@ public class WorkspaceService {
         if (target == null) {
             throw notFound("TARGET_NOTE_NOT_FOUND", "Target note not found.");
         }
+        Optional<NoteLink> existing = noteLinkRepository.findFirstByUserIdAndSourceNoteIdAndTargetNoteId(userId, source.getNoteId(), target.getNoteId());
+        if (existing.isPresent()) {
+            NoteLink existingLink = existing.get();
+            if (!existingLink.isWikiLink()) {
+                return linkData(existingLink);
+            }
+            deleteProjectedLink(existingLink);
+        }
         if (createdTarget[0]) {
             noteRepository.save(target);
             snapshot(target, Instant.now());
@@ -448,29 +473,39 @@ public class WorkspaceService {
                     "version", target.getVersion()
             ));
         }
-        NoteLink link = new NoteLink(Ids.link(), userId, source.getNoteId(), target.getNoteId(), target.getTitle(), Instant.now());
+        NoteLink link = new NoteLink(
+                Ids.link(),
+                userId,
+                source.getNoteId(),
+                target.getNoteId(),
+                target.getTitle(),
+                NoteLink.TYPE_MANUAL,
+                normalizeAnchorText(request.anchorText(), target.getTitle()),
+                trimToNull(request.headingAnchor()),
+                Instant.now()
+        );
         noteLinkRepository.save(link);
         log.info("[WorkspaceService] calling neo4jGraphProjection.upsertManualLink - userId: {}, sourceNoteId: {}, targetNoteId: {}, linkId: {}", 
                 userId, source.getNoteId(), target.getNoteId(), link.getLinkId());
-        neo4jGraphProjection.upsertManualLink(userId, source.getNoteId(), target.getNoteId(), link.getLinkId(), link.getCreatedAt());
+        neo4jGraphProjection.upsertManualLink(
+                userId,
+                source.getNoteId(),
+                target.getNoteId(),
+                link.getLinkId(),
+                link.getLinkType(),
+                link.getAnchorText(),
+                link.getHeadingAnchor(),
+                link.getCreatedAt()
+        );
         log.info("[WorkspaceService] finished neo4jGraphProjection.upsertManualLink call");
-        eventPublisher.publish("NoteLinkCreated", userId, Map.of(
-                "linkId", link.getLinkId(), "userId", userId, "sourceNoteId", source.getNoteId(), "targetNoteId", target.getNoteId(), "linkType", "MANUAL"
-        ));
-        return new NoteLinkData(link.getLinkId(), link.getSourceNoteId(), link.getTargetNoteId(), link.getTargetTitle());
+        publishLinkCreated(link);
+        return linkData(link);
     }
 
     public Void deleteLink(String userId, String noteId, String linkId) {
         NoteLink link = noteLinkRepository.findByLinkIdAndSourceNoteIdAndUserId(linkId, noteId, userId)
                 .orElseThrow(() -> notFound("NOTE_LINK_NOT_FOUND", "Note link not found."));
-        noteLinkRepository.delete(link);
-        log.info("[WorkspaceService] calling neo4jGraphProjection.deleteManualLink - userId: {}, sourceNoteId: {}, targetNoteId: {}, linkId: {}", 
-                userId, link.getSourceNoteId(), link.getTargetNoteId(), link.getLinkId());
-        neo4jGraphProjection.deleteManualLink(userId, link.getSourceNoteId(), link.getTargetNoteId(), link.getLinkId());
-        log.info("[WorkspaceService] finished neo4jGraphProjection.deleteManualLink call");
-        eventPublisher.publish("NoteLinkDeleted", userId, Map.of(
-                "linkId", linkId, "userId", userId, "sourceNoteId", link.getSourceNoteId(), "targetNoteId", link.getTargetNoteId()
-        ));
+        deleteProjectedLink(link);
         return null;
     }
 
@@ -479,7 +514,7 @@ public class WorkspaceService {
         return new BacklinksData(noteLinkRepository.findByTargetNoteIdAndUserId(noteId, userId).stream()
                 .map(link -> {
                     Note source = note(userId, link.getSourceNoteId());
-                    return new BacklinkItem(source.getNoteId(), source.getTitle(), link.getTargetTitle(), link.getCreatedAt());
+                    return new BacklinkItem(source.getNoteId(), source.getTitle(), displayLinkedText(link), link.getCreatedAt());
                 })
                 .toList());
     }
@@ -509,12 +544,16 @@ public class WorkspaceService {
                         "linkId", link.getLinkId(),
                         "source", link.getSourceNoteId(),
                         "target", link.getTargetNoteId(),
-                        "type", "MANUAL"
+                        "type", link.getLinkType(),
+                        "metadata", payload(
+                                "anchorText", link.getAnchorText(),
+                                "headingAnchor", link.getHeadingAnchor()
+                        )
                 ))
                 .toList();
         GraphData ledgerGraph = new GraphData(nodes, edges, Map.of("noteCount", nodes.size(), "edgeCount", edges.size(), "source", "workspace-ledger"), null);
         return neo4jGraphQueryService.findGraph(userId, folderId, tag, sinceInstant, untilInstant)
-                .filter(graph -> !graph.nodes().isEmpty() || ledgerGraph.nodes().isEmpty())
+                .map(graph -> preferGraphView(graph, ledgerGraph))
                 .orElse(ledgerGraph);
     }
 
@@ -646,6 +685,184 @@ public class WorkspaceService {
         noteVersionRepository.save(new NoteVersion(Ids.version(note.getNoteId(), note.getVersion()), note, now));
     }
 
+    private void syncWikiLinksForNote(Note source, Instant occurredAt) {
+        List<ParsedWikiLink> parsedLinks = extractWikiLinks(source.getMarkdown());
+        List<NoteLink> existingLinks = noteLinkRepository.findBySourceNoteIdAndUserId(source.getNoteId(), source.getUserId());
+
+        Map<String, NoteLink> existingWikiByTarget = existingLinks.stream()
+                .filter(NoteLink::isWikiLink)
+                .collect(Collectors.toMap(NoteLink::getTargetNoteId, link -> link, (left, right) -> left, LinkedHashMap::new));
+        Set<String> protectedTargetIds = existingLinks.stream()
+                .filter(link -> !link.isWikiLink())
+                .map(NoteLink::getTargetNoteId)
+                .collect(Collectors.toSet());
+        Map<String, DesiredWikiLink> desiredByTarget = new LinkedHashMap<>();
+
+        for (ParsedWikiLink parsed : parsedLinks) {
+            Note target = noteRepository.findFirstByUserIdAndTitleAndDeletedFalse(source.getUserId(), parsed.title())
+                    .orElse(null);
+            if (target == null || Objects.equals(target.getNoteId(), source.getNoteId())) {
+                continue;
+            }
+            if (protectedTargetIds.contains(target.getNoteId())) {
+                continue;
+            }
+            desiredByTarget.putIfAbsent(target.getNoteId(), new DesiredWikiLink(target, parsed.anchorText(), parsed.headingAnchor()));
+        }
+
+        for (Map.Entry<String, NoteLink> entry : existingWikiByTarget.entrySet()) {
+            String targetNoteId = entry.getKey();
+            NoteLink existing = entry.getValue();
+            DesiredWikiLink desired = desiredByTarget.remove(targetNoteId);
+            if (desired == null) {
+                deleteProjectedLink(existing);
+                continue;
+            }
+            if (!sameWikiProjection(existing, desired)) {
+                deleteProjectedLink(existing);
+                createWikiLink(source, desired, occurredAt);
+            }
+        }
+
+        for (DesiredWikiLink desired : desiredByTarget.values()) {
+            createWikiLink(source, desired, occurredAt);
+        }
+    }
+
+    private void syncIncomingWikiLinksForTitle(String userId, String noteTitle, String targetNoteId, Instant occurredAt) {
+        String normalizedTitle = trimToNull(noteTitle);
+        if (normalizedTitle == null) {
+            return;
+        }
+        noteRepository.findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId).stream()
+                .filter(note -> !Objects.equals(note.getNoteId(), targetNoteId))
+                .filter(note -> noteMayReferenceTitle(note.getMarkdown(), normalizedTitle))
+                .forEach(note -> syncWikiLinksForNote(note, occurredAt));
+    }
+
+    private void createWikiLink(Note source, DesiredWikiLink desired, Instant occurredAt) {
+        NoteLink link = new NoteLink(
+                Ids.link(),
+                source.getUserId(),
+                source.getNoteId(),
+                desired.target().getNoteId(),
+                desired.target().getTitle(),
+                NoteLink.TYPE_WIKI,
+                desired.anchorText(),
+                desired.headingAnchor(),
+                occurredAt
+        );
+        noteLinkRepository.save(link);
+        publishLinkCreated(link);
+    }
+
+    private boolean sameWikiProjection(NoteLink existing, DesiredWikiLink desired) {
+        return Objects.equals(existing.getTargetTitle(), desired.target().getTitle())
+                && Objects.equals(existing.getAnchorText(), desired.anchorText())
+                && Objects.equals(existing.getHeadingAnchor(), desired.headingAnchor());
+    }
+
+    private void deleteProjectedLink(NoteLink link) {
+        noteLinkRepository.delete(link);
+        log.info("[WorkspaceService] calling neo4jGraphProjection.deleteManualLink - userId: {}, sourceNoteId: {}, targetNoteId: {}, linkId: {}",
+                link.getUserId(), link.getSourceNoteId(), link.getTargetNoteId(), link.getLinkId());
+        neo4jGraphProjection.deleteManualLink(link.getUserId(), link.getSourceNoteId(), link.getTargetNoteId(), link.getLinkId());
+        log.info("[WorkspaceService] finished neo4jGraphProjection.deleteManualLink call");
+        eventPublisher.publish("NoteLinkDeleted", link.getUserId(), Map.of(
+                "linkId", link.getLinkId(),
+                "userId", link.getUserId(),
+                "sourceNoteId", link.getSourceNoteId(),
+                "targetNoteId", link.getTargetNoteId()
+        ));
+    }
+
+    private void publishLinkCreated(NoteLink link) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("linkId", link.getLinkId());
+        payload.put("userId", link.getUserId());
+        payload.put("sourceNoteId", link.getSourceNoteId());
+        payload.put("targetNoteId", link.getTargetNoteId());
+        payload.put("linkType", link.getLinkType());
+        payload.put("anchorText", link.getAnchorText());
+        payload.put("headingAnchor", link.getHeadingAnchor());
+        eventPublisher.publish("NoteLinkCreated", link.getUserId(), payload);
+    }
+
+    private List<ParsedWikiLink> extractWikiLinks(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return List.of();
+        }
+        List<ParsedWikiLink> result = new ArrayList<>();
+        Matcher htmlMatcher = HTML_WIKI_LINK_PATTERN.matcher(markdown);
+        StringBuffer withoutHtmlWikiLinks = new StringBuffer();
+        while (htmlMatcher.find()) {
+            String span = htmlMatcher.group();
+            readHtmlWikiLink(span).ifPresent(result::add);
+            htmlMatcher.appendReplacement(withoutHtmlWikiLinks, " ");
+        }
+        htmlMatcher.appendTail(withoutHtmlWikiLinks);
+
+        Matcher rawMatcher = RAW_WIKI_LINK_PATTERN.matcher(withoutHtmlWikiLinks.toString());
+        while (rawMatcher.find()) {
+            parseWikiLinkBody(rawMatcher.group(1)).ifPresent(result::add);
+        }
+        return result;
+    }
+
+    private Optional<ParsedWikiLink> readHtmlWikiLink(String html) {
+        Map<String, String> attrs = new HashMap<>();
+        Matcher matcher = HTML_ATTRIBUTE_PATTERN.matcher(html);
+        while (matcher.find()) {
+            attrs.put(matcher.group(1).toLowerCase(Locale.ROOT), matcher.group(3));
+        }
+        String title = trimToNull(attrs.get("data-title"));
+        if (title == null) {
+            return Optional.empty();
+        }
+        String anchorText = normalizeAnchorText(attrs.get("data-alias"), title);
+        return Optional.of(new ParsedWikiLink(title, anchorText, trimToNull(attrs.get("data-heading"))));
+    }
+
+    private Optional<ParsedWikiLink> parseWikiLinkBody(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return Optional.empty();
+        }
+        String[] aliasSplit = rawBody.split("\\|", 2);
+        String titleAndHeading = aliasSplit[0].trim();
+        String alias = aliasSplit.length > 1 ? trimToNull(aliasSplit[1]) : null;
+        String[] headingSplit = titleAndHeading.split("#", 2);
+        String title = trimToNull(headingSplit[0]);
+        if (title == null) {
+            return Optional.empty();
+        }
+        String headingAnchor = headingSplit.length > 1 ? trimToNull(headingSplit[1]) : null;
+        return Optional.of(new ParsedWikiLink(title, normalizeAnchorText(alias, title), headingAnchor));
+    }
+
+    private boolean noteMayReferenceTitle(String markdown, String noteTitle) {
+        if (markdown == null || markdown.isBlank()) {
+            return false;
+        }
+        return markdown.contains(noteTitle);
+    }
+
+    private String normalizeAnchorText(String candidate, String fallback) {
+        String normalized = trimToNull(candidate);
+        return normalized == null ? trimToNull(fallback) : normalized;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private String displayLinkedText(NoteLink link) {
+        return normalizeAnchorText(link.getAnchorText(), link.getTargetTitle());
+    }
+
     private void activity(String userId, Note note, String type, Instant at) {
         recentActivityRepository.save(new RecentActivity(Ids.activity(), userId, note.getNoteId(), note.getTitle(), type, at));
     }
@@ -702,7 +919,14 @@ public class WorkspaceService {
     }
 
     private Map<String, Object> linkMap(NoteLink link) {
-        return Map.of("linkId", link.getLinkId(), "sourceNoteId", link.getSourceNoteId(), "targetNoteId", link.getTargetNoteId(), "targetTitle", link.getTargetTitle());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("linkId", link.getLinkId());
+        result.put("sourceNoteId", link.getSourceNoteId());
+        result.put("targetNoteId", link.getTargetNoteId());
+        result.put("targetTitle", link.getTargetTitle());
+        result.put("anchorText", link.getAnchorText());
+        result.put("headingAnchor", link.getHeadingAnchor());
+        return result;
     }
 
     private Map<String, Object> favoriteMap(Favorite favorite) {
@@ -760,6 +984,59 @@ public class WorkspaceService {
     }
 
     public Map<String, Object> syncGraph() {
-        return neo4jGraphProjection.syncAll();
+        int wikiLinksBackfilled = backfillWikiLinks();
+        Map<String, Object> syncResult = new LinkedHashMap<>(neo4jGraphProjection.syncAll());
+        syncResult.put("wikiLinksBackfilled", wikiLinksBackfilled);
+        return syncResult;
+    }
+
+    private int backfillWikiLinks() {
+        List<Note> notes = noteRepository.findAll();
+        int processed = 0;
+        Instant now = Instant.now();
+        for (Note note : notes) {
+            syncWikiLinksForNote(note, now);
+            processed += 1;
+        }
+        return processed;
+    }
+
+    private NoteLinkData linkData(NoteLink link) {
+        return new NoteLinkData(
+                link.getLinkId(),
+                link.getSourceNoteId(),
+                link.getTargetNoteId(),
+                link.getTargetTitle(),
+                link.getAnchorText(),
+                link.getHeadingAnchor()
+        );
+    }
+
+    private GraphData preferGraphView(GraphData neo4jGraph, GraphData ledgerGraph) {
+        if (neo4jGraph.nodes().isEmpty() && !ledgerGraph.nodes().isEmpty()) {
+            return ledgerGraph;
+        }
+        if (neo4jGraph.edges().isEmpty() && !ledgerGraph.edges().isEmpty()) {
+            return ledgerGraph;
+        }
+        if (neo4jGraph.edges().size() < ledgerGraph.edges().size()) {
+            return new GraphData(
+                    neo4jGraph.nodes().isEmpty() ? ledgerGraph.nodes() : neo4jGraph.nodes(),
+                    ledgerGraph.edges(),
+                    Map.of(
+                            "noteCount", neo4jGraph.nodes().isEmpty() ? ledgerGraph.nodes().size() : neo4jGraph.nodes().size(),
+                            "edgeCount", ledgerGraph.edges().size(),
+                            "source", "neo4j+workspace-ledger-edges"
+                    ),
+                    neo4jGraph.lastViewedAt()
+            );
+        }
+        return neo4jGraph;
+    }
+
+    private record ParsedWikiLink(String title, String anchorText, String headingAnchor) {
+    }
+
+    private record DesiredWikiLink(Note target, String anchorText, String headingAnchor) {
     }
 }

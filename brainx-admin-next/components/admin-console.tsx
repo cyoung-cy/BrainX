@@ -825,6 +825,7 @@ export function AdminConsole() {
               onProfileUpdated={syncAdminProfile}
               onOpenAdmins={() => setScreen("admins")}
               onToast={notify}
+              onRefresh={reloadAdminData}
             />
           ) : null}
           {screen === "users" ? <UsersPanel users={adminData.users} onReload={reloadAdminData} onToast={notify} /> : null}
@@ -865,7 +866,15 @@ function AdminDataState({ loading, error, onRetry }: { loading: boolean; error: 
   );
 }
 
-function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message: string) => void }) {
+function Dashboard({
+  data,
+  onToast,
+  onRefresh
+}: {
+  data: AdminBootstrap;
+  onToast: (message: string) => void;
+  onRefresh: () => Promise<void>;
+}) {
   const overviewSummary = data.overviewSummary ?? {
     monthlyRevenue: 0,
     activeSubscriptions: 0,
@@ -911,16 +920,36 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
   const [openModal, setOpenModal] = useState<"snapshots" | "health" | "logs" | null>(null);
   const HISTORY_PREVIEW_COUNT = 5;
   const intelligenceService = data.services.find((service) => service.name === "Intelligence-Service") ?? data.services.find((service) => service.name === "AI-Service") ?? null;
+  const refreshRef = useRef(onRefresh);
+  const toastRef = useRef(onToast);
 
-  const loadHistory = () => {
-    adminApi.getMonitoringSnapshots().then(setSnapshots).catch(() => setSnapshots([]));
-    adminApi.getHealthSnapshots().then(setHealthSnapshots).catch(() => setHealthSnapshots([]));
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+    toastRef.current = onToast;
+  }, [onRefresh, onToast]);
+
+  const loadHistory = async () => {
+    try {
+      const [nextSnapshots, nextHealthSnapshots] = await Promise.all([
+        adminApi.getMonitoringSnapshots(),
+        adminApi.getHealthSnapshots()
+      ]);
+      setSnapshots(nextSnapshots);
+      setHealthSnapshots(nextHealthSnapshots);
+    } catch {
+      setSnapshots([]);
+      setHealthSnapshots([]);
+    }
   };
 
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setSnapshots(data.monitoringSnapshots);
+  }, [data.monitoringSnapshots]);
 
   useEffect(() => {
     let active = true;
@@ -939,6 +968,24 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
 
     return () => {
       active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const reloadDashboard = async () => {
+      try {
+        await Promise.all([refreshRef.current(), loadHistory()]);
+      } catch {
+        toastRef.current("모니터링 데이터를 다시 불러오지 못했어요");
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void reloadDashboard();
+    }, 30000);
+
+    return () => {
       window.clearInterval(timer);
     };
   }, []);
@@ -991,13 +1038,26 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
     onToast("운영 리포트를 엑셀 형태로 내려받았어요");
   };
 
+  const handleRefresh = async () => {
+    try {
+      await Promise.all([refreshRef.current(), loadHistory()]);
+      toastRef.current("모니터링 데이터를 새로고침했어요");
+    } catch {
+      toastRef.current("모니터링 데이터를 새로고침하지 못했어요");
+    }
+  };
+
   const renderSnapshotRow = (snapshot: AdminMonitoringSnapshot) => (
     <div key={snapshot.snapshotId} style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #f5f5f4", padding: "8px 0" }}>
       <span className="mono" style={{ width: 130, color: "#78716c", fontSize: 11 }}>{formatHistoryTime(snapshot.capturedAt)}</span>
       <span className="mono" style={{ flex: 1, fontSize: 12 }}>
         매출 {money(snapshot.monthlyRevenue)} · 구독 {snapshot.activeSubscriptions} · MRR {money(snapshot.mrr)} · 활성 {snapshot.activeUsers} · Kafka {kafkaLagLabel(kafkaLagDisplay(snapshot))} {snapshot.kafkaLagMessages == null ? "" : `(${snapshot.kafkaLagMessages.toLocaleString("ko-KR")} msgs)`}
       </span>
-      <button className="btn danger" title="삭제" onClick={() => deleteSnapshot(snapshot.snapshotId)} style={{ width: 30, height: 30, padding: 0, justifyContent: "center" }}><Trash2 size={14} /></button>
+      {snapshot.persisted ? (
+        <button className="btn danger" title="삭제" onClick={() => deleteSnapshot(snapshot.snapshotId)} style={{ width: 30, height: 30, padding: 0, justifyContent: "center" }}><Trash2 size={14} /></button>
+      ) : (
+        <Tag meta={{ background: "#f0fdf4", color: "#15803d" }}>live</Tag>
+      )}
     </div>
   );
 
@@ -1027,7 +1087,7 @@ function Dashboard({ data, onToast }: { data: AdminBootstrap; onToast: (message:
           <span>실시간 · 마지막 업데이트 {latestMonitoringUpdatedAt ? formatKstDateTime(latestMonitoringUpdatedAt) : "-"}</span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={() => onToast("새로고침을 시작했어요")}><RefreshCw size={15} />새로고침</button>
+          <button className="btn" onClick={() => void handleRefresh()}><RefreshCw size={15} />새로고침</button>
           <button className="btn primary" onClick={handleDownloadReport}><Download size={15} />리포트 다운로드</button>
         </div>
       </div>
@@ -1187,7 +1247,8 @@ function DashboardPage({
   onProfileImageUpdated,
   onProfileUpdated,
   onOpenAdmins,
-  onToast
+  onToast,
+  onRefresh
 }: {
   data: AdminBootstrap;
   adminProfile: AdminBootstrap["adminProfile"];
@@ -1196,11 +1257,12 @@ function DashboardPage({
   onProfileUpdated: (profile: AdminBootstrap["adminProfile"]) => void;
   onOpenAdmins: () => void;
   onToast: (message: string) => void;
+  onRefresh: () => Promise<void>;
 }) {
   return (
     <div className="dashboard-layout">
       <div className="dashboard-main">
-        <Dashboard data={data} onToast={onToast} />
+        <Dashboard data={data} onToast={onToast} onRefresh={onRefresh} />
       </div>
       <AdminProfileRail
         admin={adminProfile}

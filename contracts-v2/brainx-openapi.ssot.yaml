@@ -1970,6 +1970,7 @@ paths:
       - NoteCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Creating a note must also reconcile existing `[[...]]` wiki links from other notes that already reference the new title, so the authoritative note-link ledger and Neo4j projection gain the relationship even when the target note is created later.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -2599,6 +2600,7 @@ paths:
       - NoteMetadataChanged
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: If the title changes, Workspace-Service must rescan existing wiki-link references for both the old and new titles so stale edges are removed and newly satisfiable edges are created in the authoritative note-link ledger and graph projection.
       parameters:
       - name: noteId
         in: path
@@ -9026,7 +9028,7 @@ paths:
         reason: signup and active user summary
       x-produces-events: []
       x-async-boundary: false
-      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. The dashboard read itself is non-persistent; a Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
+      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. A Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. Before that cutoff, the admin web app must keep overview data refreshed from live reads instead of relying on the persisted snapshot list. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
       responses:
         '200':
           description: Success
@@ -9047,7 +9049,7 @@ paths:
   /api/v1/admin/monitoring/snapshots:
     get:
       operationId: listAdminMonitoringSnapshots
-      summary: List daily persisted dashboard monitoring snapshots
+      summary: List dashboard monitoring history with current-day live overlay
       tags:
       - Admin
       x-producer-service: admin-service
@@ -9059,7 +9061,7 @@ paths:
       x-internal-sync-calls: []
       x-produces-events: []
       x-async-boundary: false
-      description: admin-service가 매일 23:59 스케줄러로 적재하는 매출/구독/활성 사용자 일별 스냅샷 이력.
+      description: 과거 날짜는 admin-service가 매일 23:59 Asia/Seoul 스케줄러로 적재한 persisted 스냅샷 이력을 반환하고, 오늘 날짜는 아직 persisted row가 없으면 현재 live 집계를 맨 앞에 overlay해서 반환한다.
       responses:
         '200':
           description: Success
@@ -13439,6 +13441,9 @@ components:
         type:
           type: string
           enum:
+          - MANUAL
+          - WIKI
+          - AI_SUGGESTED
           - RELATED
           - PARENT
           - CHILD
@@ -15662,6 +15667,9 @@ components:
         capturedAt:
           type: string
           format: date-time
+        persisted:
+          type: boolean
+          description: false면 오늘 23:59 전 live overlay row이고, true면 DB에 저장된 persisted snapshot이다.
       required:
       - snapshotId
       - monthlyRevenue
@@ -15674,6 +15682,7 @@ components:
       - kafkaLagState
       - kafkaLagDetail
       - capturedAt
+      - persisted
       additionalProperties: false
     AdminKafkaLagData:
       type: object
