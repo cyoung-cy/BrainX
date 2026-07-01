@@ -111,8 +111,6 @@ interface FolderTreeProps {
   onRenameFolder: (folderId: string, newName: string) => void;
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
-  onDeleteFolder: (folderId: string) => void;
-  onDeleteNote?: (noteId: string) => void;
   favorites?: Set<string>;
   onToggleNoteFavorite?: (noteId: string) => void;
   onRenameNote?: (noteId: string, newTitle: string) => void;
@@ -125,6 +123,10 @@ interface FolderTreeProps {
   /* 다중 선택 */
   selectedIds?: Set<string>;
   onItemClick?: (item: SelectableItem, e: React.MouseEvent) => void;
+  /* 삭제 요청 — 우클릭(또는 "..." 버튼)한 시점의 선택 스냅샷(1개 이상의 id)을 그대로 넘긴다.
+     부모(NotesExplorer)가 이 스냅샷을 기준으로 확인 모달을 띄우고, 확인/취소 시 스냅샷 상태를
+     정리한다. 이후 selectedIds가 바뀌거나 초기화돼도 이미 열린 삭제 확인에는 영향이 없다. */
+  onRequestDelete?: (ids: string[]) => void;
   /* 이동 */
   onMoveItems?: (ids: SelectableItem[], targetFolderId: string | null) => void;
 }
@@ -144,8 +146,6 @@ export default function FolderTree({
   onRenameFolder,
   onChangeFolderColor,
   onToggleFolderFavorite,
-  onDeleteFolder,
-  onDeleteNote,
   favorites = EMPTY_FAVORITES,
   onToggleNoteFavorite,
   onRenameNote,
@@ -157,6 +157,7 @@ export default function FolderTree({
   onReorderFolder,
   selectedIds = EMPTY_SELECTED,
   onItemClick,
+  onRequestDelete,
   onMoveItems,
 }: FolderTreeProps) {
   const tree = buildTree(folders, notes, null);
@@ -242,12 +243,13 @@ export default function FolderTree({
             depth={0}
             isActive={note.id === activeNoteId}
             isSelected={selectedIds.has(note.id)}
+            selectedIds={selectedIds}
             activeDrag={activeDrag}
             overIndicator={overIndicator}
             onNoteClick={onNoteClick}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
-            onDeleteNote={onDeleteNote}
+            onRequestDelete={onRequestDelete}
             isFavorite={favorites.has(note.id)}
             onToggleFavorite={() => onToggleNoteFavorite?.(note.id)}
             onRenameNote={onRenameNote}
@@ -273,8 +275,7 @@ export default function FolderTree({
             onRenameFolder={onRenameFolder}
             onChangeFolderColor={onChangeFolderColor}
             onToggleFolderFavorite={onToggleFolderFavorite}
-            onDeleteFolder={onDeleteFolder}
-            onDeleteNote={onDeleteNote}
+            onRequestDelete={onRequestDelete}
             favorites={favorites}
             onToggleNoteFavorite={(id) => onToggleNoteFavorite?.(id)}
             onRenameNote={onRenameNote}
@@ -517,7 +518,11 @@ interface NoteMenuProps {
   onClose: () => void;
 }
 
-export function NoteMenu({ note, isFavorite, anchor, onStartRename, onToggleFavorite, onMove, onDelete, onClose }: NoteMenuProps) {
+/* 삭제 확인은 이제 이 메뉴 안에서 window.confirm()으로 즉석 처리하지 않는다 — 호출부(NotesExplorer)가
+   단일/다중 삭제를 하나의 커스텀 ConfirmDialog로 통일해서 띄운다. 여기서 window.confirm과 커스텀
+   모달을 같이 쓰면(과거 구현) 네이티브 모달이 열려있는 동안 나머지 페이지 클릭 처리와 얽혀 "취소" 후
+   엉뚱한 클릭에서 확인창이 다시 뜨는 것처럼 보이는 문제가 있었다 — 확인 흐름을 하나로 합쳐 제거했다. */
+export function NoteMenu({ note: _note, isFavorite, anchor, onStartRename, onToggleFavorite, onMove, onDelete, onClose }: NoteMenuProps) {
   const itemClass =
     "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt";
 
@@ -541,7 +546,7 @@ export function NoteMenu({ note, isFavorite, anchor, onStartRename, onToggleFavo
         className={cx(itemClass, "text-red-400 hover:text-red-300")}
         onClick={() => {
           onClose();
-          if (confirm(`"${note.title}" 노트를 삭제하시겠습니까?`)) onDelete();
+          onDelete();
         }}
       >
         <Trash2 size={12} className="shrink-0" /> 삭제
@@ -565,8 +570,7 @@ interface FolderNodeProps {
   onRenameFolder: (folderId: string, newName: string) => void;
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
-  onDeleteFolder: (folderId: string) => void;
-  onDeleteNote?: (noteId: string) => void;
+  onRequestDelete?: (ids: string[]) => void;
   favorites: Set<string>;
   onToggleNoteFavorite: (noteId: string) => void;
   onRenameNote?: (noteId: string, newTitle: string) => void;
@@ -592,8 +596,7 @@ function FolderNode({
   onRenameFolder,
   onChangeFolderColor,
   onToggleFolderFavorite,
-  onDeleteFolder,
-  onDeleteNote,
+  onRequestDelete,
   favorites,
   onToggleNoteFavorite,
   onRenameNote,
@@ -621,6 +624,13 @@ function FolderNode({
   const isBeingDragged = activeDrag?.dragType === "folder" && activeDrag.id === item.folder.id;
   const indicator = overIndicator && overIndicator.targetId === item.folder.id ? overIndicator : null;
   const isMultiSelected = selectedIds.has(item.folder.id);
+  /* 삭제 대상 스냅샷 — 우클릭(또는 "..." 버튼)한 "그 순간"의 selectedIds를 얼려서 저장한다. 이후
+     selectedIds가 바뀌거나 blur로 선택이 풀려도 이미 연 메뉴의 삭제 대상은 흔들리지 않는다. */
+  const [deleteSnapshot, setDeleteSnapshot] = useState<string[]>([item.folder.id]);
+  const captureDeleteSnapshot = useCallback(() => {
+    const isPartOfSelection = selectedIds.size > 1 && selectedIds.has(item.folder.id);
+    setDeleteSnapshot(isPartOfSelection ? [...selectedIds] : [item.folder.id]);
+  }, [selectedIds, item.folder.id]);
 
   const { attributes, listeners, setNodeRef: setDragRef } = useDraggable({
     id: dndId,
@@ -684,13 +694,12 @@ function FolderNode({
         className="group relative flex h-7 cursor-pointer items-center gap-1 rounded-md pr-1 transition-colors hover:bg-surface2/40"
         style={{
           paddingLeft: indent,
+          // 다중 선택(isMultiSelected)은 배경만으로 표시하고, 왼쪽 강조선은 즐겨찾기 색상 전용으로 남긴다
+          // — 노트 행과 동일하게 "배경=다중선택", "왼쪽선=다른 의미"로 표현을 분리한다.
           background: isMultiSelected
             ? "rgb(var(--primary) / 0.15)"
             : isSelected ? "rgb(var(--primary) / 0.1)" : undefined,
-          borderLeft: isMultiSelected
-            ? "2px solid rgb(var(--primary) / 0.6)"
-            : item.folder.favorite ? `2px solid ${folderColor}` : "2px solid transparent",
-          outline: isMultiSelected ? "none" : undefined,
+          borderLeft: item.folder.favorite ? `2px solid ${folderColor}` : "2px solid transparent",
           opacity: isBeingDragged ? 0.4 : undefined,
         }}
         onMouseEnter={() => setHovered(true)}
@@ -698,6 +707,7 @@ function FolderNode({
         onClick={handleRowClick}
         onContextMenu={(e) => {
           e.preventDefault();
+          captureDeleteSnapshot();
           setMenuAnchor({ x: e.clientX, y: e.clientY });
           setMenuOpen(true);
         }}
@@ -799,7 +809,7 @@ function FolderNode({
             </button>
             <button
               type="button"
-              onClick={() => { setMenuAnchor(null); setMenuOpen((v) => !v); }}
+              onClick={() => { captureDeleteSnapshot(); setMenuAnchor(null); setMenuOpen((v) => !v); }}
               title="더보기"
               className="grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary"
             >
@@ -816,7 +826,7 @@ function FolderNode({
                 onChangeColor={(color) => onChangeFolderColor(item.folder.id, color)}
                 onToggleFavorite={() => onToggleFolderFavorite(item.folder.id)}
                 onMove={onMoveItems ? () => setShowMoveModal(true) : undefined}
-                onDelete={() => onDeleteFolder(item.folder.id)}
+                onDelete={() => onRequestDelete?.(deleteSnapshot)}
                 onClose={() => { setMenuOpen(false); setMenuAnchor(null); }}
               />
             )}
@@ -860,12 +870,13 @@ function FolderNode({
               depth={depth + 1}
               isActive={note.id === activeNoteId}
               isSelected={selectedIds.has(note.id)}
+              selectedIds={selectedIds}
               activeDrag={activeDrag}
               overIndicator={overIndicator}
               onNoteClick={onNoteClick}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
-              onDeleteNote={onDeleteNote}
+              onRequestDelete={onRequestDelete}
               isFavorite={favorites.has(note.id)}
               onToggleFavorite={() => onToggleNoteFavorite(note.id)}
               onRenameNote={onRenameNote}
@@ -891,8 +902,7 @@ function FolderNode({
               onRenameFolder={onRenameFolder}
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
-              onDeleteFolder={onDeleteFolder}
-              onDeleteNote={onDeleteNote}
+              onRequestDelete={onRequestDelete}
               favorites={favorites}
               onToggleNoteFavorite={onToggleNoteFavorite}
               onRenameNote={onRenameNote}
@@ -938,12 +948,13 @@ function NoteRow({
   depth,
   isActive,
   isSelected,
+  selectedIds,
   activeDrag,
   overIndicator,
   onNoteClick,
   onDragStart,
   onDragEnd,
-  onDeleteNote,
+  onRequestDelete,
   isFavorite,
   onToggleFavorite,
   onRenameNote,
@@ -955,12 +966,13 @@ function NoteRow({
   depth: number;
   isActive: boolean;
   isSelected: boolean;
+  selectedIds: Set<string>;
   activeDrag: DragActiveData | null;
   overIndicator: OverIndicator | null;
   onNoteClick: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
-  onDeleteNote?: (id: string) => void;
+  onRequestDelete?: (ids: string[]) => void;
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   onRenameNote?: (id: string, newTitle: string) => void;
@@ -978,6 +990,12 @@ function NoteRow({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const indent = depth * 14 + 6 + 16;
+  /* 삭제 대상 스냅샷 — 우클릭(또는 "..." 버튼)한 순간의 selectedIds를 얼려서 저장한다. */
+  const [deleteSnapshot, setDeleteSnapshot] = useState<string[]>([note.id]);
+  const captureDeleteSnapshot = useCallback(() => {
+    const isPartOfSelection = selectedIds.size > 1 && selectedIds.has(note.id);
+    setDeleteSnapshot(isPartOfSelection ? [...selectedIds] : [note.id]);
+  }, [selectedIds, note.id]);
 
   const dndId = `note:${note.id}`;
   const isBeingDragged = activeDrag?.dragType === "note" && activeDrag.id === note.id;
@@ -1031,6 +1049,7 @@ function NoteRow({
       onMouseLeave={() => setHovered(false)}
       onContextMenu={(e) => {
         e.preventDefault();
+        captureDeleteSnapshot();
         setMenuAnchor({ x: e.clientX, y: e.clientY });
         setMenuOpen(true);
       }}
@@ -1050,11 +1069,10 @@ function NoteRow({
         dragging && "opacity-40"
       )}
       style={{
+        // 다중 선택(isSelected)은 배경만, 탭에서 열려있는 노트(isActive)는 왼쪽 강조선 + 아이콘/글자
+        // 색으로만 표시한다 — 두 상태가 같은 행에 동시에 걸려도 서로 겹쳐 헷갈리지 않도록 표현을 분리했다.
         paddingLeft: indent - 12,
-        background: isSelected
-          ? "rgb(var(--primary) / 0.15)"
-          : isActive ? "rgb(var(--primary) / 0.12)" : undefined,
-        borderLeft: isSelected ? "2px solid rgb(var(--primary) / 0.6)" : "2px solid transparent",
+        background: isSelected ? "rgb(var(--primary) / 0.15)" : undefined,
         opacity: isBeingDragged ? 0.4 : undefined,
       }}
     >
@@ -1110,7 +1128,7 @@ function NoteRow({
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            onClick={() => { setMenuAnchor(null); setMenuOpen((v) => !v); }}
+            onClick={() => { captureDeleteSnapshot(); setMenuAnchor(null); setMenuOpen((v) => !v); }}
             title="더보기"
             className="grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-primary"
           >
@@ -1125,7 +1143,7 @@ function NoteRow({
               onStartRename={() => setRenaming(true)}
               onToggleFavorite={() => onToggleFavorite?.()}
               onMove={onMoveItems ? () => setShowMoveModal(true) : undefined}
-              onDelete={() => onDeleteNote?.(note.id)}
+              onDelete={() => onRequestDelete?.(deleteSnapshot)}
               onClose={() => { setMenuOpen(false); setMenuAnchor(null); }}
             />
           )}

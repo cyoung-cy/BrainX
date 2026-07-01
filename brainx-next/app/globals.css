@@ -1591,7 +1591,8 @@ html.light .hljs-addition {
 }
 
 .brainx-toggle__chevron-icon {
-  transition: transform 0.15s ease;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .brainx-toggle__summary {
@@ -1626,6 +1627,19 @@ html.light .hljs-addition {
 
 .brainx-toggle__content > div > * + * {
   margin-top: 4px;
+}
+
+.brainx-toggle__summary--placeholder {
+  color: rgb(var(--txt3));
+  font-weight: 400;
+}
+
+.brainx-toggle__content-placeholder::before {
+  content: "텍스트를 입력하세요...";
+  float: left;
+  height: 0;
+  color: rgb(var(--txt3));
+  pointer-events: none;
 }
 
 /* 접힌 상태에서는 내용 영역이 렌더되지 않으므로 별도 스타일 불필요 */

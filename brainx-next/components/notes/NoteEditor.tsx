@@ -2680,6 +2680,24 @@ function CustomBubbleMenu({
 const EDITOR_HINT_TEXT =
   "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · ```mermaid 다이어그램 · ![](url) 이미지 · 텍스트 선택 → 버블 툴바";
 
+/* TipTap의 editor.isEmpty(isNodeEmpty)는 모든 자식을 재귀적으로 검사해 "텍스트가 하나도 없으면"
+   빈 문서로 판단한다. 토글은 제목이 summary attrs(문서 content가 아님)에 있고 본문은 빈 문단
+   하나뿐일 수 있어, 제목을 입력해도 이 재귀 검사에서는 여전히 "비어있음"으로 오판된다 — 그 결과
+   토글만 있는 노트에서도 "새 노트 가이드라인"이 계속 떠 있었다. 문서에 토글 노드가 하나라도
+   있으면 내용이 있는 것으로 간주해 이 오판을 피한다. */
+function isEditorTrulyEmpty(ed: Editor) {
+  let hasToggle = false;
+  ed.state.doc.descendants((node) => {
+    if (hasToggle) return false;
+    if (node.type.name === "toggleNode") {
+      hasToggle = true;
+      return false;
+    }
+    return true;
+  });
+  return hasToggle ? false : ed.isEmpty;
+}
+
 interface NoteEditorProps {
   note: MockNote;
   mode: EditMode;
@@ -2826,7 +2844,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
     },
     /* 본문 변경 → mock notes state로 디바운스 동기화 (탭 전환/재방문 시 내용 유지) */
     onUpdate: ({ editor: ed }) => {
-      setIsEmpty(ed.isEmpty);
+      setIsEmpty(isEditorTrulyEmpty(ed));
       const html = ed.getHTML();
       const noteId = note.id;
       if (contentSyncTimerRef.current) clearTimeout(contentSyncTimerRef.current);
@@ -3241,7 +3259,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       const isSameNote = syncedNoteIdRef.current === noteId;
       const editorHasFocus = editor.view.dom.contains(document.activeElement);
       if (isSameNote && editorHasFocus) {
-        setIsEmpty(editor.isEmpty);
+        setIsEmpty(isEditorTrulyEmpty(editor));
         return;
       }
       const nextContent = resolveEditorHtml(content);

@@ -151,7 +151,10 @@ const COMMANDS: SlashCommandItem[] = [
         .deleteRange(range)
         .insertContent({
           type: "toggleNode",
-          attrs: { open: true, summary: "토글" },
+          // autoFocusSummary: 삽입 직후 곧바로 제목을 입력할 수 있도록 ToggleNodeView가 마운트되자마자
+          // 제목 편집 모드로 연다(ToggleNode.tsx의 AUTO_FOCUS_ATTR와 같은 문자열 키).
+          // open: false — 새로 만든 토글은 기본적으로 접힌 상태로 시작한다(Notion과 동일).
+          attrs: { open: false, summary: "", autoFocusSummary: true },
           content: [{ type: "paragraph" }],
         })
         .run(),

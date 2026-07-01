@@ -78,11 +78,13 @@ function FavNoteRow({
       }}
       className={cx(
         "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
-        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt",
-        isSelected && "ring-1 ring-primary/50"
+        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
-      style={{ background: isSelected ? "rgb(var(--primary) / 0.15)" : isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
+      style={{ background: isSelected ? "rgb(var(--primary) / 0.15)" : undefined }}
     >
+      {isActive && (
+        <span className="absolute left-0 h-4 w-0.5 rounded-r" style={{ background: "rgb(var(--primary))" }} />
+      )}
       <FileText size={11} className="shrink-0" style={{ color: "#f59e0b" }} />
       {renaming ? (
         <input
@@ -207,11 +209,13 @@ function SearchNoteRow({
       }}
       className={cx(
         "group relative flex h-7 cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors",
-        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt",
-        isSelected && "ring-1 ring-primary/50"
+        isActive ? "font-medium text-txt" : "text-txt2 hover:text-txt"
       )}
-      style={{ background: isSelected ? "rgb(var(--primary) / 0.15)" : isActive ? "rgb(var(--primary) / 0.12)" : undefined }}
+      style={{ background: isSelected ? "rgb(var(--primary) / 0.15)" : undefined }}
     >
+      {isActive && (
+        <span className="absolute left-0 h-4 w-0.5 rounded-r" style={{ background: "rgb(var(--primary))" }} />
+      )}
       <FileText size={11} className="shrink-0 text-txt3" />
       {renaming ? (
         <input
@@ -555,7 +559,9 @@ export default function NotesExplorer({
   /* 다중 선택 */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState(false);
+  /* 삭제 확인 대상 — 삭제 메뉴를 누른 "그 순간"의 스냅샷만 담는다. selectedIds가 나중에 바뀌거나
+     비워져도 이미 열린 확인창의 삭제 대상에는 영향이 없다. 확인/취소 어느 쪽이든 null로 되돌아간다. */
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const [pendingMoveItems, setPendingMoveItems] = useState<SelectableItem[] | null>(null);
   const explorerRef = useRef<HTMLDivElement>(null);
 
@@ -622,34 +628,66 @@ export default function NotesExplorer({
     }
   }, [flatVisibleItems, lastSelectedId, onNoteClick, onSelectFolder]);
 
-  /* Delete 키 처리 */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Delete") return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      if (!explorerRef.current?.contains(target) && selectedIds.size === 0) return;
-      if (selectedIds.size === 0) return;
-      e.preventDefault();
-      setPendingDelete(true);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds]);
+  /* 삭제 요청 — 삭제 메뉴(우클릭/"..." 버튼)를 눌렀을 때만 호출된다. ids는 그 순간의 스냅샷이라
+     이후 selectedIds가 바뀌어도 흔들리지 않는다. */
+  const requestDelete = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setPendingDeleteIds(ids);
+  }, []);
 
-  /* 다중 삭제 확인 */
-  const confirmMultiDelete = useCallback(() => {
-    const noteIds = [...selectedIds].filter((id) => notes.some((n) => n.id === id));
-    const folderIds = [...selectedIds].filter((id) => folders.some((f) => f.id === id));
+  /* 확인/취소 어느 쪽이든 이 함수로 정리한다 — pending 상태만 지우고 selectedIds는 건드리지 않는다
+     (취소 후에도 사용자가 하던 다중 선택 작업을 이어갈 수 있게). */
+  const cancelDelete = useCallback(() => {
+    setPendingDeleteIds(null);
+  }, []);
+
+  /* 다중(또는 단일) 삭제 확인 — pendingDeleteIds 스냅샷만 사용하고 live selectedIds는 다시 읽지 않는다. */
+  const confirmDelete = useCallback(() => {
+    if (!pendingDeleteIds) return;
+    const noteIds = pendingDeleteIds.filter((id) => notes.some((n) => n.id === id));
+    const folderIds = pendingDeleteIds.filter((id) => folders.some((f) => f.id === id));
+    if (noteIds.length > 0) {
+      setFavorites((prev) => {
+        if (!noteIds.some((id) => prev.has(id))) return prev;
+        const next = new Set(prev);
+        noteIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
     if (onDeleteMultiple) {
       onDeleteMultiple(noteIds, folderIds);
     } else {
       noteIds.forEach((id) => onDeleteNote(id));
       folderIds.forEach((id) => onDeleteFolder(id));
     }
+    setPendingDeleteIds(null);
     setSelectedIds(new Set());
-    setPendingDelete(false);
-  }, [selectedIds, notes, folders, onDeleteMultiple, onDeleteNote, onDeleteFolder]);
+  }, [pendingDeleteIds, notes, folders, onDeleteMultiple, onDeleteNote, onDeleteFolder]);
+
+  const pendingDeleteLabel = useMemo(() => {
+    if (!pendingDeleteIds || pendingDeleteIds.length === 0) return "";
+    if (pendingDeleteIds.length === 1) {
+      const id = pendingDeleteIds[0];
+      const name = notes.find((n) => n.id === id)?.title ?? folders.find((f) => f.id === id)?.name ?? "항목";
+      return `"${name}"을(를) 삭제하시겠습니까?`;
+    }
+    return `선택한 ${pendingDeleteIds.length}개의 항목을 삭제하시겠습니까?`;
+  }, [pendingDeleteIds, notes, folders]);
+
+  /* Delete 키 처리 — 현재 다중 선택 전체를 스냅샷으로 삼는다(선택이 없으면 무시) */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Delete") return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (selectedIds.size === 0) return;
+      if (!explorerRef.current?.contains(target)) return;
+      e.preventDefault();
+      requestDelete([...selectedIds]);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIds, requestDelete]);
 
   /* 이동 처리 */
   const handleMoveItems = useCallback((items: SelectableItem[], targetFolderId: string | null) => {
@@ -673,16 +711,6 @@ export default function NotesExplorer({
   const handleMoveSingleFolder = useCallback((folderId: string) => {
     setPendingMoveItems([{ id: folderId, type: "folder" }]);
   }, []);
-
-  const handleDeleteNote = useCallback((noteId: string) => {
-    setFavorites((prev) => {
-      if (!prev.has(noteId)) return prev;
-      const next = new Set(prev);
-      next.delete(noteId);
-      return next;
-    });
-    onDeleteNote(noteId);
-  }, [onDeleteNote]);
 
   const [creatingRootFolder, setCreatingRootFolder] = useState(false);
   const [rootFolderName, setRootFolderName] = useState("");
@@ -849,7 +877,7 @@ export default function NotesExplorer({
           </button>
           <button
             type="button"
-            onClick={() => setPendingDelete(true)}
+            onClick={() => requestDelete([...selectedIds])}
             title="삭제"
             className="grid h-5 w-5 place-items-center rounded text-txt3 transition-colors hover:bg-surface2/80 hover:text-red-400"
           >
@@ -886,7 +914,7 @@ export default function NotesExplorer({
                   onDragStart={onDragStart}
                   onDragEnd={onDragEnd}
                   onToggleFavorite={toggleFavorite}
-                  onDeleteNote={handleDeleteNote}
+                  onDeleteNote={(id) => requestDelete([id])}
                   onRenameNote={onRenameNote}
                   onMoveNote={handleMoveSingleNote}
                 />
@@ -923,7 +951,7 @@ export default function NotesExplorer({
                         onCreateNote={onCreateNote}
                         onRenameFolder={onRenameFolder}
                         onChangeFolderColor={onChangeFolderColor}
-                        onDeleteFolder={onDeleteFolder}
+                        onDeleteFolder={(id) => requestDelete([id])}
                         folders={folders}
                         onMoveFolder={handleMoveSingleFolder}
                       />
@@ -938,7 +966,7 @@ export default function NotesExplorer({
                         onDragStart={onDragStart}
                         onDragEnd={onDragEnd}
                         onToggleFavorite={toggleFavorite}
-                        onDeleteNote={handleDeleteNote}
+                        onDeleteNote={(id) => requestDelete([id])}
                         onRenameNote={onRenameNote}
                         onMoveNote={handleMoveSingleNote}
                       />
@@ -995,8 +1023,6 @@ export default function NotesExplorer({
               onRenameFolder={onRenameFolder}
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
-              onDeleteFolder={onDeleteFolder}
-              onDeleteNote={handleDeleteNote}
               favorites={favorites}
               onToggleNoteFavorite={toggleFavorite}
               onRenameNote={onRenameNote}
@@ -1008,6 +1034,7 @@ export default function NotesExplorer({
               onReorderFolder={onReorderFolder}
               selectedIds={selectedIds}
               onItemClick={handleItemClick}
+              onRequestDelete={requestDelete}
               onMoveItems={handleExplorerMoveItems}
             />
           </>
@@ -1024,14 +1051,14 @@ export default function NotesExplorer({
         </div>
       </div>
 
-      {/* 다중 삭제 확인 모달 */}
-      {pendingDelete && selectedCount > 0 && (
+      {/* 삭제 확인 모달 — 단일/다중 삭제를 하나의 모달로 통일했다(window.confirm과의 혼용 제거) */}
+      {pendingDeleteIds && pendingDeleteIds.length > 0 && (
         <ConfirmDialog
-          title={`${selectedCount}개 항목을 삭제하시겠습니까?`}
+          title={pendingDeleteLabel}
           description="삭제한 항목은 복구할 수 없습니다."
           confirmLabel="삭제"
-          onConfirm={confirmMultiDelete}
-          onCancel={() => setPendingDelete(false)}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
         />
       )}
 

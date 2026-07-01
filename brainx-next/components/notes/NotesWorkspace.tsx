@@ -771,13 +771,22 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setTabMode((prev) => ({ ...prev, [tabId]: mode }));
   }, []);
 
-  /* 노트 제목 변경 → notes 상태 갱신 (사이드바/탭/헤더/컨텍스트 즉시 반영) */
+  /* 노트 제목 변경(에디터 상단 제목 입력) → notes 상태 갱신 (사이드바/탭/헤더/컨텍스트 즉시 반영).
+     같은 위치에 동일 제목이 이미 있으면 커밋하지 않는다 — 사이드바 rename(handleRenameNoteFromExplorer)과
+     동일한 중복 검사를 공유한다. 거부되면 notes 상태가 바뀌지 않으므로 EditorPanel은 note.title을
+     그대로 다시 보여줘 자동으로 이전 제목으로 되돌아간다. */
   const handleTitleChange = useCallback((noteId: string, newTitle: string) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (newTitle !== note.title && checkNoteDuplicate(newTitle, note.folderId)) {
+      pushToast("이미 같은 이름의 노트가 있습니다.", "err");
+      return;
+    }
     draftDirtyNoteIdsRef.current.add(noteId);
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, title: newTitle, updatedAt: Date.now() } : n))
     );
-  }, []);
+  }, [notes, checkNoteDuplicate, pushToast]);
 
   /* 노트 본문 변경(에디터 onUpdate 디바운스) → notes 상태 갱신, 탭 전환 후에도 내용 유지 */
   const handleContentChange = useCallback((noteId: string, newContentHtml: string) => {
@@ -930,14 +939,26 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       pushToast("체험 모드에서는 노트를 최대 10개까지 생성할 수 있습니다.", "err");
       return "";
     }
-    const noteTitle = title ?? "새 노트";
-    /* 같은 depth 동일 이름 노트 중복 방지 */
-    if (checkNoteDuplicate(noteTitle, folderId ?? null)) {
-      pushToast("같은 위치에 동일한 이름의 노트가 이미 있습니다.", "err");
-      return "";
+    /* 명시적 title이 주어진 경우(위키링크 생성 등)는 사용자의 의도된 이름이므로 기존처럼 중복이면
+       막는다. 반면 기본값("새 노트")은 자동 생성값이라 막는 대신 자동 넘버링한다:
+       새 노트 → 새 노트1 → 새 노트2 … 처럼 같은 위치에서 비어있는 이름을 찾아 사용한다. */
+    let noteTitle: string;
+    if (title) {
+      if (checkNoteDuplicate(title, folderId ?? null)) {
+        pushToast("같은 위치에 동일한 이름의 노트가 이미 있습니다.", "err");
+        return "";
+      }
+      noteTitle = title;
+    } else {
+      noteTitle = "새 노트";
+      let suffix = 1;
+      while (checkNoteDuplicate(noteTitle, folderId ?? null)) {
+        noteTitle = `새 노트${suffix}`;
+        suffix += 1;
+      }
     }
     const newNote = makeBlankNote(folderId);
-    if (title) newNote.title = title;
+    newNote.title = noteTitle;
     const localNoteId = newNote.id;
     const newTabId = uid();
     setNotes((prev) => [newNote, ...prev]);
@@ -1270,22 +1291,42 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   }, [folders, notes, applyLocalNotesDeletion, pushToast]);
 
   /* 다중 삭제 — 탐색기에서 Ctrl/Shift 다중 선택 후 Delete 키 또는 컨텍스트 메뉴로 호출된다.
-     폴더 삭제는 cascade(하위 포함)이므로 먼저 폴더를 처리해 중복 처리를 방지한다. */
+     폴더 삭제는 cascade(하위 포함)이므로 먼저 폴더를 처리해 중복 처리를 방지한다.
+     노트는 handleDeleteNote(단건)와 동일한 정책으로 처리한다 — 서버에 이미 존재하는 노트("note_"
+     접두사)는 DELETE API가 성공한 것만 로컬에서 지운다(이전에는 API 호출을 fire-and-forget으로
+     쏘고 실패 여부와 무관하게 로컬에서 먼저 지워버려서, 삭제가 실패해도 화면에서는 사라졌다가
+     새로고침하면 되살아나는 것처럼 보이는 불일치가 있었다). 아직 서버에 없는 로컬 전용 초안
+     노트는 바로 지운다. */
   const handleDeleteMultiple = useCallback((noteIds: string[], folderIds: string[]) => {
     /* 폴더를 먼저 삭제(cascade로 하위 노트/폴더가 함께 사라지므로 순서가 중요) */
     for (const fid of folderIds) {
       handleDeleteFolder(fid);
     }
-    /* 폴더 삭제로 이미 지워진 노트는 남은 notes에 없으므로 그대로 남은 noteIds만 처리 */
-    applyLocalNotesDeletion(new Set(noteIds));
-    if (!USE_MOCK_NOTES) {
-      noteIds.forEach((nid) => {
-        if (nid.startsWith("note_")) {
-          void deleteWorkspaceNote(nid, "trash").catch(() => {});
-        }
-      });
+    if (noteIds.length === 0) return;
+
+    if (USE_MOCK_NOTES) {
+      applyLocalNotesDeletion(new Set(noteIds));
+      return;
     }
-  }, [handleDeleteFolder, applyLocalNotesDeletion]);
+
+    const localOnlyIds = noteIds.filter((id) => !id.startsWith("note_"));
+    const serverIds = noteIds.filter((id) => id.startsWith("note_"));
+    if (localOnlyIds.length > 0) applyLocalNotesDeletion(new Set(localOnlyIds));
+    if (serverIds.length === 0) return;
+
+    void Promise.allSettled(serverIds.map((nid) => deleteWorkspaceNote(nid, "trash"))).then((results) => {
+      const succeeded = new Set<string>();
+      let failedCount = 0;
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") succeeded.add(serverIds[index]);
+        else failedCount += 1;
+      });
+      if (succeeded.size > 0) applyLocalNotesDeletion(succeeded);
+      if (failedCount > 0) {
+        pushToast(`${failedCount}개의 노트를 삭제하지 못했습니다.`, "err");
+      }
+    });
+  }, [handleDeleteFolder, applyLocalNotesDeletion, pushToast]);
 
   const handleSelectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);
