@@ -1786,7 +1786,6 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       hasSplitPanels={hasSplitPanels}
       contextOpen={contextOpen}
       onContextToggle={() => setContextOpen((prev) => !prev)}
-      onScrollToHeadingRegister={handleScrollToHeadingRegister}
     />
   );
 
