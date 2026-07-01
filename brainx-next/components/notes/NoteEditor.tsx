@@ -2312,6 +2312,15 @@ const NOTE_EDITOR_EXTENSIONS = [
         appendTransaction(transactions, oldState, newState) {
           if (!transactions.some((tr) => tr.docChanged || tr.selectionSet)) return null;
 
+          let hasMermaidBlock = false;
+          newState.doc.descendants((node) => {
+            if (node.type.name === "codeBlock" && node.attrs.language === "mermaid") {
+              hasMermaidBlock = true;
+              return false;
+            }
+            return undefined;
+          });
+
           // "편집 중이던 mermaid 블록"을 트랜잭션 전(oldState) 선택 위치의 조상에서만 찾으면,
           // </> 버튼 클릭(mousedown에 preventDefault가 걸려 있어 selection이 그 블록으로 전혀
           // 옮겨가지 않음)이나 다이어그램 더블클릭(텍스트 위치로 매핑되지 않을 수 있음)으로
@@ -2325,6 +2334,7 @@ const NOTE_EDITOR_EXTENSIONS = [
               openBlocks.push({ pos });
             }
           });
+          if (!hasMermaidBlock && openBlocks.length === 0) return null;
           if (openBlocks.length === 0) return null;
 
           let tr: typeof newState.tr | null = null;

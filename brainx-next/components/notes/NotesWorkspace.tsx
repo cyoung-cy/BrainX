@@ -44,7 +44,6 @@ import NotesExplorer from "./NotesExplorer";
 import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
 import { exportNote, uploadAndImportFile, type ExportFormat } from "@/lib/ingestion-api";
-import { downloadPdfFile, downloadTextFile, htmlToMarkdown, htmlToPlainText, safeFileName } from "@/lib/notes/exportNoteContent";
 import { useBrainX } from "@/components/brainx-provider";
 import { consumePendingNoteClaim, readAuthSession } from "@/lib/auth-api";
 
@@ -772,10 +771,17 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 노트 본문 변경(에디터 onUpdate 디바운스) → notes 상태 갱신, 탭 전환 후에도 내용 유지 */
   const handleContentChange = useCallback((noteId: string, newContentHtml: string) => {
-    draftDirtyNoteIdsRef.current.add(noteId);
-    setNotes((prev) =>
-      prev.map((n) => (n.id === noteId ? { ...n, content: newContentHtml, updatedAt: Date.now() } : n))
-    );
+    let didChange = false;
+    setNotes((prev) => {
+      const existing = prev.find((note) => note.id === noteId);
+      if (!existing || existing.content === newContentHtml) return prev;
+
+      didChange = true;
+      return prev.map((n) => (n.id === noteId ? { ...n, content: newContentHtml, updatedAt: Date.now() } : n));
+    });
+    if (didChange) {
+      draftDirtyNoteIdsRef.current.add(noteId);
+    }
   }, []);
 
   /* 노트 전체 타이포그래피(기본 글꼴 크기 배율/레벨별 개별 크기/문서 기본 글꼴) 변경 — 선택
@@ -1773,6 +1779,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setExportingFormat(format);
     try {
       exportNote(activeNote.id, format).catch(() => {});
+      const { downloadPdfFile, downloadTextFile, htmlToMarkdown, htmlToPlainText, safeFileName } =
+        await import("@/lib/notes/exportNoteContent");
       const fileName = safeFileName(activeNote.title);
       if (format === "TXT") {
         downloadTextFile(`${fileName}.txt`, htmlToPlainText(activeNote.content), "text/plain;charset=utf-8");
