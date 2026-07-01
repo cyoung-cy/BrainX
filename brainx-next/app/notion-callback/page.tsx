@@ -10,10 +10,14 @@ function isPopup() {
   return typeof window !== "undefined" && !!window.opener && window.opener !== window;
 }
 
-function notifyOpenerAndClose(success: boolean) {
+function notifyOpenerAndClose(success: boolean, delayMs = 0) {
   if (!isPopup()) return false;
   window.opener.postMessage({ type: NOTION_OAUTH_MESSAGE_TYPE, success }, window.location.origin);
-  window.close();
+  if (delayMs > 0) {
+    setTimeout(() => window.close(), delayMs);
+  } else {
+    window.close();
+  }
   return true;
 }
 
@@ -67,7 +71,7 @@ function NotionCallbackContent() {
         if (!mounted) return;
         const nextMessage = error instanceof Error ? error.message : "Notion 연동에 실패했습니다.";
         setMessage(nextMessage);
-        if (!notifyOpenerAndClose(false)) {
+        if (!notifyOpenerAndClose(false, 10000)) {
           pushToast(nextMessage, "err");
           router.replace("/import");
         }
