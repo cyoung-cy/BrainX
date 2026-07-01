@@ -44,6 +44,7 @@ import NotesExplorer from "./NotesExplorer";
 import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
 import { exportNote, uploadAndImportFile, type ExportFormat } from "@/lib/ingestion-api";
+import { markdownToHtml } from "./NoteEditor";
 import { useBrainX } from "@/components/brainx-provider";
 import { consumePendingNoteClaim, readAuthSession } from "@/lib/auth-api";
 
@@ -1828,12 +1829,18 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       const { downloadPdfFile, downloadTextFile, htmlToMarkdown, htmlToPlainText, safeFileName } =
         await import("@/lib/notes/exportNoteContent");
       const fileName = safeFileName(activeNote.title);
+      // 에디터 HTML 우선, 없으면 content가 마크다운인지 판별 후 직접 변환한다.
+      // 노션 가져오기 등 마크다운으로 저장된 노트는 "<"로 시작하지 않는다.
+      const rawContent = activeNote.content;
+      const html =
+        activeEditorHandle?.getHTML() ||
+        (rawContent.trim().startsWith("<") ? rawContent : markdownToHtml(rawContent));
       if (format === "TXT") {
-        downloadTextFile(`${fileName}.txt`, htmlToPlainText(activeNote.content), "text/plain;charset=utf-8");
+        downloadTextFile(`${fileName}.txt`, htmlToPlainText(html), "text/plain;charset=utf-8");
       } else if (format === "MD") {
-        downloadTextFile(`${fileName}.md`, htmlToMarkdown(activeNote.content), "text/markdown;charset=utf-8");
+        downloadTextFile(`${fileName}.md`, htmlToMarkdown(html), "text/markdown;charset=utf-8");
       } else {
-        await downloadPdfFile(activeNote.title, activeNote.content, `${fileName}.pdf`);
+        await downloadPdfFile(activeNote.title, html, `${fileName}.pdf`);
       }
       pushToast(`${format} 내보내기를 시작했어요`, "ok");
     } catch (error) {
@@ -1843,7 +1850,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       setMoreMenuOpen(false);
       setExportSubmenuOpen(false);
     }
-  }, [activeNote, pushToast]);
+  }, [activeNote, activeEditorHandle, pushToast]);
 
   /* ── 키보드 단축키 (Ctrl/Cmd+N 새 파일, Ctrl/Cmd+O 파일로 이동, Ctrl/Cmd+S 저장) ── */
   useEffect(() => {

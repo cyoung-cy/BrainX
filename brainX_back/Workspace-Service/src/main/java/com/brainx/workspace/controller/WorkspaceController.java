@@ -146,6 +146,11 @@ public class WorkspaceController {
         return ApiResponse.success(workspaceService.recentActivities(currentUser.userId(), limit));
     }
 
+    @GetMapping("/api/v1/workspace/me/stats")
+    public ApiResponse<InternalUserWorkspaceStatsData> getMyWorkspaceStats() {
+        return ApiResponse.success(workspaceService.getUserWorkspaceStats(memberUserId()));
+    }
+
     @PostMapping("/api/v1/folders")
     public ResponseEntity<ApiResponse<FolderData>> createFolder(@Valid @RequestBody FolderCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -245,5 +250,10 @@ public class WorkspaceController {
                     "Guest drafts are stored in Redis only. Sign up or log in before saving to PostgreSQL.");
         }
         return actor.id();
+    }
+
+    @PostMapping("/api/v1/graph/sync")
+    public ApiResponse<java.util.Map<String, Object>> syncGraph() {
+        return ApiResponse.success(workspaceService.syncGraph());
     }
 }

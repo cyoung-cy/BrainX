@@ -16,7 +16,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X } from "lucide-react";
+import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X, AlertTriangle } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import type { Fragment, Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -100,7 +100,7 @@ function inlineHtml(text: string) {
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
 }
 
-function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string): string {
   const lines = md.split("\n");
   const out: string[] = [];
   let inCode = false;
@@ -2405,6 +2405,7 @@ export interface NoteEditorHandle {
   focusStart: () => void;
   focusEnd: () => void;
   flushPendingSave: () => void;
+  getHTML: () => string;
   startInlineDraftSession: () => InlineDraftSession | null;
   /** 패널 레벨(EditorPanel.tsx)의 항상-보이는 삽입 버튼이 호출한다 — 본문 안에 버튼을 두면
       노트 길이에 따라 스크롤해야 보이는 위치에 가는 버그가 있었음(고정 위치 버튼은 패널
@@ -2698,6 +2699,12 @@ function isEditorTrulyEmpty(ed: Editor) {
   return hasToggle ? false : ed.isEmpty;
 }
 
+/** Notion S3 presigned URL(X-Amz-Expires 파라미터)이 포함된 이미지가 있으면 true.
+    가져오기 중 이미지 다운로드에 실패해 원본 URL로 폴백된 경우에만 해당하며, 1시간 후 만료된다. */
+function hasExpiringNotionImages(content: string): boolean {
+  return content.includes("X-Amz-Expires");
+}
+
 interface NoteEditorProps {
   note: MockNote;
   mode: EditMode;
@@ -2730,6 +2737,11 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
   const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
+  const [showExpiringBanner, setShowExpiringBanner] = useState(() => hasExpiringNotionImages(note.content));
+
+  useEffect(() => {
+    setShowExpiringBanner(hasExpiringNotionImages(note.content));
+  }, [note.id, note.content]);
   const [cursorAiAnchor, setCursorAiAnchor] = useState<{ left: number; top: number } | null>(null);
   const [continueDraftView, setContinueDraftView] = useState<ContinueSuggestionState | null>(null);
   const [continueDraftAnchor, setContinueDraftAnchor] = useState<{ left: number; top: number } | null>(null);
@@ -2928,6 +2940,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       }
       onContentChange(note.id, editor.getHTML());
     },
+    getHTML: () => editor?.getHTML() ?? "",
     startInlineDraftSession,
     insertImageFile: (file) => {
       if (!editor) return;
@@ -2946,7 +2959,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       // 계산보다 read/edit 모드 양쪽에서 더 단순하고 안정적이다).
       const target = editor.view.dom.querySelectorAll("h1, h2, h3")[index] as HTMLElement | undefined;
       if (!target) return;
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
       target.classList.remove("brainx-heading-flash");
       // 같은 heading을 연속으로 다시 클릭해도 애니메이션이 재생되도록 강제로 리플로우시킨다.
       void target.offsetWidth;
@@ -3389,6 +3402,22 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           onInsertTable={(rows, cols) => editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()}
           onSplitColumns={(count) => splitBlockIntoColumns(editor, count)}
         />
+      )}
+      {showExpiringBanner && (
+        <div className="flex items-start gap-2 mb-3 rounded-lg border border-yellow-400/40 bg-yellow-50/70 px-3 py-2 text-[12px] text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-400/25 dark:text-yellow-300">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-yellow-500" />
+          <span className="flex-1 leading-relaxed">
+            이 노트의 일부 이미지는 Notion에서 가져올 때 영구 저장에 실패해 <strong>1시간 후 만료</strong>됩니다.
+            Notion에서 다시 가져오기하면 이미지를 영구 저장할 수 있습니다.
+          </span>
+          <button
+            className="shrink-0 opacity-50 hover:opacity-100 transition-opacity mt-0.5"
+            onClick={() => setShowExpiringBanner(false)}
+            aria-label="닫기"
+          >
+            <X size={12} />
+          </button>
+        </div>
       )}
       <EditorContent editor={editor} />
       {showHint && (

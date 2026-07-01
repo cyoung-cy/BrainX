@@ -65,7 +65,6 @@ class ChatServiceTest {
         retrievalPort,
         entitlementPort,
         aiChatPort,
-        tokenUsagePort,
         new AiTokenUsageCostEstimator(catalogPort),
         chatEventPort
     );
@@ -245,10 +244,7 @@ class ChatServiceTest {
 
         assertThat(chatEventPort.messageEvents).hasSize(1);
         assertThat(chatEventPort.messageEvents.getFirst().citationNoteIds()).containsExactly("note-1");
-        assertThat(tokenUsagePort.records).hasSize(1);
-        assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("rag-chat");
-        assertThat(tokenUsagePort.records.getFirst().modelId()).isEqualTo("gpt-test");
-        assertThat(tokenUsagePort.records.getFirst().estimatedCost()).isNotNull();
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test
@@ -420,7 +416,11 @@ class ChatServiceTest {
         assertThat(events.getFirst().data()).containsEntry("route", "COMPOSE");
         assertThat(retrievalPort.lastQuery).isNull();
         assertThat(aiChatPort.calls).isEqualTo(1);
-        assertThat(aiChatPort.lastRequest.messages().getFirst().content()).contains("writing assistant");
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content())
+            .contains("writing assistant")
+            .contains("level-1 Markdown heading")
+            .contains("\"# <title>\"")
+            .contains("personal note-taking tone");
         assertThat(aiChatPort.lastRequest.messages().getLast().content()).contains("Request:");
     }
 
@@ -444,7 +444,46 @@ class ChatServiceTest {
         assertThat(aiChatPort.calls).isEqualTo(1);
         assertThat(aiChatPort.lastRequest.messages().getFirst().content())
             .contains("note action draft assistant")
-            .contains("Do not claim that anything was saved");
+            .contains("Do not claim that anything was saved")
+            .contains("level-1 Markdown heading")
+            .contains("\"# <title>\"")
+            .contains("personal note-taking tone");
+    }
+
+    @Test
+    void noteQuestionDoesNotForceDraftTitleHeading() {
+        routeDecider.decision = new ChatRouteDecision(ChatRoute.NOTE_QA, "note question", "gpt-5.4-nano");
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+        retrievalPort.results = List.of(new NoteChunkSearchResult(
+            "user-1",
+            "group-1",
+            "note-1",
+            "note-1::0",
+            0,
+            "RAG note",
+            "RAG context",
+            0.9d,
+            "hash",
+            1,
+            null,
+            null
+        ));
+
+        service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "RAG란?",
+            Map.of(),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block();
+
+        assertThat(aiChatPort.lastRequest.messages().getFirst().content())
+            .contains("RAG chat assistant")
+            .doesNotContain("level-1 Markdown heading")
+            .doesNotContain("\"# <title>\"")
+            .doesNotContain("personal note-taking tone");
     }
 
     @Test
@@ -492,7 +531,7 @@ class ChatServiceTest {
         assertThat(persistencePort.messages).hasSize(2);
         assertThat(persistencePort.messages.get(1).role()).isEqualTo(ChatRole.ASSISTANT);
         assertThat(chatEventPort.messageEvents).hasSize(1);
-        assertThat(tokenUsagePort.records).hasSize(1);
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test

@@ -59,6 +59,7 @@ interface Props {
   canSplitWorkspace: boolean;
   contextOpen?: boolean;
   onContextToggle?: () => void;
+  onScrollToHeadingRegister?: (noteId: string | null, fn: ((text: string) => void) | null) => void;
 }
 
 export default function EditorPanel({
@@ -104,11 +105,32 @@ export default function EditorPanel({
   canSplitWorkspace,
   contextOpen,
   onContextToggle,
+  onScrollToHeadingRegister,
 }: Props) {
   const [hoverZone, setHoverZone] = useState<DropZone | "replace" | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<NoteEditorHandle | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToHeading = useCallback((text: string) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const els = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    for (const el of Array.from(els)) {
+      const raw = (el.textContent ?? "").replace(/^#{1,6}\s*/, "").trim();
+      if (raw === text) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    onScrollToHeadingRegister?.(note?.id ?? null, scrollToHeading);
+    return () => onScrollToHeadingRegister?.(note?.id ?? null, null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note?.id]);
+
   /* mousedown이 실제로 시작된 가장 안쪽 DOM 노드를 기록 — 제목 input 등에서 드래그(텍스트
      선택)를 시작해 마우스를 그 바깥(빈 패딩 영역)으로 빼고 거기서 떼면, 브라우저가 click
      이벤트의 target을 mousedown/mouseup 두 타겟의 공통 조상으로 끌어올려버려 "빈 배경을

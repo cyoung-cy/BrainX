@@ -45,6 +45,7 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiTok
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
+import com.brainx.intelligence.shared.application.service.AiUsageRecorder;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -69,8 +70,7 @@ class ConnectionServiceTest {
         bridgeProperties,
         aiModelSettingsPort,
         aiChatPort,
-        tokenUsagePort,
-        usageCostEstimator,
+        new AiUsageRecorder(tokenUsagePort, usageCostEstimator),
         new ObjectMapper()
     );
 
@@ -132,12 +132,15 @@ class ConnectionServiceTest {
         assertThat(entitlementPort.lastRequest.capability()).isEqualTo("LINK_SUGGESTIONS");
         assertThat(entitlementPort.lastRequest.requestedTokenEstimate()).isPositive();
         assertThat(aiChatPort.lastRequest.modelId()).isEqualTo("gpt-user");
+        String systemPrompt = aiChatPort.lastRequest.messages().getFirst().content();
+        assertThat(systemPrompt).contains("including both required wiki links exactly as [[title]]");
         String prompt = aiChatPort.lastRequest.messages().get(1).content();
-        assertThat(prompt).contains("Java", "backend", "Database", "sql");
+        assertThat(prompt).contains("Java", "backend", "Database", "sql", "[[Java]]", "[[Database]]");
         assertThat(prompt).doesNotContain("markdown body");
         assertThat(result.recommendations()).hasSize(2);
         assertThat(result.recommendations().getFirst().noteId()).startsWith("bridge-");
         assertThat(result.recommendations().getFirst().title()).isEqualTo("JDBC 연결 가이드");
+        assertThat(result.recommendations().getFirst().bridgeReason()).contains("[[Java]]", "[[Database]]");
         assertThat(tokenUsagePort.records).hasSize(1);
         assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("bridge-concepts");
         assertThat(tokenUsagePort.records.getFirst().inputTokens()).isEqualTo(30);
@@ -156,6 +159,34 @@ class ConnectionServiceTest {
 
         assertThat(repeated.recommendations().getFirst().noteId())
             .isEqualTo(result.recommendations().getFirst().noteId());
+    }
+
+    @Test
+    void bridgeReasonLinksOnlyFirstTwoSourceNotes() {
+        noteSourcePort.bridgeSources = List.of(
+            new ConnectionBridgeSourceNote("user-1", "default", "note-1", "Java", List.of()),
+            new ConnectionBridgeSourceNote("user-1", "default", "note-2", "Database", List.of()),
+            new ConnectionBridgeSourceNote("user-1", "default", "note-3", "Kafka", List.of())
+        );
+        aiChatPort.response = new AiChatResponse(
+            """
+                [{"title":"데이터 흐름 설계","bridgeReason":"[[Java]] 애플리케이션과 저장소 사이의 흐름을 설명한다."}]
+                """,
+            null
+        );
+
+        var result = service.createBridgeConcepts(new BridgeConceptsCommand(
+            "user-1",
+            List.of("note-1", "note-2", "note-3")
+        ));
+
+        assertThat(result.recommendations()).hasSize(1);
+        assertThat(result.recommendations().getFirst().bridgeReason())
+            .contains("[[Java]]", "[[Database]]")
+            .doesNotContain("[[Kafka]]");
+        assertThat(aiChatPort.lastRequest.messages().get(1).content())
+            .contains("[[Java]]", "[[Database]]")
+            .doesNotContain("[[Kafka]]");
     }
 
     @Test
@@ -219,7 +250,7 @@ class ConnectionServiceTest {
     }
 
     @Test
-    void bridgeRecordsEstimatedUsageWhenProviderUsageIsMissing() {
+    void bridgeDoesNotRecordLedgerUsageWhenProviderUsageIsMissing() {
         bridgeProperties.setDefaultModel("gpt-fallback");
         noteSourcePort.bridgeSources = List.of(
             new ConnectionBridgeSourceNote("user-1", "default", "note-1", "Java", List.of()),
@@ -236,11 +267,7 @@ class ConnectionServiceTest {
 
         assertThat(aiChatPort.lastRequest.modelId()).isEqualTo("gpt-fallback");
         assertThat(result.recommendations()).hasSize(1);
-        assertThat(tokenUsagePort.records).hasSize(1);
-        assertThat(tokenUsagePort.records.getFirst().inputTokens()).isPositive();
-        assertThat(tokenUsagePort.records.getFirst().outputTokens()).isPositive();
-        assertThat(tokenUsagePort.records.getFirst().totalTokens())
-            .isEqualTo(tokenUsagePort.records.getFirst().inputTokens() + tokenUsagePort.records.getFirst().outputTokens());
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test
@@ -255,7 +282,7 @@ class ConnectionServiceTest {
 
         assertThat(result.recommendations()).isEmpty();
         assertThat(connectionEventPort.bridgeEvents).isEmpty();
-        assertThat(tokenUsagePort.records).hasSize(1);
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test

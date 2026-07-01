@@ -197,11 +197,17 @@ export function ImportScreen() {
         const jobStatus = await getImportJobStatus(result.importJobId);
         const noteIds = jobStatus.createdNotes.map((item) => item.noteId).filter((id): id is string => !!id);
         if (noteIds.length > 0) {
-          setImportedNotionNotes((current) => [
-            ...noteIds.map((noteId) => ({ id: noteId, title: page.title })),
-            ...current
-          ]);
-          pushToast(`노트 ${noteIds.length}개를 /notes에서 확인할 수 있어요`, "ok");
+          const childCount = noteIds.length - 1;
+          const displayTitle = childCount > 0
+            ? `${page.title} (하위 노트 ${childCount}개 포함)`
+            : page.title;
+          setImportedNotionNotes((current) => [{ id: noteIds[0], title: displayTitle }, ...current]);
+          pushToast(
+            childCount > 0
+              ? `${page.title} 및 하위 노트 ${childCount}개를 가져왔어요`
+              : `${page.title}을(를) 가져왔어요`,
+            "ok"
+          );
           window.dispatchEvent(
             new CustomEvent("brainx:notes-refresh", { detail: { noteId: noteIds[0] } })
           );

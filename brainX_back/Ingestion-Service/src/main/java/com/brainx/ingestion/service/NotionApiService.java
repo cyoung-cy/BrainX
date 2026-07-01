@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -50,6 +51,10 @@ public class NotionApiService {
                 "redirect_uri", redirectUri
         );
 
+        String clientIdPrefix = clientId != null && clientId.length() >= 4 ? clientId.substring(0, 4) : clientId;
+        String clientSecretPrefix = clientSecret != null && clientSecret.length() >= 4 ? clientSecret.substring(0, 4) : clientSecret;
+        log.info("Notion 토큰 교환: clientId앞4자={}, clientSecret앞4자={}, redirectUri={}", clientIdPrefix, clientSecretPrefix, redirectUri);
+
         try {
             ResponseEntity<Map> res = restTemplate.postForEntity(
                     tokenUrl, new HttpEntity<>(body, headers), Map.class);
@@ -60,11 +65,14 @@ public class NotionApiService {
                     (String) data.get("workspace_name")
             );
         } catch (HttpClientErrorException e) {
-            log.error("Notion 토큰 교환 실패: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw BrainXException.badRequest("NOTION_TOKEN_ERROR", "Notion 인증 코드 교환에 실패했습니다.");
+            String notionBody = e.getResponseBodyAsString();
+            log.error("Notion 토큰 교환 실패: status={}, body={}", e.getStatusCode(), notionBody);
+            throw BrainXException.badRequest("NOTION_TOKEN_ERROR",
+                    "Notion 인증 코드 교환에 실패했습니다. [status=" + e.getStatusCode() + ", body=" + notionBody + ", clientId앞4자=" + clientIdPrefix + ", secret앞4자=" + clientSecretPrefix + "]");
         } catch (Exception e) {
-            log.error("Notion 토큰 교환 실패(기타 예외): {}", e.toString(), e);
-            throw BrainXException.badRequest("NOTION_TOKEN_ERROR", "Notion 인증 코드 교환에 실패했습니다.");
+            log.error("Notion 토큰 교환 실패(기타 예외): type={}, msg={}", e.getClass().getSimpleName(), e.getMessage(), e);
+            throw BrainXException.badRequest("NOTION_TOKEN_ERROR",
+                    "Notion 인증 코드 교환에 실패했습니다. [type=" + e.getClass().getSimpleName() + ", msg=" + e.getMessage() + "]");
         }
     }
 
@@ -242,20 +250,31 @@ public class NotionApiService {
      */
     private String imageMarkdownUrl(String imgType, String url, String userId) {
         if (!"file".equals(imgType) || url == null) return url;
-        try {
-            ResponseEntity<byte[]> res = restTemplate.getForEntity(url, byte[].class);
-            byte[] bytes = res.getBody();
-            if (bytes == null || bytes.length == 0) return url;
-            MediaType contentType = res.getHeaders().getContentType();
-            String fileName = fileNameFromUrl(url);
-            String assetId = assetService.persistDerivedAsset(
-                    userId, fileName, contentType != null ? contentType.toString() : "image/jpeg", bytes
-            ).getAssetId();
-            return "asset://" + assetId;
-        } catch (Exception e) {
-            log.warn("Notion 이미지 영구 저장 실패, 만료될 수 있는 원본 URL로 대체: {}", e.getMessage());
-            return url;
+        int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                // String URL은 Spring이 내부에서 UriComponentsBuilder로 재인코딩해
+                // %EC%A6%9D 같은 이미 인코딩된 경로를 %25EC%25A6%259D로 이중 인코딩한다.
+                // S3 presigned URL은 서명이 원본 URL 기준이라 이중 인코딩 시 서명 검증 실패.
+                // URI 객체로 넘기면 재인코딩 없이 그대로 사용한다.
+                ResponseEntity<byte[]> res = restTemplate.getForEntity(java.net.URI.create(url), byte[].class);
+                byte[] bytes = res.getBody();
+                if (bytes == null || bytes.length == 0) {
+                    if (attempt < maxAttempts) continue;
+                    break;
+                }
+                MediaType contentType = res.getHeaders().getContentType();
+                String fileName = fileNameFromUrl(url);
+                String assetId = assetService.persistDerivedAsset(
+                        userId, fileName, contentType != null ? contentType.toString() : "image/jpeg", bytes
+                ).getAssetId();
+                return "asset://" + assetId;
+            } catch (Exception e) {
+                log.warn("Notion 이미지 다운로드 실패 ({}/{}회): {}", attempt, maxAttempts, e.getMessage());
+            }
         }
+        log.warn("Notion 이미지 영구 저장 실패 ({}회 시도), 만료될 수 있는 원본 URL로 대체: {}", maxAttempts, url);
+        return url;
     }
 
     private String fileNameFromUrl(String url) {
@@ -359,6 +378,138 @@ public class NotionApiService {
             log.warn("Notion 하위 페이지 목록 조회 실패: pageId={}, error={}", pageId, e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * column_list / column 컨테이너 블록 안에 중첩된 child_database까지 모두 수집한다.
+     * getPageMarkdown이 컨테이너를 재귀 처리하는 범위와 동일하게 탐색한다.
+     */
+    public List<ChildDatabaseRef> getAllChildDatabasesDeep(String pageId, String accessToken) {
+        List<ChildDatabaseRef> refs = new ArrayList<>();
+        Set<String> seenIds = new java.util.LinkedHashSet<>();
+        collectChildDatabasesDeep(pageId, accessToken, refs, seenIds);
+        return refs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectChildDatabasesDeep(String blockId, String accessToken,
+                                            List<ChildDatabaseRef> refs, Set<String> seenIds) {
+        try {
+            rateLimiter.acquire();
+            ResponseEntity<Map> res = restTemplate.exchange(
+                    NOTION_API + "/blocks/" + blockId + "/children?page_size=100",
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionHeaders(accessToken)),
+                    Map.class
+            );
+            List<Map<String, Object>> results = (List<Map<String, Object>>) res.getBody().get("results");
+            if (results == null) return;
+
+            for (Map<String, Object> block : results) {
+                String type = (String) block.get("type");
+                String id = (String) block.get("id");
+                if ("child_database".equals(type) && seenIds.add(id)) {
+                    Map<String, Object> db = (Map<String, Object>) block.get("child_database");
+                    refs.add(new ChildDatabaseRef(id, (String) db.get("title")));
+                } else if (List.of("column_list", "column").contains(type)
+                           && Boolean.TRUE.equals(block.get("has_children"))) {
+                    collectChildDatabasesDeep(id, accessToken, refs, seenIds);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("child_database 재귀 탐색 실패: blockId={}, error={}", blockId, e.getMessage());
+        }
+    }
+
+    /**
+     * column_list / column / toggle 같은 컨테이너 블록 안에 중첩된 child_page까지 모두 수집한다.
+     * getPageMarkdown이 컨테이너를 재귀 처리하는 범위와 동일하게 탐색하므로, 마크다운에 [[링크]]로
+     * 변환된 하위 페이지는 이 메서드로 반드시 찾을 수 있다.
+     */
+    public List<ChildPageRef> getAllChildPagesDeep(String pageId, String accessToken) {
+        List<ChildPageRef> refs = new ArrayList<>();
+        Set<String> seenIds = new java.util.LinkedHashSet<>();
+        collectChildPagesDeep(pageId, accessToken, refs, seenIds);
+        return refs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectChildPagesDeep(String blockId, String accessToken,
+                                        List<ChildPageRef> refs, Set<String> seenIds) {
+        try {
+            rateLimiter.acquire();
+            ResponseEntity<Map> res = restTemplate.exchange(
+                    NOTION_API + "/blocks/" + blockId + "/children?page_size=100",
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionHeaders(accessToken)),
+                    Map.class
+            );
+            List<Map<String, Object>> results = (List<Map<String, Object>>) res.getBody().get("results");
+            if (results == null) return;
+
+            for (Map<String, Object> block : results) {
+                String type = (String) block.get("type");
+                String id = (String) block.get("id");
+                if ("child_page".equals(type) && seenIds.add(id)) {
+                    Map<String, Object> cp = (Map<String, Object>) block.get("child_page");
+                    refs.add(new ChildPageRef(id, (String) cp.get("title")));
+                } else if (List.of("column_list", "column").contains(type)
+                           && Boolean.TRUE.equals(block.get("has_children"))) {
+                    // getPageMarkdown이 재귀하는 컨테이너와 동일한 범위만 탐색
+                    collectChildPagesDeep(id, accessToken, refs, seenIds);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("child_page 재귀 탐색 실패: blockId={}, error={}", blockId, e.getMessage());
+        }
+    }
+
+    /**
+     * 페이지 내 rich_text의 mention.page(@멘션 링크) 참조를 수집한다.
+     * child_page 블록으로 내장된 하위 페이지가 아니라, 본문에 인라인으로 삽입된 다른 페이지
+     * 링크를 대상으로 한다. ImportService에서 child_page와 함께 임포트해 위키링크가 연결되게 한다.
+     */
+    @SuppressWarnings("unchecked")
+    public List<ChildPageRef> getMentionPageRefs(String pageId, String accessToken) {
+        List<ChildPageRef> refs = new ArrayList<>();
+        Set<String> seenIds = new java.util.LinkedHashSet<>();
+        try {
+            rateLimiter.acquire();
+            ResponseEntity<Map> res = restTemplate.exchange(
+                    NOTION_API + "/blocks/" + pageId + "/children?page_size=100",
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionHeaders(accessToken)),
+                    Map.class
+            );
+            List<Map<String, Object>> results = (List<Map<String, Object>>) res.getBody().get("results");
+            if (results == null) return refs;
+
+            for (Map<String, Object> block : results) {
+                String type = (String) block.get("type");
+                // 블록 자체가 페이지/데이터베이스 참조이거나 rich_text가 없는 타입은 건너뜀
+                if (List.of("child_page", "child_database", "column_list", "column",
+                        "divider", "image", "video", "file", "pdf", "bookmark", "embed").contains(type)) continue;
+                Map<String, Object> blockContent = (Map<String, Object>) block.get(type);
+                if (blockContent == null) continue;
+                List<Map<String, Object>> richTextList = (List<Map<String, Object>>) blockContent.get("rich_text");
+                if (richTextList == null) continue;
+                for (Map<String, Object> rt : richTextList) {
+                    if (!"mention".equals(rt.get("type"))) continue;
+                    Map<String, Object> mention = (Map<String, Object>) rt.get("mention");
+                    if (mention == null || !"page".equals(mention.get("type"))) continue;
+                    Map<String, Object> pageRef = (Map<String, Object>) mention.get("page");
+                    if (pageRef == null) continue;
+                    String mentionedId = (String) pageRef.get("id");
+                    String plainText = (String) rt.get("plain_text");
+                    if (mentionedId != null && plainText != null && !plainText.isBlank() && seenIds.add(mentionedId)) {
+                        refs.add(new ChildPageRef(mentionedId, plainText));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("mention 페이지 참조 수집 실패: pageId={}, error={}", pageId, e.getMessage());
+        }
+        return refs;
     }
 
     public record ChildPageRef(String id, String title) {}

@@ -51,8 +51,6 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiCha
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiRole;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort.EntitlementRequest;
-import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
-import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort.TokenUsageRecord;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator.TokenCostEstimate;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
@@ -69,11 +67,16 @@ public class ChatService implements
 
     static final String RAG_CHAT_CAPABILITY = "RAG_CHAT";
     static final String RAG_CHAT_FEATURE_ID = "rag-chat";
-    private static final String SOURCE_SERVICE = "Intelligence-Service";
     private static final String NO_CONTEXT_ANSWER = "관련 노트 근거를 찾지 못했습니다.";
     private static final String OUT_OF_SCOPE_ANSWER = "BrainX 본 채팅은 내 노트 검색, 노트 기반 질문, 글 작성, 노트 적용 초안만 처리합니다.";
     private static final String INSUFFICIENT_CONTEXT_ANSWER =
         "현재 제공된 노트 내용이 너무 짧아 이 요청을 처리할 수 없습니다. 답변에 필요한 본문이나 선택 영역을 더 제공해 주세요.";
+    private static final String DRAFT_NOTE_FORMAT_INSTRUCTION = """
+        Format draft responses as Markdown for a personal Workspace note.
+        The first line must be a level-1 Markdown heading in the exact form "# <title>".
+        Add one blank line after the title, then write the body.
+        Write the body in a personal note-taking tone ready to save as the user's own note, not an explanatory assistant answer.
+        """;
     private static final int HISTORY_LIMIT = 8;
     private static final int CONTEXT_SNIPPET_LENGTH = 1_200;
     private static final int MIN_CLIENT_CONTEXT_CHARS = 80;
@@ -87,7 +90,6 @@ public class ChatService implements
     private final NoteChunkRetrievalPort noteChunkRetrievalPort;
     private final EntitlementPort entitlementPort;
     private final AiChatPort aiChatPort;
-    private final TokenUsagePort tokenUsagePort;
     private final AiTokenUsageCostEstimator usageCostEstimator;
     private final ChatEventPort chatEventPort;
 
@@ -98,7 +100,6 @@ public class ChatService implements
         NoteChunkRetrievalPort noteChunkRetrievalPort,
         EntitlementPort entitlementPort,
         AiChatPort aiChatPort,
-        TokenUsagePort tokenUsagePort,
         AiTokenUsageCostEstimator usageCostEstimator,
         ChatEventPort chatEventPort
     ) {
@@ -108,7 +109,6 @@ public class ChatService implements
         this.noteChunkRetrievalPort = noteChunkRetrievalPort;
         this.entitlementPort = entitlementPort;
         this.aiChatPort = aiChatPort;
-        this.tokenUsagePort = tokenUsagePort;
         this.usageCostEstimator = usageCostEstimator;
         this.chatEventPort = chatEventPort;
     }
@@ -341,25 +341,6 @@ public class ChatService implements
                 .distinct()
                 .toList()
         ));
-        tokenUsagePort.recordTokenUsage(new TokenUsageRecord(
-            UUID.randomUUID().toString(),
-            thread.userId(),
-            SOURCE_SERVICE,
-            RAG_CHAT_FEATURE_ID,
-            assistantMessage.modelId(),
-            tokenUsage.inputTokens(),
-            tokenUsage.cachedInputTokens(),
-            tokenUsage.billableInputTokens(),
-            tokenUsage.outputTokens(),
-            tokenUsage.reasoningTokens(),
-            tokenUsage.totalTokens(),
-            tokenUsage.estimatedInputCost(),
-            tokenUsage.estimatedCachedInputCost(),
-            tokenUsage.estimatedOutputCost(),
-            tokenUsage.estimatedCost(),
-            tokenUsage.costCurrency(),
-            assistantMessage.messageId()
-        ));
     }
 
     private List<RagContext> retrieveContexts(ChatThread thread, String message, ChatRoute route) {
@@ -415,13 +396,13 @@ public class ChatService implements
                 Write the requested draft in Korean unless the user asks for another language.
                 If note context is provided, use it as reference. If no context is provided, write a general draft without pretending it came from notes.
                 Return only the requested content unless a short note is necessary.
-                """;
+                """ + DRAFT_NOTE_FORMAT_INSTRUCTION;
             case NOTE_ACTION -> """
                 You are BrainX note action draft assistant.
                 Produce Markdown content that the user can save, insert, append, or apply to a note.
                 Do not claim that anything was saved, inserted, appended, or applied.
                 Return the applicable draft content only.
-                """;
+                """ + DRAFT_NOTE_FORMAT_INSTRUCTION;
             case OUT_OF_SCOPE -> "";
         };
         if (!noteScopedSidebar) {

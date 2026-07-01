@@ -66,7 +66,7 @@ BrainX/
 ### 로컬 Kafka
 
 `brainX_back/docker-compose.yml`에는 로컬 Kafka broker가 들어 있습니다. 호스트에서는 `localhost:9092`, 컨테이너 내부에서는 `kafka:9092`로 접근합니다. 1차 Kafka 범위에서는 기존 동기 흐름을 그대로 유지하고, 이벤트 발행은 서비스 플래그로 켜는 방식입니다. `BRAINX_EVENTS_OUTBOX_ENABLED=true`이면 Workspace-Service와 Commerce-Service가 outbox row를 Kafka로 흘리고, `BRAINX_EVENTS_PRODUCER_ENABLED=true`이면 Ingestion-Service가 `IntegrationConnected`, `ImportJobCompleted`, `ImportJobFailed`를 발행합니다. `BRAINX_EVENTS_CONSUMER_ENABLED=true`이면 Intelligence-Service가 workspace note 이벤트, `CaptureReceived`, note link 이벤트, folder 이벤트, `UserDeletionRequested`를 소비합니다. 작업 요약은 [`brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md`](brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md)에 둡니다. `ImportJobRequested`는 앞으로의 async worker 흐름에서 다룹니다.
-`Admin-Service`가 Docker Compose로 뜰 때 관리자 모니터링의 Kafka lag는 `SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, `BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID=intelligence-service` 기준으로 읽습니다. 호스트에서 직접 `Admin-Service`를 실행할 때만 `localhost:9092` 기본값을 사용합니다.
+`Admin-Service`가 Docker Compose로 뜰 때 관리자 모니터링의 Kafka lag는 `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, `BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID=intelligence-service` 기준으로 읽습니다. 배포 compose에서도 같은 값을 `admin-service` 환경변수로 주입하며, 호스트에서 직접 `Admin-Service`를 실행할 때만 `localhost:9092` 기본값을 사용합니다.
 
 ## Frontend: brainx-next
 
@@ -74,6 +74,8 @@ BrainX/
 
 - `next.config.mjs`에서 Turbopack root를 `brainx-next` 폴더로 고정해, 루트에 다른 lockfile이 있어도 개발 서버가 잘못된 워크스페이스 루트를 잡지 않도록 했습니다.
 - 관리자 콘솔 mock 기준으로 관리자 계정 이메일 입력, 미확인 문의 수 배지, 답변 완료 문의의 답변 입력 숨김, 환불 시 무료 플랜 전환, 로그인 기기 국가만 표시, 구독 다음 결제일의 월간/연간 표기를 반영했습니다.
+- 관리자 생성 계정의 이메일은 로그인 후 프로필 이메일 칸까지 그대로 이어지도록 맞췄고, Billing 화면과 Admin 화면에서는 구독 시작일과 다음 결제일을 주기별(월간 30일, 연간 365일)로 표시합니다.
+- 관리자 모니터링 화면에는 검은색 `status-line` 업데이트 문구, 최근 14일 활성 사용자/매출 그래프, Excel 호환 리포트 다운로드가 추가되었습니다.
 - 관리자 모니터링 우측 레일에는 관리자 목록 아래 게임 채팅형 메시지함이 있으며, 전체 발송/선택 발송과 unread `SMS` 건수, `읽음` 모달을 함께 지원합니다.
 - 환불은 관리자 사유를 함께 전달하고, 환불 안내 메일 발송과 Commerce 구독의 `free` 전환을 기준으로 사용자 화면이 주기적으로 최신 플랜을 다시 읽어오도록 맞췄습니다.
 - Commerce 환불은 `REFUNDED` 상태를 DB 체크 제약에 포함하도록 보정했고, 결제사에서 이미 취소된 결제라면 로컬 원장과 구독 상태를 `환불 완료 + free 전환`으로 재동기화하도록 처리했습니다.
@@ -99,8 +101,8 @@ BrainX/
 | `/login`, `/signup`, `/onboarding` | Auth | 이메일 인증, 로그인, OAuth, 온보딩 UI |
 | `/home` | Home | 지식 통계, 즐겨찾기, 최근 노트, AI 추천 연결 |
 | `/notes`, `/notes/[id]` | Note Editor | TipTap 기반 리치 에디터. 표/Mermaid/이미지/위키링크/문서 타이포그래피, 폴더 드래그앤드롭을 지원. 본문 저장 포맷(HTML/JSON/Markdown)은 아직 설계 결정 대상 |
-| `/graph` | Graph | 노트 링크 기반 인터랙티브 지식 그래프, 클러스터/시간 필터 |
-| `/chat` | AI Chat | 노트 근거 기반 RAG 채팅 UX, 모델 전환 UI, source note 표시 |
+| `/graph` | Graph | 노트 링크 기반 인터랙티브 지식 그래프, 클러스터/시간 필터, AI 연결/두 개념 wiki-link 기반 징검다리 추천 |
+| `/chat` | AI Chat | 노트 근거 기반 RAG 채팅 UX, 모델 전환 UI, source note 표시, 제목+개인 노트 톤 AI 초안 작성 및 Workspace 노트 저장 |
 | `/import` | Import | 파일/외부 서비스 가져오기 UX |
 | `/billing` | Billing | 플랜/결제 UX |
 | `/settings` | Settings | 환경설정 UX |
@@ -122,8 +124,10 @@ BrainX/
 - `BrainXNote`: 노트 도메인 타입
 - `CLUSTERS`: 지식 클러스터 정의
 - `seedNotes()`: 초기 노트 데이터
-- `deriveGraphEdges()`: 노트 링크 기반 그래프 edge 생성
+- `deriveGraphEdges()`: 노트 본문, 태그, 위키링크, 제목 유사도를 함께 분석해 의미 관계 그래프 edge 생성
 - `createNoteSeed()`, `updateNoteDerived()`: 노트 생성/수정 파생값 관리
+
+`deriveGraphEdges()`는 단순 링크만 보지 않고 `REFERENCE`, `RELATED`, `PARENT`/`CHILD`, `CAUSE`/`RESULT`, `WORKFLOW`, `PROJECT`, `TAG`, `SIMILAR` 관계를 weight와 reason과 함께 산출한다. 그래프 UI와 SSOT의 `/api/v1/graph` 계약은 이 의미 관계를 전제로 한다.
 
 ### Frontend API Boundary
 
@@ -135,7 +139,7 @@ BrainX/
 - `lib/support-api.ts`: 문의 목록/생성/상세 조회
 - `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API, 관리자 공지 알림함 조회/읽음 처리
 - `lib/ingestion-api.ts`: Notion OAuth 연결/콜백, 페이지 목록 조회, 가져오기 작업 생성/상태 조회
-- `lib/workspace-api.ts`: 노트 단건 조회 (Notion 가져오기 결과를 노트 데모에 반영하는 용도)
+- `lib/workspace-api.ts`: 노트 단건 조회, 사용자 워크스페이스 통계 조회(`/api/v1/workspace/me/stats`)
 - `lib/commerce-api.ts`: 플랜 목록/내 구독 조회, 결제 체크아웃 세션 생성, Toss 결제 승인 confirm, 구독 변경/취소
 
 새 프론트 API 코드는 화면 컴포넌트에 직접 fetch를 흩뿌리지 말고 `lib/*-api.ts` 계층에 먼저 둡니다.
@@ -176,6 +180,8 @@ BrainX/
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
 
+- User-Service의 기본 access token TTL은 10시간(`JWT_ACCESS_EXPIRATION=36000000`)입니다. refresh token은 기존 7일 정책을 유지합니다.
+
 ### Service Boundary Rules
 
 - Browser/external client는 `/api/v1/**` public API를 기준으로 호출합니다.
@@ -183,6 +189,7 @@ BrainX/
 - Service-to-service 동기 호출은 `/internal/v1/**` 하위로 분리합니다.
 - 서비스 간 상태 전파는 가능하면 이벤트 기반으로 처리합니다.
 - Workspace-Service는 노트 원장의 authoritative source입니다.
+- 홈(`/home`)과 사용자 설정의 노트 통계 메뉴는 `Workspace-Service`의 `GET /api/v1/workspace/me/stats`와 노트/그래프 조회 응답을 조합해 실제 사용자 데이터만 보여줍니다.
 - AI, import, extension, MCP 등에서 노트를 변경할 때도 Workspace command API를 통해 처리합니다.
 - 토큰 사용량은 public command API로 직접 노출하지 않고 event 기반으로 집계합니다.
 - 서비스 책임이 겹치면 DB를 공유하지 말고 API/이벤트 계약을 먼저 정의합니다.
@@ -344,6 +351,7 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
 
 기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
+Workspace-Service의 Neo4j projection은 노트 본문 `[[...]]` 위키링크, 수동 `NoteLink`, 태그, 제목/본문 유사도를 다시 계산해 `LINKED` 관계를 MERGE 방식으로 갱신합니다. 노트가 수정되면 전체 그래프를 다시 만들지 않고, 변경된 노트와 그 노트를 직접 참조하는 관련 노트만 증분 갱신합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
@@ -493,10 +501,13 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
-모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, snapshot에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
+관리자 로그인 세션은 브라우저 `localStorage`와 same-site 쿠키에 함께 저장해 `admin.brainx.p-e.kr -> admin-frontend -> admin-service` 프록시 체인에서도 후속 `/api/v1/admin/**` 요청이 안정적으로 같은 액세스 토큰을 전달하도록 유지합니다.
+Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
+Commerce-Service는 운영 DB가 오래된 스키마로 남아 있어도 기동 시 `commerce_subscriptions.billing_cycle` 컬럼을 `MONTHLY` 기본값으로 보정하도록 self-healing repair를 둡니다. 그래도 운영 환경에서는 애플리케이션 재배포와 별개로 실제 PostgreSQL 원장 스키마를 정식 반영해 두는 것을 기준으로 삼습니다.
+모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
-모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. 이 persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 대시보드 조회 자체는 더 이상 새 스냅샷을 쓰지 않습니다.
 서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
 overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
 overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.

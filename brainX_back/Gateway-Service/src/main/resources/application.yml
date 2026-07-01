@@ -2,6 +2,8 @@ server:
   port: ${SERVER_PORT:8088}
 
 spring:
+  codec:
+    max-in-memory-size: -1
   config:
     import:
       - optional:file:../.env[.properties]
@@ -115,7 +117,7 @@ spring:
             - id: ingestion-service
               uri: ${INGESTION_SERVICE_URL:http://localhost:8083}
               predicates:
-                - Path=/api/v1/imports/**,/api/v1/exports,/api/v1/exports/**,/v1/publish-jobs,/v1/publish-jobs/**,/api/v1/extension/**
+                - Path=/api/v1/imports/**,/api/v1/exports,/api/v1/exports/**,/v1/publish-jobs,/v1/publish-jobs/**,/api/v1/extension/**,/api/v1/assets/**
 
             - id: commerce-service
               uri: ${COMMERCE_SERVICE_URL:http://localhost:8084}
@@ -145,3 +147,5 @@ brainx:
         - /api/v1/auth/**
         - /api/v1/plans
         - /api/v1/plans/**
+        - /api/v1/assets/*/file
+        - /api/v1/assets/proxy-image
