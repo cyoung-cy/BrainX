@@ -51,6 +51,10 @@ public class NotionApiService {
                 "redirect_uri", redirectUri
         );
 
+        String clientIdPrefix = clientId != null && clientId.length() >= 4 ? clientId.substring(0, 4) : clientId;
+        String clientSecretPrefix = clientSecret != null && clientSecret.length() >= 4 ? clientSecret.substring(0, 4) : clientSecret;
+        log.info("Notion 토큰 교환: clientId앞4자={}, clientSecret앞4자={}, redirectUri={}", clientIdPrefix, clientSecretPrefix, redirectUri);
+
         try {
             ResponseEntity<Map> res = restTemplate.postForEntity(
                     tokenUrl, new HttpEntity<>(body, headers), Map.class);
