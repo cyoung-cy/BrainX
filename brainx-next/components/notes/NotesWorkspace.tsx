@@ -445,8 +445,18 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     window.addEventListener("mouseup", onUp);
   }, [contextPanelSize]);
   // MOCK_NOTES를 가변 상태로 복사 → 제목 수정/새 노트 생성 시 사이드바/헤더/컨텍스트 패널 즉시 반영
-  const [notes, setNotes] = useState<MockNote[]>(() => USE_MOCK_NOTES ? [...MOCK_NOTES] : []);
-  const [folders, setFolders] = useState<MockFolder[]>(() => USE_MOCK_NOTES ? [...MOCK_FOLDERS] : []);
+  const [notes, setNotes] = useState<MockNote[]>(() => {
+    if (USE_MOCK_NOTES) return [...MOCK_NOTES];
+    if (!persistKey) return [];
+    const key = resolveActorPersistKey(persistKey);
+    return readSession(key)?.notes ?? [];
+  });
+  const [folders, setFolders] = useState<MockFolder[]>(() => {
+    if (USE_MOCK_NOTES) return [...MOCK_FOLDERS];
+    if (!persistKey) return [];
+    const key = resolveActorPersistKey(persistKey);
+    return readSession(key)?.folders ?? [];
+  });
   // 탭(노트 인스턴스)별 읽기/편집 모드 — tabId 기준. 패널이 아니라 탭 단위라서 같은 패널 안에서
   // 탭마다 다른 모드를 가질 수 있고, 같은 노트를 여러 패널에 열어도 각 탭이 독립적으로 유지된다.
   // 기록이 없는 tabId는 항상 "edit"로 취급한다(새 노트/새로 연 노트는 기본 편집 모드).
@@ -1422,10 +1432,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     );
     if (!hasAnyRealTabs) {
       resetToBlank();
-      if (USE_MOCK_NOTES) {
-        setNotes(saved.notes);
-        setFolders(saved.folders);
-      }
+      setNotes(saved.notes);
+      setFolders(saved.folders);
       hydratedRef.current = true;
       return;
     }
@@ -1453,10 +1461,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     }
     setState({ root: saved.root, activeId: nextActiveId });
     setPaneTabs(nextPaneTabs);
-    if (USE_MOCK_NOTES) {
-      setNotes(saved.notes);
-      setFolders(saved.folders);
-    }
+    setNotes(saved.notes);
+    setFolders(saved.folders);
     hydratedRef.current = true;
   }, []);
 
@@ -1560,16 +1566,15 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       // 노트를 탭에 끼워넣기"는 건너뛴다(actor가 막 바뀐 시점의 URL은 새 actor와 무관할 수
       // 있음). 승계됐다면 방금 게스트가 쓰던 탭 그대로, 로그아웃이라 게스트 키에 예전 세션이
       // 있었다면 그걸로, 둘 다 없으면 빈 Welcome으로 그려진다 — 그래서 여기서 직접 탭/패널을
-      // 비우지 않는다(승계된 탭을 비워버리면 "이어받기"가 깨짐). notes/folders/탭 모드는
-      // 이전 actor 것이 잠깐 보이지 않도록 즉시 비우고 loadFromServer가 새 actor 기준으로
-      // 다시 채운다.
+      // 비우지 않는다(승계된 탭을 비워버리면 "이어받기"가 깨짐). notes/folders도 먼저 비우지
+      // 않고, 방금 applyHydration이 복원한 스냅샷을 유지한 채 loadFromServer가 새 actor 기준
+      // 최신값으로 조용히 교체한다 — 그렇지 않으면 탐색기가 "빈 상태 → Redis/DB 결과"로
+      // 한 번 더 깜빡인다.
       if (detail?.resetWorkspace && persistKey) {
         const nextKey = resolveActorPersistKey(persistKey);
         setActorPersistKey(nextKey);
         applyHydration(nextKey, false);
         setTabMode({});
-        setNotes([]);
-        setFolders([]);
         draftDirtyNoteIdsRef.current.clear();
       }
       void loadFromServer(detail?.noteId);
