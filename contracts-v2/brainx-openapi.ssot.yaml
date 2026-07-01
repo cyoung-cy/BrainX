@@ -62,6 +62,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: monitoring snapshots persist live Kafka consumer-group lag from Admin-Service so the dashboard renders the current backlog instead of an inferred value.
       parameters:
       - name: email
         in: query
@@ -1893,6 +1894,7 @@ paths:
       - bearerAuth: []
       - guestSessionAuth: []
   /api/v1/notes:
+    x-implementation-note: Authenticated note requests must use the bearer-auth user context as the source of truth. Any dev-only `X-User-Id` override is allowed only for unauthenticated local development and must not replace a real logged-in user's identity.
     post:
       operationId: createNote
       summary: 노트 생성
@@ -8249,6 +8251,7 @@ paths:
       - id: web.admin.users
         type: frontend
         description: BrainX-Admin user management list, filters and bulk actions
+      x-implementation-note: User rows must show the same current plan as the detail drawer. Do not infer the list plan from payment history; use the current subscription snapshot returned by Commerce-Service through Admin-Service.
       x-internal-sync-calls:
       - operationId: getUserAccountSnapshotInternal
         targetService: User-Service
@@ -8556,6 +8559,131 @@ paths:
       security:
       - bearerAuth:
         - ROLE_OWNER
+  /api/v1/admin/messages:
+    get:
+      operationId: listAdminMessages
+      summary: 관리자 메시지 목록 조회
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.dashboard
+        type: frontend
+        description: 관리자 모니터링 우측 메시지 레일과 읽음 모달
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      x-implementation-note: local 개발 환경에서는 Next admin route가 shared `.dev-data/admin-messages.json` 원장을 사용해 다중 관리자 브라우저가 같은 메시지 목록을 본다.
+      description: 로그인 관리자가 볼 수 있는 전체 공지 및 선택 메시지 목록과 읽지 않은 건수를 함께 반환한다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminMessagesData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+    post:
+      operationId: createAdminMessage
+      summary: 관리자 메시지 전송
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.dashboard
+        type: frontend
+        description: 관리자 모니터링 우측 메시지 작성기
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      x-implementation-note: local 개발 환경에서는 Next admin route가 shared `.dev-data/admin-messages.json` 원장에 메시지를 기록한다.
+      description: 전체 발송 또는 선택 발송으로 관리자 메시지를 등록한다.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMessageCreateRequest'
+      responses:
+        '201':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminMessageCreateData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/messages/{messageId}/read:
+    post:
+      operationId: markAdminMessageRead
+      summary: 관리자 메시지 읽음 처리
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.dashboard
+        type: frontend
+        description: 관리자 모니터링 우측 메시지 읽음 버튼과 메시지 모달
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: messageId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminMessageReadData'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
   /api/v1/admin/users/{userId}:
     get:
       operationId: getAdminUserDetail
@@ -8829,6 +8957,7 @@ paths:
         reason: signup and active user summary
       x-produces-events: []
       x-async-boundary: false
+      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder.
       responses:
         '200':
           description: Success
@@ -8878,6 +9007,39 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/AdminMonitoringSnapshotData'
+      security:
+      - bearerAuth:
+        - ROLE_ADMIN
+  /api/v1/admin/monitoring/kafka-lag:
+    get:
+      operationId: getAdminKafkaLag
+      summary: Get live Kafka consumer-group lag
+      tags:
+      - Admin
+      x-producer-service: admin-service
+      x-visibility: public
+      x-consumers:
+      - id: web.admin.dashboard
+        type: frontend
+        description: BrainX-Admin Kafka lag card
+      x-internal-sync-calls: []
+      x-produces-events: []
+      x-async-boundary: false
+      x-implementation-note: broker failure and missing committed offsets are reported separately. Missing offsets are rendered as 미집계 instead of 0, while warning and critical thresholds stay on the response so the frontend can render alert badges without duplicating policy.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminKafkaLagData'
       security:
       - bearerAuth:
         - ROLE_ADMIN
@@ -10300,6 +10462,94 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - serviceTokenAuth: []
+  /internal/v1/users/growth-summary:
+    get:
+      operationId: getUserGrowthSummaryInternal
+      summary: '[Internal] 최근 N일 활성 사용자 추이 조회'
+      tags:
+      - Internal Service APIs
+      x-producer-service: identity-access
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-monitoring
+        type: internal-service
+        description: Admin-Service overview active user trend source-of-truth
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 31
+          default: 14
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalUserGrowthSummaryData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+  /internal/v1/workspace/monitoring/summary:
+    get:
+      operationId: getWorkspaceMonitoringSummaryInternal
+      summary: '[Internal] 워크스페이스 모니터링 요약 조회'
+      tags:
+      - Internal Service APIs
+      x-producer-service: knowledge-workspace
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-monitoring
+        type: internal-service
+        description: Admin-Service monitoring overview workspace source-of-truth
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/InternalWorkspaceMonitoringSummaryData'
+                  required:
+                  - data
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
   /internal/v1/users/{userId}:
     get:
       operationId: getUserAccountSnapshotInternal
@@ -10886,6 +11136,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InternalBillingSummaryData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
+  /internal/v1/billing/revenue-trend:
+    get:
+      operationId: getRevenueTrendInternal
+      summary: '[Internal] 최근 N일 일별 매출 추이 조회'
+      tags:
+      - Internal Service APIs
+      x-producer-service: commerce-operations
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-monitoring
+        type: internal-service
+        description: Admin-Service overview revenue trend source-of-truth
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 31
+          default: 14
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalTrendSeriesData'
         '401':
           description: 인증 필요
           content:
@@ -13788,6 +14083,18 @@ components:
           - REWRITE
           - CONTINUE
           - TRANSLATE
+          - DRAFT
+        draftPrompt:
+          type: string
+          nullable: true
+          description: DRAFT action에서 새 초안을 생성할 주제와 요구사항. DRAFT일 때 필수다.
+        targetLength:
+          type: integer
+          nullable: true
+          minimum: 100
+          maximum: 3000
+          default: 600
+          description: DRAFT action에서 목표로 삼을 본문 길이(문자 수). 생략 시 600자를 사용한다.
         language:
           type: string
           example: ko
@@ -14726,6 +15033,93 @@ components:
       required:
       - admin
       additionalProperties: false
+    AdminMessageScope:
+      type: string
+      enum:
+      - ALL
+      - SELECTED
+    AdminMessageRow:
+      type: object
+      properties:
+        messageId:
+          type: string
+        senderAdminUserId:
+          type: string
+        senderName:
+          type: string
+        recipientScope:
+          $ref: '#/components/schemas/AdminMessageScope'
+        recipientAdminUserIds:
+          type: array
+          items:
+            type: string
+        body:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        isRead:
+          type: boolean
+      required:
+      - messageId
+      - senderAdminUserId
+      - senderName
+      - recipientScope
+      - recipientAdminUserIds
+      - body
+      - sentAt
+      - isRead
+      additionalProperties: false
+    AdminMessagesData:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminMessageRow'
+        unreadCount:
+          type: integer
+      required:
+      - messages
+      - unreadCount
+      additionalProperties: false
+    AdminMessageCreateRequest:
+      type: object
+      properties:
+        recipientScope:
+          $ref: '#/components/schemas/AdminMessageScope'
+        recipientAdminUserIds:
+          type: array
+          items:
+            type: string
+        body:
+          type: string
+      required:
+      - recipientScope
+      - body
+      additionalProperties: false
+    AdminMessageCreateData:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/AdminMessageRow'
+        unreadCount:
+          type: integer
+      required:
+      - message
+      - unreadCount
+      additionalProperties: false
+    AdminMessageReadData:
+      type: object
+      properties:
+        messageId:
+          type: string
+        unreadCount:
+          type: integer
+      required:
+      - messageId
+      - unreadCount
+      additionalProperties: false
     AdminTokenUsageData:
       type: object
       properties:
@@ -15053,20 +15447,87 @@ components:
           items:
             type: object
             additionalProperties: true
+        summary:
+          $ref: '#/components/schemas/AdminOverviewSummaryData'
         revenueTrend:
-          type: array
-          items:
-            type: number
+          $ref: '#/components/schemas/AdminTrendSeriesData'
         activeUserTrend:
-          type: array
-          items:
-            type: number
+          $ref: '#/components/schemas/AdminTrendSeriesData'
+          description: 관리자 모니터링 overview의 활성 사용자 추이 시계열
       required:
       - kpis
       - services
       - logs
+      - summary
       - revenueTrend
       - activeUserTrend
+      additionalProperties: false
+    AdminTrendSeriesData:
+      type: object
+      properties:
+        metric:
+          type: string
+        values:
+          type: array
+          items:
+            type: number
+        periodLabel:
+          type: string
+        pointCount:
+          type: integer
+        timezone:
+          type: string
+        source:
+          type: string
+      required:
+      - metric
+      - values
+      - periodLabel
+      - pointCount
+      - timezone
+      - source
+      additionalProperties: false
+    AdminOverviewSummaryData:
+      type: object
+      properties:
+        monthlyRevenue:
+          type: number
+        activeSubscriptions:
+          type: integer
+        mrr:
+          type: number
+        failedPaymentCount:
+          type: integer
+        activeUsers:
+          type: integer
+        totalNotes:
+          type: integer
+        totalStorageBytes:
+          type: integer
+          format: int64
+        notesCreatedToday:
+          type: integer
+        timezone:
+          type: string
+        revenueSource:
+          type: string
+        userSource:
+          type: string
+        workspaceSource:
+          type: string
+      required:
+      - monthlyRevenue
+      - activeSubscriptions
+      - mrr
+      - failedPaymentCount
+      - activeUsers
+      - totalNotes
+      - totalStorageBytes
+      - notesCreatedToday
+      - timezone
+      - revenueSource
+      - userSource
+      - workspaceSource
       additionalProperties: false
     AdminMonitoringSnapshotData:
       type: object
@@ -15083,6 +15544,18 @@ components:
           type: integer
         activeUsers:
           type: integer
+        kafkaLagMessages:
+          type: integer
+          nullable: true
+        kafkaConsumerGroupId:
+          type: string
+          nullable: true
+        kafkaLagState:
+          $ref: '#/components/schemas/KafkaLagState'
+          nullable: true
+        kafkaLagDetail:
+          type: string
+          nullable: true
         capturedAt:
           type: string
           format: date-time
@@ -15093,8 +15566,49 @@ components:
       - mrr
       - failedPaymentCount
       - activeUsers
+      - kafkaLagMessages
+      - kafkaConsumerGroupId
+      - kafkaLagState
+      - kafkaLagDetail
       - capturedAt
       additionalProperties: false
+    AdminKafkaLagData:
+      type: object
+      properties:
+        consumerGroupId:
+          type: string
+          nullable: true
+        kafkaLagState:
+          $ref: '#/components/schemas/KafkaLagState'
+        kafkaLagMessages:
+          type: integer
+          nullable: true
+        warningThreshold:
+          type: integer
+        criticalThreshold:
+          type: integer
+        kafkaLagDetail:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+      required:
+      - consumerGroupId
+      - kafkaLagState
+      - kafkaLagMessages
+      - warningThreshold
+      - criticalThreshold
+      - kafkaLagDetail
+      - capturedAt
+      additionalProperties: false
+    KafkaLagState:
+      type: string
+      enum:
+      - HEALTHY
+      - NO_COMMITTED_OFFSETS
+      - BROKER_UNREACHABLE
+      - CONFIG_MISSING
     AdminServiceHealthSnapshotData:
       type: object
       properties:
@@ -15104,6 +15618,10 @@ components:
           type: string
         state:
           type: string
+          enum:
+          - UP
+          - DOWN
+          - DEGRADED
         latencyMs:
           type: integer
           format: int64
@@ -15601,6 +16119,50 @@ components:
       - storageBytes
       - activities
       additionalProperties: false
+    InternalWorkspaceMonitoringSummaryData:
+      type: object
+      properties:
+        totalNotes:
+          type: integer
+        totalStorageBytes:
+          type: integer
+          format: int64
+        notesCreatedToday:
+          type: integer
+        recentActivities:
+          type: array
+          items:
+            $ref: '#/components/schemas/InternalWorkspaceActivityData'
+      required:
+      - totalNotes
+      - totalStorageBytes
+      - notesCreatedToday
+      - recentActivities
+      additionalProperties: false
+    InternalWorkspaceActivityData:
+      type: object
+      properties:
+        activityId:
+          type: string
+        userId:
+          type: string
+        noteId:
+          type: string
+        title:
+          type: string
+        activityType:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+      required:
+      - activityId
+      - userId
+      - noteId
+      - title
+      - activityType
+      - occurredAt
+      additionalProperties: false
     InternalUserActivityDto:
       type: object
       properties:
@@ -15738,6 +16300,42 @@ components:
       - ipAddress
       - lastSeenAt
       - current
+      additionalProperties: false
+    InternalTrendSeriesData:
+      type: object
+      properties:
+        metric:
+          type: string
+        values:
+          type: array
+          items:
+            type: number
+        periodLabel:
+          type: string
+        pointCount:
+          type: integer
+        timezone:
+          type: string
+        source:
+          type: string
+      required:
+      - metric
+      - values
+      - periodLabel
+      - pointCount
+      - timezone
+      - source
+      additionalProperties: false
+    InternalUserGrowthSummaryData:
+      type: object
+      properties:
+        activeUsers:
+          type: integer
+        trend:
+          $ref: '#/components/schemas/InternalTrendSeriesData'
+      required:
+      - activeUsers
+      - trend
       additionalProperties: false
     InternalUserStatusChangeRequest:
       type: object

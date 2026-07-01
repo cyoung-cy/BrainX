@@ -356,30 +356,6 @@ public record NoteProjection(
         );
     }
 
-    public NoteProjection movedTo(String folderId, String eventId, Instant updatedAt) {
-        return new NoteProjection(
-            userId,
-            documentGroupId,
-            noteId,
-            title,
-            folderId,
-            tags,
-            version,
-            markdownHash,
-            markdown,
-            contentPending,
-            archived,
-            trashed,
-            deleted,
-            eventId,
-            updatedAt,
-            searchIndexStatus,
-            indexedVersion,
-            indexedMarkdownHash,
-            indexedAt
-        );
-    }
-
     public NoteProjection trashed(String eventId, Instant updatedAt) {
         return new NoteProjection(
             userId,

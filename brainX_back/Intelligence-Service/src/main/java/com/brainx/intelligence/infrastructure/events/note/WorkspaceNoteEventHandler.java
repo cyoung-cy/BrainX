@@ -29,8 +29,7 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         "NoteMetadataChanged",
         "NoteTagsChanged",
         "NoteTrashed",
-        "NoteDeleted",
-        "NotesMoved"
+        "NoteDeleted"
     );
     private final ObjectMapper objectMapper;
     private final NoteProjectionStore noteProjectionStore;
@@ -75,7 +74,6 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
             case "NoteTagsChanged" -> handleNoteTagsChanged(context);
             case "NoteTrashed" -> handleNoteTrashed(context);
             case "NoteDeleted" -> handleNoteDeleted(context);
-            case "NotesMoved" -> handleNotesMoved(context);
             default -> throw EventProcessingException.nonRetryable(
                 "UNSUPPORTED_EVENT_TYPE",
                 "Unsupported workspace note event type."
@@ -289,24 +287,6 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
         noteProjectionStore.save(updated);
         removeIndex(updated, context.eventId());
         noteSummaryPort.deleteByUserIdAndNoteId(payload.userId(), payload.noteId());
-    }
-
-    private void handleNotesMoved(EventProcessingContext context) {
-        NotesMovedPayload payload = readPayload(context, NotesMovedPayload.class);
-        requireText(payload.userId(), "userId");
-        String documentGroupId = DocumentGroups.normalize(payload.documentGroupId());
-        List<String> noteIds = payload.noteIds() == null ? List.of() : payload.noteIds();
-        for (NoteProjection projection : noteProjectionStore.findByUserIdAndDocumentGroupIdAndNoteIds(
-            payload.userId(),
-            documentGroupId,
-            noteIds
-        )) {
-            noteProjectionStore.save(projection.movedTo(
-                payload.targetFolderId(),
-                context.eventId(),
-                context.envelope().occurredAt()
-            ));
-        }
     }
 
     private boolean tryIndexFromSnapshot(
@@ -623,13 +603,4 @@ public class WorkspaceNoteEventHandler implements BrainxEventHandler {
     record NoteStatePayload(String noteId, String userId, String documentGroupId) {
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    record NotesMovedPayload(
-        String userId,
-        String documentGroupId,
-        List<String> noteIds,
-        String sourceFolderId,
-        String targetFolderId
-    ) {
-    }
 }

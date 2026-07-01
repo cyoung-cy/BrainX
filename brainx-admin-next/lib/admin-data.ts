@@ -86,11 +86,11 @@ export type AdminProfile = {
 };
 
 export const services = [
-  { name: "User-Service", latency: "42ms", uptime: "99.99%", state: "ok" },
-  { name: "Workspace-Service", latency: "68ms", uptime: "99.97%", state: "ok" },
-  { name: "AI-Service", latency: "1,240ms", uptime: "99.40%", state: "warn" },
-  { name: "Ingestion-Service", latency: "96ms", uptime: "99.91%", state: "ok" },
-  { name: "Commerce-Service", latency: "73ms", uptime: "99.95%", state: "ok" }
+  { name: "User-Service", latency: "42ms", uptime: "99.99%", state: "UP" },
+  { name: "Workspace-Service", latency: "68ms", uptime: "99.97%", state: "UP" },
+  { name: "AI-Service", latency: "1,240ms", uptime: "99.40%", state: "DEGRADED" },
+  { name: "Ingestion-Service", latency: "96ms", uptime: "99.91%", state: "UP" },
+  { name: "Commerce-Service", latency: "73ms", uptime: "99.95%", state: "UP" }
 ] as const;
 
 export const kpis = [

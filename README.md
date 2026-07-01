@@ -66,6 +66,7 @@ BrainX/
 ### 로컬 Kafka
 
 `brainX_back/docker-compose.yml`에는 로컬 Kafka broker가 들어 있습니다. 호스트에서는 `localhost:9092`, 컨테이너 내부에서는 `kafka:9092`로 접근합니다. 1차 Kafka 범위에서는 기존 동기 흐름을 그대로 유지하고, 이벤트 발행은 서비스 플래그로 켜는 방식입니다. `BRAINX_EVENTS_OUTBOX_ENABLED=true`이면 Workspace-Service와 Commerce-Service가 outbox row를 Kafka로 흘리고, `BRAINX_EVENTS_PRODUCER_ENABLED=true`이면 Ingestion-Service가 `IntegrationConnected`, `ImportJobCompleted`, `ImportJobFailed`를 발행합니다. `BRAINX_EVENTS_CONSUMER_ENABLED=true`이면 Intelligence-Service가 workspace note 이벤트, `CaptureReceived`, note link 이벤트, folder 이벤트, `UserDeletionRequested`를 소비합니다. 작업 요약은 [`brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md`](brainX_back/KAFKA_IMPLEMENTATION_SUMMARY.md)에 둡니다. `ImportJobRequested`는 앞으로의 async worker 흐름에서 다룹니다.
+`Admin-Service`가 Docker Compose로 뜰 때 관리자 모니터링의 Kafka lag는 `SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, `BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID=intelligence-service` 기준으로 읽습니다. 호스트에서 직접 `Admin-Service`를 실행할 때만 `localhost:9092` 기본값을 사용합니다.
 
 ## Frontend: brainx-next
 
@@ -73,8 +74,10 @@ BrainX/
 
 - `next.config.mjs`에서 Turbopack root를 `brainx-next` 폴더로 고정해, 루트에 다른 lockfile이 있어도 개발 서버가 잘못된 워크스페이스 루트를 잡지 않도록 했습니다.
 - 관리자 콘솔 mock 기준으로 관리자 계정 이메일 입력, 미확인 문의 수 배지, 답변 완료 문의의 답변 입력 숨김, 환불 시 무료 플랜 전환, 로그인 기기 국가만 표시, 구독 다음 결제일의 월간/연간 표기를 반영했습니다.
+- 관리자 모니터링 우측 레일에는 관리자 목록 아래 게임 채팅형 메시지함이 있으며, 전체 발송/선택 발송과 unread `SMS` 건수, `읽음` 모달을 함께 지원합니다.
 - 환불은 관리자 사유를 함께 전달하고, 환불 안내 메일 발송과 Commerce 구독의 `free` 전환을 기준으로 사용자 화면이 주기적으로 최신 플랜을 다시 읽어오도록 맞췄습니다.
 - Commerce 환불은 `REFUNDED` 상태를 DB 체크 제약에 포함하도록 보정했고, 결제사에서 이미 취소된 결제라면 로컬 원장과 구독 상태를 `환불 완료 + free 전환`으로 재동기화하도록 처리했습니다.
+- `/notes` 우측 인라인 AI는 질문 모드와 작성 모드를 지원하며, 작성 요청은 Intelligence Service의 `DRAFT` inline assist action으로 현재 편집기 커서에 스트리밍 삽입됩니다.
 
 ### Tech Stack
 
@@ -305,7 +308,7 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build admin-service
 ```
 
-관리자 프론트(`BrainX-Admin/brainx-admin-next`)는 기본적으로 mock API를 끝까지 사용합니다. 실제 Admin-Service를 사용하려면 `.env.local`에 `ADMIN_MOCK_ENABLED=false`, `ADMIN_SERVICE_URL=http://localhost:8085`를 설정한 뒤 Next 개발 서버를 재시작합니다.
+관리자 프론트(`BrainX-Admin/brainx-admin-next`)는 기본적으로 실제 Admin-Service 프록시를 사용합니다. 개발 중에만 `.env.local`에 `ADMIN_MOCK_ENABLED=true`를 명시했을 때 mock API를 켜고, 그 외에는 `ADMIN_SERVICE_URL=http://localhost:8085`로 프록시합니다. 단, 관리자 메시지(`/api/v1/admin/messages*`)는 Admin-Service가 아직 준비되지 않은 개발 구간에서도 레일 채팅을 검증할 수 있도록 `brainx-admin-next`의 API route가 `.dev-data/admin-messages.json` 공용 로컬 파일 저장소를 직접 처리하며, 브라우저별 localStorage fallback 없이 같은 메시지 원장을 공유합니다.
 
 각 서비스는 자기 폴더 기준으로 실행하면 아래 파일을 자동으로 읽습니다.
 
@@ -319,6 +322,7 @@ docker compose --profile apps up -d --build admin-service
 | Commerce-Service | `../.env`, `../env/commerce-service.env` |
 
 `JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`으로 관리합니다.
+Admin-Service는 관리자 시드용 `SEED_ADMIN_LOGIN_ID`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`도 `../env/admin-service.env`에서 함께 읽습니다.
 Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=postgres`를 자동으로 덮어씁니다. 로컬 Gradle/IDE 실행은 `.env`의 `POSTGRES_HOST=localhost`를 그대로 사용합니다.
 
 기본 DB 접속 정보:
@@ -375,6 +379,7 @@ Workspace-Service는 내부 식별 헤더를 `CurrentActor`로 해석합니다.
 
 - 회원 요청: `X-User-Id`가 있으면 `actorType=USER`, `actorId=<userId>`
 - 비회원 요청: `X-Guest-Id`가 있으면 `actorType=GUEST`, `actorId=<guestId>`
+- 프런트의 `NEXT_PUBLIC_WORKSPACE_DEV_USER_ID`는 로컬 비로그인 개발 우회용으로만 사용합니다. 실제 로그인 세션(access token)이 있으면 이 dev header로 덮어쓰지 말고 bearer 토큰 기준 사용자 컨텍스트를 그대로 전달해야 사용자별 Workspace/PostgreSQL 데이터가 섞이지 않습니다.
 
 비회원 노트/폴더/링크/그래프 데이터는 체험용 임시 데이터로 취급합니다. Redis in-memory 저장소가 도입되면 guest actor의 Workspace 데이터는 Redis에 저장하고 TTL 만료 또는 세션 종료로 사라지게 합니다. 회원 데이터는 계속 Workspace-Service의 PostgreSQL 원장에 저장합니다.
 
@@ -482,15 +487,24 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 
 `BrainX-Admin/brainx-admin-next`가 실제 데이터로 동작하기 위한 관리자 API는 `contracts-v2/brainx-openapi.ssot.yaml`의 `/api/v1/admin/**`로 확정합니다. Admin-Service는 관리자 화면 전용 read model/orchestration layer이며, 원장 데이터는 각 소유 서비스가 유지합니다.
 
-현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다. 사용자 관리 화면에서는 정지된 계정을 바로 정지 취소할 수 있습니다.
+현재 관리자 화면은 실제 백엔드 데이터를 기준으로 사용자 플랜, 메모 수, 가입일, 최근 활동을 표시하며, 시간 표시는 모두 `Asia/Seoul` 기준으로 통일합니다. 사용자 목록의 플랜은 결제/환불 이력으로 추정하지 않고 Commerce-Service의 현재 구독 상태를 그대로 보여 주며, 상세 패널과 같은 값이 나오도록 맞췄습니다. 사용자 목록의 메모 수는 `Workspace-Service` note 원장 개수, 최근 활동은 실제 마지막 로그인 세션 시간으로 채웁니다. 사용자 상세의 로그인 기기는 같은 기기/IP 접속을 하나로 합쳐 최신 접속 시간만 갱신하고, 최근 2건만 노출합니다. 사용자 관리 화면에서는 정지된 계정을 바로 정지 취소할 수 있습니다.
 관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
+모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, snapshot에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
+Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
+모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다.
+서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
+overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
+overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.
+관리자 모니터링 화면은 상단 선형 차트를 활성 사용자 추이로, 하단 막대 차트를 매출 분석으로 분리해 overview의 `activeUserTrend`와 `revenueTrend`를 각각 실데이터 그대로 사용합니다.
+overview summary는 결제/사용자 지표 외에 `Workspace-Service`의 `/internal/v1/workspace/monitoring/summary`를 통해 전체 노트 수, 총 저장량, 오늘 생성된 노트 수를 함께 내려줍니다. 관리자 모니터링의 Workspace 원장 카드와 일부 실시간 로그는 이 내부 API의 최근 활동 목록을 사용합니다.
 
 | 화면 | Method | Path | 소유 데이터/연동 |
 | --- | --- | --- | --- |
-| 모니터링 | GET | `/api/v1/admin/dashboard/overview` | Gateway/User/Commerce 상태와 KPI 집계 |
-| 사용자 목록 | GET | `/api/v1/admin/users` | User-Service 계정 + Workspace note/storage + Commerce plan |
+| 모니터링 | GET | `/api/v1/admin/dashboard/overview` | Gateway/User/Commerce/Workspace/Ingestion/Intelligence 상태와 KPI 집계, Kafka lag |
+| 사용자 목록 | GET | `/api/v1/admin/users` | User-Service 계정 + Workspace note/storage + Commerce current subscription plan |
 | 사용자 상세 | GET | `/api/v1/admin/users/{userId}` | 프로필, 플랜, 로그인 세션, 활동 이력 |
 | 플랜 변경 | PATCH | `/api/v1/admin/users/{userId}/plan` | Commerce-Service 구독 변경, `SubscriptionChanged` |
 | 계정 상태 | PATCH | `/api/v1/admin/users/{userId}/status` | User-Service 상태 변경, 정지 사유/정지 일수 반영 |
@@ -511,10 +525,12 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | 관리자 비밀번호 | PATCH | `/api/v1/admin/me/password` | User-Service credential 변경, `PasswordChanged` |
 | 관리자 목록 | GET | `/api/v1/admin/admin-accounts` | 모든 관리자(owner 포함) 조회 가능, 모니터링 화면 관리자 목록에서 사용 |
 | 관리자 추가/수정/삭제 | POST/PATCH/DELETE | `/api/v1/admin/admin-accounts`, `/api/v1/admin/admin-accounts/{adminId}` | 최고관리자(owner)만 호출 가능 |
+| 관리자 메시지 목록/전송 | GET/POST | `/api/v1/admin/messages` | 모니터링 우측 레일 채팅창, 전체 발송/선택 발송 |
+| 관리자 메시지 읽음 | POST | `/api/v1/admin/messages/{messageId}/read` | 우측 프로필 `SMS` 건수와 `읽음` 모달 |
 
 사용자 알림함은 `brainx-next` 상단 종 아이콘과 연결되며, 관리자 `SEND_NOTICE` 일괄 액션이 실행되면 `GET /api/v1/users/me/notifications`, `POST /api/v1/users/me/notifications/{notificationId}/read`로 확인할 수 있습니다.
 
-관리자 목록 조회(GET)는 모든 관리자에게 열려 있지만, 계정 생성/수정/삭제는 owner 역할만 가능합니다. 최고관리자가 아닌 관리자는 관리자 관리 화면 자체에 진입할 수 없습니다(사이드바 메뉴 비노출 + 화면 가드).
+관리자 목록 조회(GET)는 모든 관리자에게 열려 있지만, 계정 생성/수정/삭제는 owner 역할만 가능합니다. 최고관리자가 아닌 관리자는 관리자 관리 화면 자체에 진입할 수 없습니다(사이드바 메뉴 비노출 + 화면 가드). 관리자 메시지는 모든 관리자가 조회/전송/읽음 처리할 수 있고, 선택 발송 메시지는 수신 대상과 발신자에게만 노출됩니다.
 
 AsyncAPI에는 Admin 화면에서 새로 필요한 `PaymentRefunded`, `PlanPriceChanged`, `SupportTicketUpdated` 이벤트를 추가했습니다. 결제/플랜 이벤트는 Commerce-Service가 발행하고, 문의 상태 변경 이벤트는 Admin-Service가 발행합니다.
 

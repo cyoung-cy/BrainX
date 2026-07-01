@@ -17,8 +17,10 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,6 +29,9 @@ import java.util.stream.Collectors;
 @RequestMapping("/internal/v1")
 @RequiredArgsConstructor
 public class InternalCommerceController {
+    private static final ZoneId MONITORING_ZONE = ZoneId.of("Asia/Seoul");
+    private static final int DEFAULT_TREND_DAYS = 14;
+    private static final int MAX_TREND_DAYS = 31;
 
     private final CheckoutSessionRepository checkoutSessionRepository;
     private final SubscriptionRepository subscriptionRepository;
@@ -66,6 +71,42 @@ public class InternalCommerceController {
                 "activeSubscriptions", activeSubs.size(),
                 "mrr", BigDecimal.valueOf(mrrVal),
                 "failedPaymentCount", (int) failedPaymentCount
+        ));
+    }
+
+    @GetMapping("/billing/revenue-trend")
+    public ResponseEntity<TrendSeriesDto> getRevenueTrend(@RequestParam(defaultValue = "14") Integer days) {
+        int normalizedDays = normalizeTrendDays(days);
+        LocalDate today = LocalDate.now(MONITORING_ZONE);
+        LocalDate startDate = today.minusDays(normalizedDays - 1L);
+
+        Map<LocalDate, Integer> revenueByDay = new LinkedHashMap<>();
+        for (int i = 0; i < normalizedDays; i++) {
+            revenueByDay.put(startDate.plusDays(i), 0);
+        }
+
+        checkoutSessionRepository.findByStatusOrderByConfirmedAtDesc(CheckoutSession.Status.SUCCEEDED).forEach(session -> {
+            Instant occurredAt = session.getConfirmedAt() != null ? session.getConfirmedAt() : session.getCreatedAt();
+            if (occurredAt == null) {
+                return;
+            }
+            LocalDate occurredDate = occurredAt.atZone(MONITORING_ZONE).toLocalDate();
+            if (occurredDate.isBefore(startDate) || occurredDate.isAfter(today)) {
+                return;
+            }
+            revenueByDay.computeIfPresent(
+                    occurredDate,
+                    (ignored, current) -> safeToInt((long) current + session.getAmount())
+            );
+        });
+
+        return ResponseEntity.ok(new TrendSeriesDto(
+                "dailyRevenue",
+                List.copyOf(revenueByDay.values()),
+                "최근 " + normalizedDays + "일 일별 매출",
+                normalizedDays,
+                MONITORING_ZONE.getId(),
+                "Commerce-Service"
         ));
     }
 
@@ -268,12 +309,38 @@ public class InternalCommerceController {
         }
     }
 
+    public record TrendSeriesDto(
+            String metric,
+            List<Integer> values,
+            String periodLabel,
+            int pointCount,
+            String timezone,
+            String source
+    ) {}
+
     private boolean isInCurrentMonth(Instant instant, ZoneId zone, YearMonth month) {
         if (instant == null) {
             return false;
         }
         LocalDateTime value = LocalDateTime.ofInstant(instant, zone);
         return YearMonth.from(value).equals(month);
+    }
+
+    private int normalizeTrendDays(Integer days) {
+        if (days == null) {
+            return DEFAULT_TREND_DAYS;
+        }
+        return Math.max(1, Math.min(MAX_TREND_DAYS, days));
+    }
+
+    private int safeToInt(long value) {
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        if (value < Integer.MIN_VALUE) {
+            return Integer.MIN_VALUE;
+        }
+        return (int) value;
     }
 
     public record RefundPaymentRequest(BigDecimal amount, String reason) {}
