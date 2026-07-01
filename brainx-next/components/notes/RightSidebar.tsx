@@ -6,8 +6,17 @@ import { cx } from "@/lib/utils";
 import { Icon } from "@/components/brainx-ui";
 import { MockNote } from "@/lib/notes/noteTypes";
 import { MOCK_CONTEXT_DATA } from "@/lib/notes/mockNotes";
-import { createChatThread, sendChatMessageStream } from "@/lib/intelligence-api";
-import { buildNoteAiContext, validateAiContextSufficiency } from "@/lib/ai-context";
+import { createChatThread, createInlineAssistStream, decideAiSuggestion, sendChatMessageStream } from "@/lib/intelligence-api";
+import {
+  DEFAULT_DRAFT_TARGET_LENGTH,
+  clampDraftTargetLength,
+  routeInlineAiInput,
+  buildNoteAiContext,
+  validateAiContextSufficiency,
+  type InlineAiMode,
+  type InlineAiRoute,
+} from "@/lib/ai-context";
+import type { EditMode, InlineDraftSession, NoteEditorHandle } from "./NoteEditor";
 
 /* ── 헤딩 파싱 ─────────────────────────────────────────────────────────────
    note.content는 두 가지 형태일 수 있다 — 한 번도 편집 안 한 시드 노트는 원문 마크다운
@@ -43,6 +52,165 @@ function parseHeadings(content: string) {
     .filter((x): x is { id: string; level: number; text: string } => Boolean(x));
 }
 
+function safeMarkdownHref(href: string) {
+  if (href.startsWith("/")) return href;
+  try {
+    const url = new URL(href);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? href : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderInlineMarkdown(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const tokenPattern = /(\*\*[^*\n]+?\*\*|~~[^~\n]+?~~|`[^`\n]+?`|\[([^\]\n]+)\]\(([^)\s]+)\))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+
+  while ((match = tokenPattern.exec(text))) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+
+    const token = match[0];
+    const key = `${keyPrefix}-inline-${index++}`;
+    if (token.startsWith("**")) {
+      nodes.push(<strong key={key}>{renderInlineMarkdown(token.slice(2, -2), key)}</strong>);
+    } else if (token.startsWith("~~")) {
+      nodes.push(<s key={key}>{renderInlineMarkdown(token.slice(2, -2), key)}</s>);
+    } else if (token.startsWith("`")) {
+      nodes.push(
+        <code key={key} className="rounded bg-surface2/70 px-1 py-0.5 text-[11px] text-accent">
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else {
+      const href = safeMarkdownHref(match[3] ?? "");
+      nodes.push(
+        href ? (
+          <a key={key} href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+            {renderInlineMarkdown(match[2] ?? "", key)}
+          </a>
+        ) : (
+          token
+        )
+      );
+    }
+
+    lastIndex = tokenPattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
+}
+
+function MarkdownLine({ text, id }: { text: string; id: string }) {
+  return <>{renderInlineMarkdown(text, id)}</>;
+}
+
+function AiMarkdownMessage({ text, streaming }: { text: string; streaming?: boolean }) {
+  const blocks: React.ReactNode[] = [];
+  const paragraph: string[] = [];
+  const listItems: string[] = [];
+  let listType: "ul" | "ol" | null = null;
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    const key = `p-${blocks.length}`;
+    blocks.push(
+      <p key={key} className="whitespace-normal">
+        {paragraph.map((line, index) => (
+          <span key={`${key}-${index}`}>
+            {index > 0 && <br />}
+            <MarkdownLine text={line} id={`${key}-${index}`} />
+          </span>
+        ))}
+      </p>
+    );
+    paragraph.length = 0;
+  };
+
+  const flushList = () => {
+    if (!listType || listItems.length === 0) return;
+    const key = `list-${blocks.length}`;
+    const Tag = listType;
+    blocks.push(
+      <Tag key={key} className="ml-4 space-y-1 pl-1 marker:text-txt3">
+        {listItems.map((item, index) => (
+          <li key={`${key}-${index}`} className={listType === "ul" ? "list-disc" : "list-decimal"}>
+            <MarkdownLine text={item} id={`${key}-${index}`} />
+          </li>
+        ))}
+      </Tag>
+    );
+    listItems.length = 0;
+    listType = null;
+  };
+
+  text.replace(/\r\n/g, "\n").split("\n").forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push(
+        <p key={`h-${blocks.length}`} className="font-semibold text-txt">
+          <MarkdownLine text={heading[2]} id={`h-${blocks.length}`} />
+        </p>
+      );
+      return;
+    }
+
+    const quote = /^>\s+(.+)$/.exec(trimmed);
+    if (quote) {
+      flushParagraph();
+      flushList();
+      blocks.push(
+        <blockquote key={`q-${blocks.length}`} className="border-l-2 border-line/70 pl-2 text-txt3">
+          <MarkdownLine text={quote[1]} id={`q-${blocks.length}`} />
+        </blockquote>
+      );
+      return;
+    }
+
+    const unordered = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (unordered) {
+      flushParagraph();
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(unordered[1]);
+      return;
+    }
+
+    const ordered = /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (ordered) {
+      flushParagraph();
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(ordered[1]);
+      return;
+    }
+
+    flushList();
+    paragraph.push(line.trimEnd());
+  });
+
+  flushParagraph();
+  flushList();
+
+  return (
+    <div className={cx("space-y-1.5 break-words", streaming ? "stream-caret" : "")}>
+      {blocks.length > 0 ? blocks : <span>&nbsp;</span>}
+    </div>
+  );
+}
+
 /* ── 사이드 카드 ─────────────────────────────────────── */
 function SideCard({
   title,
@@ -63,7 +231,7 @@ function SideCard({
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-line/50"
+      className="overflow-hidden rounded-xl border border-line/70"
       style={{ background: "rgb(var(--surface))" }}
     >
       {/* 카드 헤더 */}
@@ -160,7 +328,7 @@ function LinkChip({
 }) {
   return (
     <div
-      className="flex items-center gap-2 rounded-lg border border-line/40 px-2.5 py-1.5 transition-colors hover:border-line/70 hover:bg-surface2/50"
+      className="flex items-center gap-2 rounded-lg border border-line/60 px-2.5 py-1.5 transition-colors hover:border-line/80 hover:bg-surface2/50"
       style={{ background: "rgb(var(--surface2) / 0.3)" }}
     >
       <Icon
@@ -182,6 +350,17 @@ export interface PendingAiRequest {
 
 const DEFAULT_DOCUMENT_GROUP_ID = "default";
 const DEFAULT_CHAT_MODEL_ID = "gpt-5.4-mini";
+const INLINE_AI_HEIGHT_KEY = "brainx_notes_inline_ai_height_v1";
+const INLINE_AI_DEFAULT_HEIGHT = 260;
+const INLINE_AI_MIN_HEIGHT = 180;
+const INLINE_AI_MAX_HEIGHT = 640;
+const INLINE_AI_TOP_RESERVE = 140;
+
+function clampInlineAiHeight(height: number, sidebarHeight: number) {
+  const measuredMax = sidebarHeight > 0 ? sidebarHeight - INLINE_AI_TOP_RESERVE : INLINE_AI_MAX_HEIGHT;
+  const max = Math.max(INLINE_AI_MIN_HEIGHT, Math.min(INLINE_AI_MAX_HEIGHT, measuredMax));
+  return Math.max(INLINE_AI_MIN_HEIGHT, Math.min(max, height));
+}
 
 interface Props {
   activeNote: MockNote | null;
@@ -189,57 +368,113 @@ interface Props {
   onCollapse: () => void;
   pendingAiRequest?: PendingAiRequest | null;
   onAiRequestHandled?: () => void;
-  onScrollToHeading?: (text: string) => void;
+  activeEditor?: NoteEditorHandle | null;
+  activeEditorMode?: EditMode;
+  /** 목차 항목 클릭 → 현재 활성 패널의 에디터를 해당 heading으로 스크롤(NotesWorkspace.tsx). */
+  onHeadingSelect?: (index: number) => void;
 }
 
-export default function RightSidebar({ activeNote, allNotes, onCollapse, pendingAiRequest, onAiRequestHandled, onScrollToHeading }: Props) {
+export default function RightSidebar({
+  activeNote,
+  allNotes,
+  onCollapse,
+  pendingAiRequest,
+  onAiRequestHandled,
+  activeEditor,
+  activeEditorMode = "edit",
+  onHeadingSelect,
+}: Props) {
   const [activeTocId, setActiveTocId] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
+  const [inlineAiMode, setInlineAiMode] = useState<InlineAiMode>("ask");
+  const [draftTargetLength, setDraftTargetLength] = useState(DEFAULT_DRAFT_TARGET_LENGTH);
   const [aiMessages, setAiMessages] = useState<Array<{ role: "ai" | "user"; text: string; streaming?: boolean }>>([
     { role: "ai", text: "이 노트에 대해 무엇이든 물어보세요. 관련 노트도 함께 찾아드려요." },
   ]);
   const [chatOpen, setChatOpen] = useState(true);
-  const [inlinePanelHeight, setInlinePanelHeight] = useState(200);
+  const [inlineAiHeight, setInlineAiHeight] = useState<number>(() => {
+    if (typeof window === "undefined") return INLINE_AI_DEFAULT_HEIGHT;
+    const saved = Number(window.localStorage.getItem(INLINE_AI_HEIGHT_KEY));
+    return Number.isFinite(saved)
+      ? clampInlineAiHeight(saved, 0)
+      : INLINE_AI_DEFAULT_HEIGHT;
+  });
+  const [sidebarHeight, setSidebarHeight] = useState(0);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const aiRequestAbortRef = useRef<AbortController | null>(null);
   const aiMockTimerRef = useRef<number | null>(null);
+  const activeDraftSessionRef = useRef<InlineDraftSession | null>(null);
   const chatThreadIdsRef = useRef<Record<string, string>>({});
-  const isResizingRef = useRef(false);
-  const resizeStartYRef = useRef(0);
-  const resizeStartHeightRef = useRef(200);
-
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    resizeStartYRef.current = e.clientY;
-    resizeStartHeightRef.current = inlinePanelHeight;
-  }, [inlinePanelHeight]);
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isResizingRef.current) return;
-      const dy = resizeStartYRef.current - e.clientY;
-      const next = Math.min(720, Math.max(120, resizeStartHeightRef.current + dy));
-      setInlinePanelHeight(next);
-    };
-    const onMouseUp = () => { isResizingRef.current = false; };
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, []);
 
   const toc = useMemo(() => (activeNote ? parseHeadings(activeNote.content) : []), [activeNote]);
   const ctx = (activeNote && MOCK_CONTEXT_DATA[activeNote.id]) || { backlinks: [], connections: [], aiSuggestions: [] };
 
+  const cancelActiveAiRequest = useCallback(() => {
+    aiRequestAbortRef.current?.abort();
+    aiRequestAbortRef.current = null;
+    activeDraftSessionRef.current?.rollback();
+    activeDraftSessionRef.current = null;
+    if (aiMockTimerRef.current !== null) {
+      window.clearInterval(aiMockTimerRef.current);
+      aiMockTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
-      aiRequestAbortRef.current?.abort();
-      if (aiMockTimerRef.current !== null) window.clearInterval(aiMockTimerRef.current);
+      cancelActiveAiRequest();
     };
+  }, [cancelActiveAiRequest]);
+
+  useEffect(() => {
+    const element = sidebarRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      const nextHeight = entry?.contentRect.height ?? 0;
+      setSidebarHeight(nextHeight);
+      setInlineAiHeight((current) => clampInlineAiHeight(current, nextHeight));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
+
+  const persistInlineAiHeight = useCallback((height: number) => {
+    try {
+      window.localStorage.setItem(INLINE_AI_HEIGHT_KEY, String(height));
+    } catch {
+      // localStorage 접근 불가
+    }
+  }, []);
+
+  const setClampedInlineAiHeight = useCallback((height: number, persist = false) => {
+    const next = clampInlineAiHeight(height, sidebarHeight);
+    setInlineAiHeight(next);
+    if (persist) persistInlineAiHeight(next);
+  }, [persistInlineAiHeight, sidebarHeight]);
+
+  const handleInlineAiResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = inlineAiHeight;
+    let latest = startHeight;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      latest = clampInlineAiHeight(startHeight - (moveEvent.clientY - startY), sidebarHeight);
+      setInlineAiHeight(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      persistInlineAiHeight(latest);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }, [inlineAiHeight, persistInlineAiHeight, sidebarHeight]);
 
   const updateLatestAiMessage = (text: string, streaming: boolean) => {
     setAiMessages((m) => {
@@ -261,21 +496,92 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     return created.threadId;
   };
 
+  const sendDraftToEditor = async (note: MockNote, route: Extract<InlineAiRoute, { kind: "draft" }>) => {
+    if (!activeEditor || activeEditorMode !== "edit") {
+      updateLatestAiMessage("편집 가능한 노트를 열어 주세요.", false);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    const draftSession = activeEditor.startInlineDraftSession();
+    if (!draftSession) {
+      updateLatestAiMessage("편집 가능한 노트를 열어 주세요.", false);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    const controller = new AbortController();
+    aiRequestAbortRef.current = controller;
+    activeDraftSessionRef.current = draftSession;
+    let streamedText = "";
+    updateLatestAiMessage("편집기에 초안을 작성 중입니다.", true);
+
+    try {
+      const done = await createInlineAssistStream(
+        {
+          noteId: note.id,
+          selectedText: "",
+          contextBefore: draftSession.contextBefore,
+          contextAfter: draftSession.contextAfter,
+          action: "DRAFT",
+          draftPrompt: route.prompt,
+          targetLength: route.targetLength,
+          language: "ko",
+        },
+        {
+          signal: controller.signal,
+          onDelta: (delta) => {
+            streamedText += delta;
+            draftSession.appendDelta(delta);
+          },
+        }
+      );
+      if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+      if (activeDraftSessionRef.current === draftSession) activeDraftSessionRef.current = null;
+      if (!done) throw new Error("AI 작성 완료 이벤트를 받지 못했습니다.");
+      if (!streamedText.trim()) {
+        draftSession.rollback();
+        decideAiSuggestion(done.suggestionId, { decision: "REJECTED" }).catch((error) => {
+          console.warn("Failed to record rejected AI draft suggestion.", error);
+        });
+        updateLatestAiMessage("작성 결과가 비어 있습니다.", false);
+        return;
+      }
+
+      draftSession.commit(streamedText);
+      updateLatestAiMessage(`${route.targetLength}자 기준 초안을 편집기에 삽입했습니다.`, false);
+      decideAiSuggestion(done.suggestionId, { decision: "ACCEPTED" }).catch((error) => {
+        console.warn("Failed to record accepted AI draft suggestion.", error);
+      });
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (aiRequestAbortRef.current === controller) aiRequestAbortRef.current = null;
+      if (activeDraftSessionRef.current === draftSession) activeDraftSessionRef.current = null;
+      draftSession.rollback();
+      const message = error instanceof Error ? error.message : "AI 작성 요청에 실패했습니다.";
+      updateLatestAiMessage(message, false);
+    }
+  };
+
   const sendAi = async () => {
     if (!activeNote || !aiInput.trim()) return;
     const note = activeNote;
     const prompt = aiInput.trim();
+    const route = routeInlineAiInput(prompt, {
+      mode: inlineAiMode,
+      targetLength: draftTargetLength,
+    });
 
-    aiRequestAbortRef.current?.abort();
-    aiRequestAbortRef.current = null;
-    if (aiMockTimerRef.current !== null) {
-      window.clearInterval(aiMockTimerRef.current);
-      aiMockTimerRef.current = null;
-    }
+    cancelActiveAiRequest();
 
     setAiMessages((m) => [...m, { role: "user", text: prompt }]);
     setAiInput("");
     setAiMessages((m) => [...m, { role: "ai", text: "", streaming: true }]);
+
+    if (route.kind === "draft") {
+      await sendDraftToEditor(note, route);
+      return;
+    }
 
     const clientContext = buildNoteAiContext({
       task: "note.ask",
@@ -336,12 +642,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
     const preview = selectedText ? (selectedText.length > 60 ? `${selectedText.slice(0, 60)}…` : selectedText) : "(선택된 텍스트 없음)";
     const label = type === "summarize" ? "선택한 텍스트 요약 요청" : "선택한 텍스트 다시쓰기 요청";
 
-    aiRequestAbortRef.current?.abort();
-    aiRequestAbortRef.current = null;
-    if (aiMockTimerRef.current !== null) {
-      window.clearInterval(aiMockTimerRef.current);
-      aiMockTimerRef.current = null;
-    }
+    cancelActiveAiRequest();
 
     setChatOpen(true);
     setAiMessages((m) => [...m, { role: "user", text: `${label}: "${preview}"` }]);
@@ -462,12 +763,13 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
 
   return (
     <div
-      className="flex h-full w-full min-w-0 flex-col border-l border-line/50"
+      ref={sidebarRef}
+      className="flex h-full w-full min-w-0 flex-col border-l border-line/70"
       style={{ background: "rgb(var(--bg2))" }}
     >
       {/* ── 패널 헤더 ──────────────────────────────── */}
       <div
-        className="flex h-9 items-center gap-[5px] border-b border-line/50 px-4"
+        className="flex h-9 items-center gap-[5px] border-b border-line/70 px-4"
         style={{ background: "rgb(var(--surface))" }}
       >
         <Icon name="sparkle" size={14} className="shrink-0 text-accent" />
@@ -505,8 +807,11 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
                   heading={h}
                   isActive={activeTocId === h.id}
                   onClick={() => {
-                    setActiveTocId(h.id === activeTocId ? null : h.id);
-                    onScrollToHeading?.(h.text);
+                    setActiveTocId(h.id);
+                    // heading.id는 parseHeadings가 문서 순서대로 매긴 "h-{index}" 형식이라
+                    // 그 숫자를 그대로 에디터 쪽 heading 인덱스로 재사용할 수 있다.
+                    const index = Number(h.id.slice(2));
+                    if (Number.isFinite(index)) onHeadingSelect?.(index);
                   }}
                 />
               ))}
@@ -587,17 +892,32 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
 
       {/* ── 인라인 AI 채팅 (하단 고정) ─────────────── */}
       <div
-        className="shrink-0 border-t border-line/50"
+        className="shrink-0 border-t border-line/70"
         style={{ background: "rgb(var(--surface))" }}
       >
-        {/* 리사이즈 핸들 */}
         <div
-          onMouseDown={handleResizeMouseDown}
-          className="group flex h-2 w-full cursor-ns-resize items-center justify-center"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-valuemin={INLINE_AI_MIN_HEIGHT}
+          aria-valuemax={clampInlineAiHeight(INLINE_AI_MAX_HEIGHT, sidebarHeight)}
+          aria-valuenow={inlineAiHeight}
+          tabIndex={0}
+          onPointerDown={handleInlineAiResizePointerDown}
+          onKeyDown={(event) => {
+            if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home"
+              ? INLINE_AI_MIN_HEIGHT
+              : event.key === "End"
+                ? INLINE_AI_MAX_HEIGHT
+                : inlineAiHeight + (event.key === "ArrowUp" ? 20 : -20);
+            setClampedInlineAiHeight(next, true);
+          }}
+          className="group grid h-2 cursor-row-resize touch-none place-items-center outline-none"
+          title="인라인 AI 높이 조절"
         >
-          <div className="h-0.5 w-8 rounded-full bg-line/50 transition-colors group-hover:bg-primary/50" />
+          <span className="h-px w-10 rounded-full bg-line/70 transition-all group-hover:h-0.5 group-hover:bg-primary/60 group-focus-visible:h-0.5 group-focus-visible:bg-primary/70" />
         </div>
-
         {/* 채팅 헤더 */}
         <button
           type="button"
@@ -610,7 +930,7 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
         </button>
 
         {chatOpen && (
-          <div className="flex flex-col" style={{ height: `${inlinePanelHeight}px` }}>
+          <div className="flex flex-col" style={{ height: inlineAiHeight }}>
             {/* 메시지 목록 */}
             <div className="no-scrollbar flex-1 space-y-2 overflow-y-auto p-3">
               {aiMessages.map((msg, i) => (
@@ -628,30 +948,74 @@ export default function RightSidebar({ activeNote, allNotes, onCollapse, pending
                       : "rgb(var(--surface2) / 0.6)",
                   }}
                 >
-                  <span className={cx("whitespace-pre-wrap", msg.streaming ? "stream-caret" : "")}>{msg.text}</span>
+                  {msg.role === "ai" ? (
+                    <AiMarkdownMessage text={msg.text} streaming={msg.streaming} />
+                  ) : (
+                    <span className="whitespace-pre-wrap">{msg.text}</span>
+                  )}
                 </div>
               ))}
               <div ref={chatEndRef} />
             </div>
 
             {/* 입력창 */}
-            <div className="flex items-center gap-2 border-t border-line/40 p-2.5">
-              <input
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") sendAi(); }}
-                placeholder={`${activeNote.title.length > 10 ? activeNote.title.slice(0, 10) + "…" : activeNote.title}에 질문…`}
-                className="h-8 flex-1 rounded-lg border border-line/50 px-2.5 text-[12px] text-txt outline-none placeholder:text-txt3 transition-colors focus:border-primary/50"
-                style={{ background: "rgb(var(--bg2))" }}
-              />
-              <button
-                type="button"
-                onClick={sendAi}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white transition-all hover:brightness-110 active:scale-95"
-                style={{ background: "rgb(var(--primary))" }}
-              >
-                <Icon name="send" size={14} />
-              </button>
+            <div className="border-t border-line/40 p-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="grid h-7 grid-cols-2 rounded-lg border border-line/60 bg-surface2/40 p-0.5">
+                  {(["ask", "draft"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setInlineAiMode(mode)}
+                      className={cx(
+                        "min-w-12 rounded-md px-2 text-[11px] font-medium transition-colors",
+                        inlineAiMode === mode
+                          ? "bg-primary text-white"
+                          : "text-txt3 hover:bg-surface2/70 hover:text-txt"
+                      )}
+                    >
+                      {mode === "ask" ? "질문" : "작성"}
+                    </button>
+                  ))}
+                </div>
+                {inlineAiMode === "draft" ? (
+                  <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-txt3">
+                    <span className="shrink-0">길이</span>
+                    <input
+                      type="number"
+                      min={100}
+                      max={3000}
+                      step={50}
+                      value={draftTargetLength}
+                      onChange={(event) => setDraftTargetLength(Number(event.target.value))}
+                      onBlur={() => setDraftTargetLength((value) => clampDraftTargetLength(value))}
+                      className="h-7 w-20 rounded-md border border-line/60 bg-bg2 px-2 text-right text-[11px] text-txt outline-none focus:border-primary/50"
+                    />
+                  </label>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") sendAi(); }}
+                  placeholder={
+                    inlineAiMode === "draft"
+                      ? "주제와 원하는 형식 입력…"
+                      : `${activeNote.title.length > 10 ? activeNote.title.slice(0, 10) + "…" : activeNote.title}에 질문…`
+                  }
+                  className="h-8 flex-1 rounded-lg border border-line/70 px-2.5 text-[12px] text-txt outline-none placeholder:text-txt3 transition-colors focus:border-primary/50"
+                  style={{ background: "rgb(var(--bg2))" }}
+                />
+                <button
+                  type="button"
+                  onClick={sendAi}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white transition-all hover:brightness-110 active:scale-95"
+                  style={{ background: "rgb(var(--primary))" }}
+                >
+                  <Icon name="send" size={14} />
+                </button>
+              </div>
             </div>
           </div>
         )}

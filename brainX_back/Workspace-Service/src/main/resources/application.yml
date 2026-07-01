@@ -41,6 +41,7 @@ brainx:
   public-base-url: ${PUBLIC_BASE_URL:http://localhost:3000}
   seed-demo-data: ${SEED_DEMO_DATA:true}
   workspace:
+    dev-fallback-enabled: ${WORKSPACE_DEV_FALLBACK_ENABLED:false}
     draft:
       ttl-seconds: ${WORKSPACE_DRAFT_TTL_SECONDS:86400}
       flush-interval-seconds: ${WORKSPACE_DRAFT_FLUSH_INTERVAL_SECONDS:30}

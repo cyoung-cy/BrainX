@@ -5,11 +5,12 @@ export interface TagSuggestionState {
   active: boolean;
   range: { from: number; to: number } | null;
   query: string;
+  manual: boolean;
 }
 
 export const TagSuggestionKey = new PluginKey<TagSuggestionState>("tagSuggestion");
 
-const INACTIVE: TagSuggestionState = { active: false, range: null, query: "" };
+const INACTIVE: TagSuggestionState = { active: false, range: null, query: "", manual: false };
 
 /**
  * `#` 입력 트리거를 감지하는 ProseMirror Plugin.
@@ -32,6 +33,14 @@ export const TagSuggestion = Extension.create({
         state: {
           init: () => INACTIVE,
           apply(tr, prev): TagSuggestionState {
+            if (tr.getMeta(TagSuggestionKey) === "open") {
+              const selection = tr.selection;
+              if (!selection.empty) return INACTIVE;
+              const $from = selection.$from;
+              if ($from.parent.type.name === "codeBlock") return INACTIVE;
+              return { active: true, range: { from: selection.from, to: selection.to }, query: "", manual: true };
+            }
+
             // 명시적 닫기(Escape 등) 메타가 있으면 즉시 비활성화
             if (tr.getMeta(TagSuggestionKey) === "close") return INACTIVE;
 
@@ -64,11 +73,24 @@ export const TagSuggestion = Extension.create({
               return prev;
             }
 
-            return { active: true, range: { from, to }, query };
+            return { active: true, range: { from, to }, query, manual: false };
           },
         },
       }),
     ];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      "Mod-Space": () => {
+        const { state, view } = this.editor;
+        const { selection } = state;
+        if (!selection.empty) return false;
+        if (selection.$from.parent.type.name === "codeBlock") return false;
+        view.dispatch(state.tr.setMeta(TagSuggestionKey, "open"));
+        return true;
+      },
+    };
   },
 
   /**

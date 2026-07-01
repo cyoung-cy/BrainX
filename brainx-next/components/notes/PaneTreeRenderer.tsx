@@ -5,7 +5,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { PaneNode, MockNote, PaneTabsState, Tab, DragPayload } from "@/lib/notes/noteTypes";
 import { DropZone } from "@/lib/notes/paneUtils";
 import EditorPanel from "./EditorPanel";
-import type { EditMode, AiActionType } from "./NoteEditor";
+import type { EditMode, AiActionType, NoteEditorHandle } from "./NoteEditor";
 
 export interface QuickSwitcherTarget {
   paneId: string;
@@ -22,6 +22,7 @@ interface Props {
   paneTabs: Record<string, PaneTabsState>;
   quickSwitcher: QuickSwitcherTarget | null;
   saveSignal: number;
+  scrollToHeadingSignal: { nonce: number; index: number } | null;
   onActivate: (id: string) => void;
   onDrop: (paneId: string, zone: DropZone, noteId: string) => void;
   onTitleChange: (noteId: string, newTitle: string) => void;
@@ -32,6 +33,7 @@ interface Props {
   onTabClose: (paneId: string, tabId: string) => void;
   onNewTab: (paneId: string) => void;
   onAiAction: (type: AiActionType, text: string) => void;
+  onEditorHandleChange?: (paneId: string, tabId: string, handle: NoteEditorHandle | null) => void;
   onCreateNoteInTab: (paneId: string, tabId: string) => void;
   onOpenQuickSwitcher: (paneId: string, tabId: string) => void;
   onQuickSwitcherSelect: (noteId: string) => void;
@@ -62,6 +64,7 @@ export default function PaneTreeRenderer({
   paneTabs,
   quickSwitcher,
   saveSignal,
+  scrollToHeadingSignal,
   onActivate,
   onDrop,
   onTitleChange,
@@ -72,6 +75,7 @@ export default function PaneTreeRenderer({
   onTabClose,
   onNewTab,
   onAiAction,
+  onEditorHandleChange,
   onCreateNoteInTab,
   onOpenQuickSwitcher,
   onQuickSwitcherSelect,
@@ -120,6 +124,7 @@ export default function PaneTreeRenderer({
         dragPayload={dragPayload}
         mode={tabMode[activeTabId] ?? "edit"}
         saveSignal={saveSignal}
+        scrollToHeadingSignal={scrollToHeadingSignal}
         onModeChange={onModeChange}
         onActivate={() => onActivate(node.id)}
         onDrop={(zone, noteId) => onDrop(node.id, zone, noteId)}
@@ -130,6 +135,7 @@ export default function PaneTreeRenderer({
         onTabClose={(tabId) => onTabClose(node.id, tabId)}
         onNewTab={() => onNewTab(node.id)}
         onAiAction={onAiAction}
+        onEditorHandleChange={onEditorHandleChange}
         onCreateNoteInTab={() => onCreateNoteInTab(node.id, activeTab.id)}
         onOpenQuickSwitcher={() => onOpenQuickSwitcher(node.id, activeTab.id)}
         quickSwitcherOpen={quickSwitcher?.paneId === node.id && quickSwitcher?.tabId === activeTabId}
@@ -175,6 +181,7 @@ export default function PaneTreeRenderer({
               paneTabs={paneTabs}
               quickSwitcher={quickSwitcher}
               saveSignal={saveSignal}
+              scrollToHeadingSignal={scrollToHeadingSignal}
               onActivate={onActivate}
               onDrop={onDrop}
               onTitleChange={onTitleChange}
@@ -185,6 +192,7 @@ export default function PaneTreeRenderer({
               onTabClose={onTabClose}
               onNewTab={onNewTab}
               onAiAction={onAiAction}
+              onEditorHandleChange={onEditorHandleChange}
               onCreateNoteInTab={onCreateNoteInTab}
               onOpenQuickSwitcher={onOpenQuickSwitcher}
               onQuickSwitcherSelect={onQuickSwitcherSelect}

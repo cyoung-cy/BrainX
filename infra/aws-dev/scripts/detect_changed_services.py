@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Detect BrainX services that need image rebuild/deploy."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import PurePosixPath
+
+
+ALL_SERVICES = [
+    "gateway-service",
+    "user-service",
+    "workspace-service",
+    "ingestion-service",
+    "commerce-service",
+    "admin-service",
+    "intelligence-service",
+    "frontend",
+    "admin-frontend",
+]
+
+PATH_RULES: list[tuple[str, set[str]]] = [
+    ("brainX_back/Gateway-Service/", {"gateway-service"}),
+    ("brainX_back/User-Service/", {"user-service"}),
+    ("brainX_back/Workspace-Service/", {"workspace-service"}),
+    ("brainX_back/Ingestion-Service/", {"ingestion-service"}),
+    ("brainX_back/Commerce-Service/", {"commerce-service"}),
+    ("brainX_back/Admin-Service/", {"admin-service"}),
+    ("brainX_back/Intelligence-Service/", {"intelligence-service"}),
+    ("brainx-next/", {"frontend"}),
+    ("brainx-admin-next/", {"admin-frontend"}),
+    ("contracts-v2/", {"intelligence-service", "frontend"}),
+    ("infra/aws-dev/dockerfiles/intelligence-service.Dockerfile", {"intelligence-service"}),
+    ("infra/aws-dev/dockerfiles/brainx-next.Dockerfile", {"frontend"}),
+    ("infra/aws-dev/dockerfiles/brainx-admin-next.Dockerfile", {"admin-frontend"}),
+]
+
+DEPLOY_CONFIG_PREFIXES = (
+    "infra/aws-dev/deploy/",
+    "infra/aws-dev/scripts/deploy_remote.sh",
+)
+
+
+def git_changed_files(base: str, head: str) -> list[str]:
+    if not base or set(base) == {"0"}:
+        return []
+    command = ["git", "diff", "--name-only", f"{base}...{head}"]
+    result = subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE)
+    return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
+
+
+def normalize_service(value: str) -> str:
+    service = value.strip()
+    if not service:
+        return ""
+    if service not in ALL_SERVICES:
+        raise ValueError(f"Unknown service '{service}'. Valid services: {', '.join(ALL_SERVICES)}")
+    return service
+
+
+def services_for_path(path: str) -> set[str]:
+    normalized = str(PurePosixPath(path))
+    services: set[str] = set()
+    for prefix, mapped_services in PATH_RULES:
+        if normalized.startswith(prefix):
+            services.update(mapped_services)
+    return services
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", required=True)
+    parser.add_argument("--head", required=True)
+    parser.add_argument("--deploy-all", action="store_true")
+    parser.add_argument("--services", default="")
+    args = parser.parse_args()
+
+    try:
+        requested = [normalize_service(part) for part in args.services.replace(",", " ").split()]
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    requested = [service for service in requested if service]
+
+    deploy_config_changed = False
+    if args.deploy_all:
+        services = list(ALL_SERVICES)
+        changed_files: list[str] = []
+    elif requested:
+        services = requested
+        changed_files = []
+    else:
+        changed_files = git_changed_files(args.base, args.head)
+        detected: set[str] = set()
+        for path in changed_files:
+            detected.update(services_for_path(path))
+            if path.startswith(DEPLOY_CONFIG_PREFIXES):
+                deploy_config_changed = True
+        services = [service for service in ALL_SERVICES if service in detected]
+
+    result = {
+        "services": services,
+        "servicesJson": json.dumps(services, separators=(",", ":")),
+        "servicesSpace": " ".join(services),
+        "shouldDeploy": bool(services or deploy_config_changed),
+        "deployConfigChanged": deploy_config_changed or args.deploy_all,
+        "changedFiles": changed_files,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

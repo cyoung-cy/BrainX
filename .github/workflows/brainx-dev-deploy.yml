@@ -1,0 +1,327 @@
+name: BrainX Dev Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_all:
+        description: "Build and deploy all BrainX services"
+        required: false
+        default: false
+        type: boolean
+      services:
+        description: "Optional space/comma-separated service list"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+  AWS_DEV_INSTANCE_ID: ${{ vars.AWS_DEV_INSTANCE_ID }}
+  AWS_DEV_ARTIFACT_BUCKET: ${{ vars.AWS_DEV_ARTIFACT_BUCKET }}
+  AWS_ECR_REGISTRY: ${{ vars.AWS_ECR_REGISTRY }}
+  AWS_DEV_RDS_SECRET_ARN: ${{ vars.AWS_DEV_RDS_SECRET_ARN }}
+  AWS_DEV_RDS_HOST: ${{ vars.AWS_DEV_RDS_HOST }}
+  AWS_DEV_RDS_PORT: ${{ vars.AWS_DEV_RDS_PORT }}
+  AWS_DEV_SSM_PARAMETER_PREFIX: ${{ vars.AWS_DEV_SSM_PARAMETER_PREFIX }}
+  AWS_DEV_PUBLIC_BASE_URL: ${{ vars.AWS_DEV_PUBLIC_BASE_URL }}
+  AWS_DEV_ADMIN_PUBLIC_BASE_URL: ${{ vars.AWS_DEV_ADMIN_PUBLIC_BASE_URL }}
+  AWS_DEV_PUBLIC_SITE_ADDRESS: ${{ vars.AWS_DEV_PUBLIC_SITE_ADDRESS }}
+  AWS_DEV_ADMIN_SITE_ADDRESS: ${{ vars.AWS_DEV_ADMIN_SITE_ADDRESS }}
+  AWS_DEV_ACME_EMAIL: ${{ vars.AWS_DEV_ACME_EMAIL }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  preflight:
+    name: Check deployment configuration
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            AWS_REGION \
+            AWS_ROLE_TO_ASSUME \
+            AWS_DEV_INSTANCE_ID \
+            AWS_DEV_ARTIFACT_BUCKET \
+            AWS_ECR_REGISTRY \
+            AWS_DEV_RDS_SECRET_ARN \
+            AWS_DEV_RDS_HOST \
+            AWS_DEV_RDS_PORT \
+            AWS_DEV_SSM_PARAMETER_PREFIX \
+            AWS_DEV_PUBLIC_BASE_URL \
+            AWS_DEV_ADMIN_PUBLIC_BASE_URL \
+            AWS_DEV_PUBLIC_SITE_ADDRESS \
+            AWS_DEV_ADMIN_SITE_ADDRESS; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Deployment is not configured yet. Missing GitHub repository variables:"
+            printf ' - %s\n' "${missing[@]}"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deployment configuration variables are present."
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  detect:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
+    outputs:
+      services_json: ${{ steps.detect.outputs.services_json }}
+      services_space: ${{ steps.detect.outputs.services_space }}
+      should_deploy: ${{ steps.detect.outputs.should_deploy }}
+      deploy_config_changed: ${{ steps.detect.outputs.deploy_config_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --base "${{ github.event.before }}"
+            --head "${{ github.sha }}"
+          )
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_all }}" = "true" ]; then
+            ARGS+=(--deploy-all)
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.services }}" ]; then
+            ARGS+=(--services "${{ inputs.services }}")
+          fi
+
+          python infra/aws-dev/scripts/detect_changed_services.py "${ARGS[@]}" > detection.json
+          cat detection.json
+
+          python - <<'PY'
+          import json
+          import os
+
+          with open("detection.json", "r", encoding="utf-8") as fp:
+              detection = json.load(fp)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fp:
+              fp.write(f"services_json={detection['servicesJson']}\n")
+              fp.write(f"services_space={detection['servicesSpace']}\n")
+              fp.write(f"should_deploy={str(detection['shouldDeploy']).lower()}\n")
+              fp.write(f"deploy_config_changed={str(detection['deployConfigChanged']).lower()}\n")
+          PY
+
+  build:
+    name: Build and push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.services_space != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services_json) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        shell: bash
+        env:
+          SERVICE: ${{ matrix.service }}
+          PUBLIC_BASE_URL: ${{ env.AWS_DEV_PUBLIC_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          case "$SERVICE" in
+            gateway-service)
+              CONTEXT="brainX_back/Gateway-Service"
+              DOCKERFILE="brainX_back/Gateway-Service/Dockerfile"
+              ;;
+            user-service)
+              CONTEXT="brainX_back/User-Service"
+              DOCKERFILE="brainX_back/User-Service/Dockerfile"
+              ;;
+            workspace-service)
+              CONTEXT="brainX_back/Workspace-Service"
+              DOCKERFILE="brainX_back/Workspace-Service/Dockerfile"
+              ;;
+            ingestion-service)
+              CONTEXT="brainX_back/Ingestion-Service"
+              DOCKERFILE="brainX_back/Ingestion-Service/Dockerfile"
+              ;;
+            commerce-service)
+              CONTEXT="brainX_back/Commerce-Service"
+              DOCKERFILE="brainX_back/Commerce-Service/Dockerfile"
+              ;;
+            admin-service)
+              CONTEXT="brainX_back/Admin-Service"
+              DOCKERFILE="brainX_back/Admin-Service/Dockerfile"
+              ;;
+            intelligence-service)
+              CONTEXT="brainX_back/Intelligence-Service"
+              DOCKERFILE="infra/aws-dev/dockerfiles/intelligence-service.Dockerfile"
+              ;;
+            frontend)
+              CONTEXT="brainx-next"
+              DOCKERFILE="infra/aws-dev/dockerfiles/brainx-next.Dockerfile"
+              ;;
+            admin-frontend)
+              CONTEXT="brainx-admin-next"
+              DOCKERFILE="infra/aws-dev/dockerfiles/brainx-admin-next.Dockerfile"
+              ;;
+            *)
+              echo "Unknown service: $SERVICE" >&2
+              exit 1
+              ;;
+          esac
+
+          IMAGE_URI="$AWS_ECR_REGISTRY/brainx-dev-$SERVICE"
+          BUILD_ARGS=()
+          if [ "$SERVICE" = "frontend" ]; then
+            BUILD_ARGS+=(
+              --build-arg "NEXT_PUBLIC_API_BASE_URL=$PUBLIC_BASE_URL"
+              --build-arg "NEXT_PUBLIC_WORKSPACE_API_BASE_URL=$PUBLIC_BASE_URL"
+              --build-arg "NEXT_PUBLIC_COMMERCE_API_BASE_URL=$PUBLIC_BASE_URL"
+              --build-arg "NEXT_PUBLIC_INGESTION_API_BASE_URL=$PUBLIC_BASE_URL"
+              --build-arg "NEXT_PUBLIC_NOTES_USE_MOCK=false"
+              --build-arg "NEXT_PUBLIC_GRAPH_USE_MOCK=false"
+              --build-arg "NEXT_PUBLIC_GRAPH_CLUSTERS_USE_MOCK=false"
+              --build-arg "API_SERVER_URL=http://gateway-service:8088"
+            )
+          fi
+
+          docker build \
+            -f "$DOCKERFILE" \
+            -t "$IMAGE_URI:$IMAGE_TAG" \
+            -t "$IMAGE_URI:dev-latest" \
+            "${BUILD_ARGS[@]}" \
+            "$CONTEXT"
+
+          docker push "$IMAGE_URI:$IMAGE_TAG"
+          docker push "$IMAGE_URI:dev-latest"
+
+  deploy:
+    name: Deploy changed services
+    runs-on: ubuntu-latest
+    needs:
+      - detect
+      - build
+    if: always() && needs.detect.outputs.should_deploy == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Upload deploy bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf brainx-deploy-bundle.tgz -C infra/aws-dev deploy scripts
+          ARTIFACT_KEY="deploy/${GITHUB_SHA}/brainx-deploy-bundle.tgz"
+          aws s3 cp brainx-deploy-bundle.tgz "s3://$AWS_DEV_ARTIFACT_BUCKET/$ARTIFACT_KEY"
+          echo "ARTIFACT_KEY=$ARTIFACT_KEY" >> "$GITHUB_ENV"
+
+      - name: Run remote deploy through SSM
+        shell: bash
+        env:
+          CHANGED_SERVICES: ${{ needs.detect.outputs.services_space }}
+          DEPLOY_CONFIG_CHANGED: ${{ needs.detect.outputs.deploy_config_changed }}
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          import os
+
+          exports = {
+              "AWS_REGION": os.environ["AWS_REGION"],
+              "ECR_REGISTRY": os.environ["AWS_ECR_REGISTRY"],
+              "IMAGE_TAG": os.environ["IMAGE_TAG"],
+              "RDS_SECRET_ARN": os.environ["AWS_DEV_RDS_SECRET_ARN"],
+              "RDS_HOST": os.environ["AWS_DEV_RDS_HOST"],
+              "RDS_PORT": os.environ["AWS_DEV_RDS_PORT"],
+              "SSM_PARAMETER_PREFIX": os.environ["AWS_DEV_SSM_PARAMETER_PREFIX"],
+              "PUBLIC_BASE_URL": os.environ["AWS_DEV_PUBLIC_BASE_URL"],
+              "ADMIN_PUBLIC_BASE_URL": os.environ["AWS_DEV_ADMIN_PUBLIC_BASE_URL"],
+              "PUBLIC_SITE_ADDRESS": os.environ["AWS_DEV_PUBLIC_SITE_ADDRESS"],
+              "ADMIN_SITE_ADDRESS": os.environ["AWS_DEV_ADMIN_SITE_ADDRESS"],
+              "ACME_EMAIL": os.environ.get("AWS_DEV_ACME_EMAIL", ""),
+              "ARTIFACT_BUCKET": os.environ["AWS_DEV_ARTIFACT_BUCKET"],
+              "ARTIFACT_KEY": os.environ["ARTIFACT_KEY"],
+              "CHANGED_SERVICES": os.environ.get("CHANGED_SERVICES", ""),
+              "DEPLOY_CONFIG_CHANGED": os.environ.get("DEPLOY_CONFIG_CHANGED", "false"),
+          }
+
+          commands = [
+              "set -eu",
+              "rm -rf /tmp/brainx-deploy-bundle /tmp/brainx-deploy-bundle.tgz",
+              "mkdir -p /tmp/brainx-deploy-bundle",
+              f"aws s3 cp s3://{exports['ARTIFACT_BUCKET']}/{exports['ARTIFACT_KEY']} /tmp/brainx-deploy-bundle.tgz --region {exports['AWS_REGION']}",
+              "tar -xzf /tmp/brainx-deploy-bundle.tgz -C /tmp/brainx-deploy-bundle",
+          ]
+          for key, value in exports.items():
+              commands.append(f"export {key}={json.dumps(value)}")
+          commands.append("bash /tmp/brainx-deploy-bundle/scripts/deploy_remote.sh")
+
+          with open("ssm-parameters.json", "w", encoding="utf-8") as fp:
+              json.dump({"commands": commands, "executionTimeout": ["3600"]}, fp)
+          PY
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --instance-ids "$AWS_DEV_INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters file://ssm-parameters.json \
+              --query "Command.CommandId" \
+              --output text
+          )"
+
+          set +e
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$AWS_DEV_INSTANCE_ID"
+          WAIT_STATUS=$?
+          set -e
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$AWS_DEV_INSTANCE_ID" \
+            --query '{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
+            --output text
+
+          exit "$WAIT_STATUS"
+
+      - name: Verify public endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -I --max-time 20 "$AWS_DEV_PUBLIC_BASE_URL/"
+          curl -I --max-time 20 "$AWS_DEV_ADMIN_PUBLIC_BASE_URL/"

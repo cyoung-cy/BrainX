@@ -27,6 +27,7 @@ interface Props {
   dragPayload: DragPayload | null;
   mode: EditMode;
   saveSignal: number;
+  scrollToHeadingSignal: { nonce: number; index: number } | null;
   onModeChange: (tabId: string, mode: EditMode) => void;
   onActivate: () => void;
   onDrop: (zone: DropZone, noteId: string) => void;
@@ -37,6 +38,7 @@ interface Props {
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
   onAiAction: (type: AiActionType, text: string) => void;
+  onEditorHandleChange?: (paneId: string, tabId: string, handle: NoteEditorHandle | null) => void;
   onCreateNoteInTab: () => void;
   onOpenQuickSwitcher: () => void;
   quickSwitcherOpen: boolean;
@@ -71,6 +73,7 @@ export default function EditorPanel({
   dragPayload,
   mode,
   saveSignal,
+  scrollToHeadingSignal,
   onModeChange,
   onActivate,
   onDrop,
@@ -81,6 +84,7 @@ export default function EditorPanel({
   onTabClose,
   onNewTab,
   onAiAction,
+  onEditorHandleChange,
   onCreateNoteInTab,
   onOpenQuickSwitcher,
   quickSwitcherOpen,
@@ -105,7 +109,7 @@ export default function EditorPanel({
 }: Props) {
   const [hoverZone, setHoverZone] = useState<DropZone | "replace" | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<NoteEditorHandle>(null);
+  const editorRef = useRef<NoteEditorHandle | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToHeading = useCallback((text: string) => {
@@ -135,6 +139,19 @@ export default function EditorPanel({
      버블링되므로, 이 ref와 클릭 타겟을 함께 검사하면 "정말로 빈 배경에서 시작하고 끝난
      클릭"만 통과시킬 수 있다. */
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
+  const setNoteEditorRef = useCallback((handle: NoteEditorHandle | null) => {
+    editorRef.current = handle;
+    if (onEditorHandleChange && activeTab.kind === "note" && note && isActive) {
+      onEditorHandleChange(node.id, activeTabId, handle);
+    }
+  }, [activeTab.kind, activeTabId, isActive, node.id, note?.id, onEditorHandleChange]);
+
+  useEffect(() => {
+    if (!onEditorHandleChange || activeTab.kind !== "note" || !note || !isActive) return;
+    onEditorHandleChange(node.id, activeTabId, editorRef.current);
+    return () => onEditorHandleChange(node.id, activeTabId, null);
+  }, [activeTab.kind, activeTabId, isActive, mode, node.id, note?.id, onEditorHandleChange]);
 
   /* titleDragGuard 해제 안전망 — 제목 input 자신의 onMouseUp은 stopPropagation 되어 있어
      (아래 input 참고) 드래그가 input 경계를 벗어나 다른 곳에서 끝나도 가드를 반드시 꺼야
@@ -199,6 +216,18 @@ export default function EditorPanel({
     editorRef.current?.flushPendingSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveSignal]);
+
+  // 우측 목차(RightSidebar) 클릭 — 모든 패널에 같은 신호가 전달되지만, "현재 활성 패널"만
+  // 실제로 스크롤한다(Split View에서 클릭하지 않은 패널이 멋대로 움직이면 안 됨). saveSignal과
+  // 동일한 nonce 비교 패턴.
+  const prevScrollSignalRef = useRef(scrollToHeadingSignal?.nonce);
+  useEffect(() => {
+    if (!scrollToHeadingSignal || scrollToHeadingSignal.nonce === prevScrollSignalRef.current) return;
+    prevScrollSignalRef.current = scrollToHeadingSignal.nonce;
+    if (!isActive) return;
+    editorRef.current?.scrollToHeading(scrollToHeadingSignal.index);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToHeadingSignal]);
 
   // 제목 입력창 포커스
   useEffect(() => {
@@ -454,7 +483,7 @@ export default function EditorPanel({
             )}
 
             <NoteEditor
-              ref={editorRef}
+              ref={setNoteEditorRef}
               note={note}
               mode={mode}
               onActivate={onActivate}

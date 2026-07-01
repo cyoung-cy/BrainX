@@ -22,7 +22,11 @@ services:
     volumes:
       - brainx_kafka_data:/bitnami/kafka
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1",
+        ]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -159,6 +163,8 @@ services:
       POSTGRES_HOST: postgres
       ADMIN_DB_NAME: ${ADMIN_DB_NAME:-brainx_admin}
       GATEWAY_SERVICE_URL: http://gateway-service:8088
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAINX_KAFKA_MONITORING_CONSUMER_GROUP_ID: intelligence-service
     ports:
       - "8085:8085"
     depends_on:
@@ -167,7 +173,11 @@ services:
       gateway-service:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health | grep -q UP"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:8085/actuator/health | grep -q UP",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10

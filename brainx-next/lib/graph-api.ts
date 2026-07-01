@@ -1,11 +1,13 @@
 "use client";
 
-import { clearAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
+import { clearAuthSession, isDevAuthSession, readAuthSession, type ApiResponse } from "@/lib/auth-api";
 import { CLUSTERS, type BrainXNote, type ClusterId } from "@/lib/brainx-data";
+import type { NoteDraftData } from "@/lib/workspace-api";
 
 const WORKSPACE_API_BASE_URL = process.env.NEXT_PUBLIC_WORKSPACE_API_BASE_URL ?? "http://localhost:8082";
 export const USE_MOCK_GRAPH = process.env.NEXT_PUBLIC_GRAPH_USE_MOCK !== "false";
 export const USE_MOCK_GRAPH_CLUSTERS = process.env.NEXT_PUBLIC_GRAPH_CLUSTERS_USE_MOCK !== "false";
+const WORKSPACE_DEV_USER_ID = process.env.NEXT_PUBLIC_WORKSPACE_DEV_USER_ID?.trim();
 
 export type GraphNodeData = {
   id: string;
@@ -43,12 +45,15 @@ function messageFromResponse<T>(response: ApiResponse<T>, fallback: string) {
 
 async function workspaceRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readAuthSession();
+  const useAuthenticatedSession = Boolean(session?.accessToken) && !isDevAuthSession(session);
+  const useDevUserHeader = Boolean(WORKSPACE_DEV_USER_ID) && !useAuthenticatedSession;
   const response = await fetch(`${WORKSPACE_API_BASE_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(session?.accessToken ? { Authorization: `${session.tokenType ?? "Bearer"} ${session.accessToken}` } : {}),
+      ...(useDevUserHeader ? { "X-User-Id": WORKSPACE_DEV_USER_ID } : {}),
+      ...(useAuthenticatedSession ? { Authorization: `${session?.tokenType ?? "Bearer"} ${session?.accessToken}` } : {}),
       ...(init?.headers ?? {})
     }
   });
@@ -100,6 +105,32 @@ export function graphToBrainXNotes(graph: GraphData): BrainXNote[] {
       createdAt,
       updatedAt,
       version: 1
+    };
+  });
+}
+
+/** Guest actor의 노트는 Postgres에 없고 Redis draft로만 존재해(CurrentActor GUEST 정책)
+    User 전용 `/api/v1/graph`(Postgres 기반, AI 클러스터링/링크 포함)로는 보이지 않는다. draft
+    목록을 연결선 없는 단일 노드 그래프로 보여줘 "노트 생성 시 마인드맵에도 반영"되게 한다 —
+    AI 링크/클러스터링은 로그인 후 claim되어 실제로 처리된 뒤에야 의미가 있다. */
+export function draftsToBrainXNotes(drafts: NoteDraftData[]): BrainXNote[] {
+  return drafts.map((draft) => {
+    const fallbackCluster = CLUSTERS[0].id;
+    return {
+      id: draft.noteId,
+      title: draft.title?.trim() || "제목 없음",
+      markdown: draft.markdown ?? "",
+      folderId: fallbackCluster,
+      cluster: fallbackCluster,
+      summary: normalizeSummary(null, draft.title ?? "제목 없음"),
+      tags: [],
+      links: [],
+      updated: relativeUpdatedLabel(draft.savedAt),
+      words: 0,
+      isFavorite: false,
+      createdAt: normalizeDate(draft.savedAt),
+      updatedAt: normalizeDate(draft.savedAt),
+      version: draft.baseVersion ?? 1
     };
   });
 }

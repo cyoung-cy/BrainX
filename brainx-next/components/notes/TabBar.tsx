@@ -210,7 +210,7 @@ export default function TabBar({
         </button>
       </div>
 
-      {/* 우측 컨트롤: 읽기/편집 모드 전환 + 컨텍스트 패널 토글 */}
+      {/* 우측 컨트롤: 읽기/편집 모드 전환, 컨텍스트 패널 토글 */}
       {(showModeToggle || onContextToggle) && (
         <div className="flex shrink-0 items-center border-l border-line/40 px-1.5 gap-0.5">
           {showModeToggle && (
@@ -224,9 +224,9 @@ export default function TabBar({
                   ? "text-primary hover:bg-primary/10"
                   : "text-txt3/60 hover:bg-surface2/70 hover:text-txt"
               )}
-            >
-              {mode === "edit" ? <SquarePen size={13} /> : <Eye size={13} />}
-            </button>
+              >
+                {mode === "edit" ? <SquarePen size={13} /> : <Eye size={13} />}
+              </button>
           )}
           {onContextToggle && (
             <button
@@ -234,7 +234,7 @@ export default function TabBar({
               onClick={(e) => { e.stopPropagation(); onContextToggle(); }}
               title={contextOpen ? "컨텍스트 패널 닫기" : "컨텍스트 패널 열기"}
               className={cx(
-                "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-all",
+                "inline-flex h-[22px] w-[22px] items-center justify-center rounded transition-colors",
                 contextOpen
                   ? "text-primary hover:bg-primary/10"
                   : "text-txt3/60 hover:bg-surface2/70 hover:text-txt"

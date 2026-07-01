@@ -22,18 +22,75 @@ public final class AdminDtos {
     public enum SupportStatus { OPEN, IN_PROGRESS, RESOLVED, CLOSED }
     public enum BulkAction { CHANGE_PLAN, SUSPEND, REACTIVATE, WITHDRAW, SEND_NOTICE }
     public enum ApplyTiming { IMMEDIATE, NEXT_BILLING }
+    public enum KafkaLagState { HEALTHY, NO_COMMITTED_OFFSETS, BROKER_UNREACHABLE, CONFIG_MISSING }
+    public enum ServiceHealthState { UP, DOWN, DEGRADED }
 
     public record PaginationData(int page, int size, long totalItems, int totalPages) {}
     public record KpiData(String label, String value, String delta, String tone, String sub) {}
     public record ServiceHealthData(String name, String latency, String uptime, String state) {}
     public record LogData(String level, String service, String message, String time) {}
+    public record TrendSeriesData(
+            String metric,
+            List<Integer> values,
+            String periodLabel,
+            int pointCount,
+            String timezone,
+            String source
+    ) {}
+    public record AdminOverviewSummaryData(
+            BigDecimal monthlyRevenue,
+            int activeSubscriptions,
+            BigDecimal mrr,
+            int failedPaymentCount,
+            int activeUsers,
+            int totalNotes,
+            long totalStorageBytes,
+            int notesCreatedToday,
+            String timezone,
+            String revenueSource,
+            String userSource,
+            String workspaceSource
+    ) {}
+    public record AdminMonitoringSnapshotData(
+            String snapshotId,
+            BigDecimal monthlyRevenue,
+            int activeSubscriptions,
+            BigDecimal mrr,
+            int failedPaymentCount,
+            int activeUsers,
+            Integer kafkaLagMessages,
+            String kafkaConsumerGroupId,
+            KafkaLagState kafkaLagState,
+            String kafkaLagDetail,
+            OffsetDateTime capturedAt
+    ) {}
+
+    public record AdminKafkaLagData(
+            String consumerGroupId,
+            KafkaLagState kafkaLagState,
+            Integer kafkaLagMessages,
+            int warningThreshold,
+            int criticalThreshold,
+            String kafkaLagDetail,
+            OffsetDateTime capturedAt
+    ) {}
+
+    public record AdminServiceHealthSnapshotData(
+            String healthSnapshotId,
+            String serviceName,
+            String state,
+            long latencyMs,
+            double uptimePercent,
+            OffsetDateTime capturedAt
+    ) {}
 
     public record AdminDashboardOverviewData(
             List<KpiData> kpis,
             List<ServiceHealthData> services,
             List<LogData> logs,
-            List<Integer> revenueTrend,
-            List<Integer> activeUserTrend
+            TrendSeriesData revenueTrend,
+            TrendSeriesData activeUserTrend,
+            AdminOverviewSummaryData summary
     ) {}
 
     public record AdminUserLoginSession(
@@ -85,7 +142,7 @@ public final class AdminDtos {
 
     public record AdminUserPlanChangeRequest(@NotNull PlanId targetPlanId, String reason) {}
     public record AdminUserPlanChangeData(String userId, PlanId planId, OffsetDateTime changedAt) {}
-    public record AdminUserStatusChangeRequest(@NotNull ManagedUserStatus status, String reason) {}
+    public record AdminUserStatusChangeRequest(@NotNull ManagedUserStatus status, String reason, @Min(1) Integer suspendedDays) {}
     public record AdminUserStatusChangeData(String userId, ManagedUserStatus status, OffsetDateTime changedAt) {}
     public record AdminUserWithdrawalRequest(String reason) {}
     public record AdminUserWithdrawalData(String userId, String deletionRequestId, String status) {}
@@ -96,7 +153,8 @@ public final class AdminDtos {
             @NotNull BulkAction action,
             PlanId targetPlanId,
             NoticeRequest notice,
-            String reason
+            String reason,
+            @Min(1) Integer suspendedDays
     ) {}
     public record AdminUserBulkActionData(int accepted, int failed, String jobId) {}
 
@@ -128,6 +186,8 @@ public final class AdminDtos {
     public record AdminAccountsData(List<AdminAccountRow> admins) {}
     public record AdminAccountCreateRequest(@NotBlank String name, @NotBlank String loginId, @NotNull AdminRole role) {}
     public record AdminAccountCreateData(AdminAccountRow admin, String temporaryPassword) {}
+    public record AdminAccountUpdateRequest(String name, String loginId, AdminRole role) {}
+    public record AdminAccountUpdateData(AdminAccountRow admin) {}
 
     public record SupportTicketData(
             String ticketId,

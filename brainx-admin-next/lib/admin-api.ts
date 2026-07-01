@@ -23,7 +23,7 @@ import {
   type UserStatus,
   type InquiryStatus
 } from "@/lib/admin-data";
-import { clearSession, getToken, type AdminRole, type AdminSession } from "@/lib/admin-auth";
+import { clearSession, getSession, getToken, type AdminRole, type AdminSession } from "@/lib/admin-auth";
 
 type ApiSuccess<T> = {
   success: true;
@@ -31,10 +31,20 @@ type ApiSuccess<T> = {
   message?: string;
 };
 
+type ApiFailure = {
+  success?: false;
+  message?: string;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
 type ApiPlanId = "free" | "pro" | "max";
 type ApiUserStatus = "ACTIVE" | "SUSPENDED" | "WITHDRAWN";
 type ApiTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 type ApiPaymentStatus = "SUCCESS" | "FAILED" | "REFUNDED" | "CANCELED";
+type ApiKafkaLagState = "HEALTHY" | "NO_COMMITTED_OFFSETS" | "BROKER_UNREACHABLE" | "CONFIG_MISSING";
 
 type ApiUserRow = {
   userId: string;
@@ -70,6 +80,7 @@ type ApiLoginSession = {
 
 type ApiUserDetail = ApiUserRow & {
   sessions: ApiLoginSession[];
+  activities?: Array<{ activityId?: string; type?: string; message: string; occurredAt: string }>;
 };
 
 type ApiTicket = {
@@ -108,6 +119,7 @@ type ApiSubscription = {
   planId: ApiPlanId;
   startedAt: string;
   nextBillingAt?: string | null;
+  billingCycle?: "MONTHLY" | "YEARLY";
   amount: number;
 };
 
@@ -133,10 +145,65 @@ export type AdminAccountRow = {
   adminId: string;
   name: string;
   loginId: string;
+  email: string | null;
   role: AdminRole;
   mustChangePassword: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+};
+
+export type AdminMessageScope = "ALL" | "SELECTED";
+
+export type AdminMessage = {
+  messageId: string;
+  senderAdminUserId: string;
+  senderName: string;
+  recipientScope: AdminMessageScope;
+  recipientAdminUserIds: string[];
+  body: string;
+  sentAt: string;
+  isRead: boolean;
+};
+
+export type AdminMessagesData = {
+  messages: AdminMessage[];
+  unreadCount: number;
+};
+
+export type AdminMessageViewer = {
+  adminUserId: string;
+  name: string;
+};
+
+export type AdminServiceHealthSummary = {
+  name: string;
+  latency: string;
+  uptime: string;
+  state: string;
+};
+
+export type AdminTrendSeries = {
+  metric: string;
+  values: number[];
+  periodLabel: string;
+  pointCount: number;
+  timezone: string;
+  source: string;
+};
+
+export type AdminOverviewSummary = {
+  monthlyRevenue: number;
+  activeSubscriptions: number;
+  mrr: number;
+  failedPaymentCount: number;
+  activeUsers: number;
+  totalNotes: number;
+  totalStorageBytes: number;
+  notesCreatedToday: number;
+  timezone: string;
+  revenueSource: string;
+  userSource: string;
+  workspaceSource: string;
 };
 
 export type AdminMonitoringSnapshot = {
@@ -146,6 +213,20 @@ export type AdminMonitoringSnapshot = {
   mrr: number;
   failedPaymentCount: number;
   activeUsers: number;
+  kafkaLagMessages: number | null;
+  kafkaConsumerGroupId: string | null;
+  kafkaLagState: ApiKafkaLagState;
+  kafkaLagDetail: string | null;
+  capturedAt: string;
+};
+
+export type AdminKafkaLagData = {
+  consumerGroupId: string | null;
+  kafkaLagState: ApiKafkaLagState;
+  kafkaLagMessages: number | null;
+  warningThreshold: number;
+  criticalThreshold: number;
+  kafkaLagDetail: string | null;
   capturedAt: string;
 };
 
@@ -160,16 +241,20 @@ export type AdminServiceHealthSnapshot = {
 
 export type AdminBootstrap = {
   kpis: ReadonlyArray<{ label: string; value: string; delta: string; tone: "good" | "bad"; sub: string }>;
-  services: typeof services;
+  services: ReadonlyArray<AdminServiceHealthSummary>;
   logs: typeof logs;
   revenueBars: number[];
-  traffic: number[];
+  activeUserSeries: number[];
+  revenueTrendMeta: AdminTrendSeries;
+  activeUserTrendMeta: AdminTrendSeries;
+  overviewSummary: AdminOverviewSummary;
   users: AdminUser[];
   inquiries: AdminInquiry[];
   billingTransactions: BillingTransaction[];
   billingSubscriptions: BillingSubscription[];
   failedBilling: FailedBilling[];
   planCards: PlanCard[];
+  monitoringSnapshots: AdminMonitoringSnapshot[];
   billingSummary: {
     monthlyRevenue: number;
     activeSubscriptions: number;
@@ -198,13 +283,44 @@ export const fallbackAdminBootstrap: AdminBootstrap = {
   services,
   logs,
   revenueBars,
-  traffic,
+  activeUserSeries: traffic,
+  revenueTrendMeta: {
+    metric: "monthlyRevenue",
+    values: revenueBars,
+    periodLabel: "최근 14회 스냅샷",
+    pointCount: revenueBars.length,
+    timezone: "Asia/Seoul",
+    source: "mock"
+  },
+  activeUserTrendMeta: {
+    metric: "activeUsers",
+    values: traffic,
+    periodLabel: "최근 14회 스냅샷",
+    pointCount: traffic.length,
+    timezone: "Asia/Seoul",
+    source: "mock"
+  },
+  overviewSummary: {
+    monthlyRevenue: 0,
+    activeSubscriptions: 0,
+    mrr: 0,
+    failedPaymentCount: 0,
+    activeUsers: 0,
+    totalNotes: 0,
+    totalStorageBytes: 0,
+    notesCreatedToday: 0,
+    timezone: "Asia/Seoul",
+    revenueSource: "mock",
+    userSource: "mock",
+    workspaceSource: "mock"
+  },
   users,
   inquiries,
   billingTransactions,
   billingSubscriptions,
   failedBilling,
   planCards,
+  monitoringSnapshots: [],
   billingSummary: {
     monthlyRevenue: 0,
     activeSubscriptions: 0,
@@ -251,18 +367,25 @@ const planToApi = (plan: Plan): ApiPlanId => plan;
 
 function formatDate(value?: string | null) {
   if (!value) return "";
-  return value.slice(0, 10);
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
 }
 
 function formatShortDateTime(value?: string | null) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 16);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${month}-${day} ${hour}:${minute}`;
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date(value));
 }
 
 function bytesToStorage(bytes?: number) {
@@ -286,7 +409,86 @@ function relativeTime(value?: string | null) {
   return `${days}일 전`;
 }
 
+function normalizeSessions(sessions: ApiLoginSession[]) {
+  const byDevice = new Map<string, ApiLoginSession>();
+  for (const session of [...sessions].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))) {
+    const key = `${session.device}|${session.ipAddress ?? ""}`;
+    if (!byDevice.has(key)) {
+      byDevice.set(key, session);
+    }
+  }
+  return [...byDevice.values()].slice(0, 2);
+}
+
+function normalizeLocationLabel(value?: string | null) {
+  if (!value) return "대한민국 서울";
+  const trimmed = value.trim();
+  if (/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(trimmed.replace(/\s+/g, ""))) {
+    return "대한민국 서울";
+  }
+  if (trimmed === "Asia/Seoul") {
+    return "대한민국 서울";
+  }
+  return trimmed;
+}
+
+function buildActivities(row: ApiUserRow | ApiUserDetail) {
+  const activities = (row.activities ?? []).map((activity) => ({
+    text: activity.message,
+    time: formatShortDateTime(activity.occurredAt)
+  }));
+  if (row.lastLogin?.lastSeenAt) {
+    activities.unshift({
+      text: "최근 접속",
+      time: formatShortDateTime(row.lastLogin.lastSeenAt)
+    });
+  }
+  return activities.slice(0, 5);
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+  const method = init?.method?.toUpperCase() ?? "GET";
+  const response = await fetch(path, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {})
+    }
+  });
+
+  const payload = response.status === 204 ? null : ((await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null);
+  const errorMessage =
+    payload && "error" in payload && payload.error?.message
+      ? payload.error.message
+      : payload && "message" in payload && payload.message
+        ? payload.message
+        : `Admin API ${response.status}: ${path}`;
+
+  if ((response.status === 401 || response.status === 403) && !path.endsWith("/auth/login")) {
+    if (method === "GET") {
+      clearSession();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  if (!response.ok) {
+    throw new Error(errorMessage);
+  }
+
+  if (response.status === 204 || !payload) {
+    return undefined as T;
+  }
+
+  return (payload as ApiSuccess<T>).data;
+}
+
+async function apiFetchOptional<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(path, {
     ...init,
@@ -298,87 +500,67 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   });
 
-  if ((response.status === 401 || response.status === 403) && !path.endsWith("/auth/login")) {
-    clearSession();
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
-    }
-    throw new Error(`Admin API ${response.status}: ${path}`);
-  }
+  const payload = response.status === 204 ? null : ((await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null);
+  const errorMessage =
+    payload && "error" in payload && payload.error?.message
+      ? payload.error.message
+      : payload && "message" in payload && payload.message
+        ? payload.message
+        : `Admin API ${response.status}: ${path}`;
 
   if (!response.ok) {
-    throw new Error(`Admin API ${response.status}: ${path}`);
+    throw new Error(errorMessage);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || !payload) {
     return undefined as T;
   }
 
-  const payload = (await response.json()) as ApiSuccess<T>;
-  return payload.data;
+  return (payload as ApiSuccess<T>).data;
 }
 
-function planRank(plan: Plan) {
-  return plan === "max" ? 3 : plan === "pro" ? 2 : 1;
+function currentAdminSession() {
+  return getSession()?.admin ?? null;
 }
 
-function resolveUserKey(userId: string | undefined, userName: string | undefined, usersById: Map<string, { name: string }>, usersByName: Map<string, string>) {
-  const extracted = extractUserId(userName);
-  if (userId && usersById.has(userId)) return userId;
-  if (extracted && usersById.has(extracted)) return extracted;
-  if (userId && usersByName.get(userId)) return userId;
-  if (userName && usersByName.get(userName)) return usersByName.get(userName)!;
-  if (extracted && usersByName.get(extracted)) return usersByName.get(extracted)!;
-  return userId ?? extracted ?? "";
+function currentAdminMessageHeaders(viewer?: AdminMessageViewer) {
+  const admin = viewer ?? currentAdminSession();
+  const headers: Record<string, string> = {};
+  if (!admin) {
+    return headers;
+  }
+  headers["X-Admin-User-Id"] = admin.adminUserId;
+  return headers;
 }
 
-function buildPlanOverrides(
-  subscriptions: ApiSubscription[],
-  payments: ApiPayment[],
-  usersById: Map<string, { name: string }>,
-  usersByName: Map<string, string>
-) {
-  const overrides = new Map<string, Plan>();
+function buildAdminMessagePath(path: string, viewer?: AdminMessageViewer) {
+  const admin = viewer ?? currentAdminSession();
+  if (!admin) {
+    return path;
+  }
 
-  const consider = (key: string, plan: Plan) => {
-    if (!key) return;
-    const current = overrides.get(key);
-    if (!current || planRank(plan) > planRank(current)) {
-      overrides.set(key, plan);
-    }
-  };
-
-  subscriptions.forEach((subscription) => {
-    const key = resolveUserKey(subscription.userId, subscription.userName, usersById, usersByName);
-    consider(key, planFromApi(subscription.planId));
+  const search = new URLSearchParams({
+    viewerAdminId: admin.adminUserId,
+    viewerName: admin.name
   });
-
-  payments.forEach((payment) => {
-    if (payment.status !== "SUCCESS") return;
-    const key = resolveUserKey(payment.userId, payment.userName, usersById, usersByName);
-    consider(key, planFromApi(payment.planId));
-  });
-
-  return overrides;
+  return `${path}?${search.toString()}`;
 }
 
-function mapUser(row: ApiUserRow, effectivePlan?: Plan): AdminUser {
+function mapUser(row: ApiUserRow): AdminUser {
+  const recentActiveAt = row.lastActiveAt ?? row.lastLogin?.lastSeenAt ?? null;
   return {
     id: row.userId,
     name: row.name,
     email: row.email,
-    plan: effectivePlan ?? planFromApi(row.planId),
+    plan: planFromApi(row.planId),
     status: userStatusFromApi[row.status],
     joined: formatDate(row.joinedAt),
     notes: row.noteCount,
     storage: bytesToStorage(row.storageBytes),
-    lastActive: relativeTime(row.lastActiveAt),
+    lastActive: recentActiveAt ? formatShortDateTime(recentActiveAt) : "-",
     location: row.lastLogin?.location ?? "-",
     device: row.lastLogin?.device ?? "-",
-    activities: (row.activities ?? []).map((activity) => ({
-      text: activity.message,
-      time: relativeTime(activity.occurredAt)
-    }))
+    activities: buildActivities(row)
   };
 }
 
@@ -386,7 +568,7 @@ function mapSession(session: ApiLoginSession): AdminLoginSession {
   return {
     sessionId: session.sessionId,
     device: session.device,
-    location: session.location ?? "Unknown",
+    location: normalizeLocationLabel(session.location),
     ipAddress: session.ipAddress ?? "127.0.0.1",
     userAgentHash: session.userAgentHash ?? null,
     lastSeenAt: session.lastSeenAt,
@@ -447,6 +629,16 @@ function mapPayment(payment: ApiPayment, usersById: Map<string, { name: string }
 
 function mapSubscription(subscription: ApiSubscription, usersById: Map<string, { name: string }>): BillingSubscription {
   const user = resolveUserLabel(subscription.userId, subscription.userName, usersById);
+  const inferredCycle =
+    subscription.billingCycle === "YEARLY"
+      ? "yearly"
+      : subscription.billingCycle === "MONTHLY"
+        ? "monthly"
+        : subscription.nextBillingAt
+          ? Math.abs(new Date(subscription.nextBillingAt).getTime() - new Date(subscription.startedAt).getTime()) >= 300 * 24 * 60 * 60 * 1000
+            ? "yearly"
+            : "monthly"
+          : undefined;
   return {
     subscriptionId: subscription.subscriptionId,
     user,
@@ -454,6 +646,7 @@ function mapSubscription(subscription: ApiSubscription, usersById: Map<string, {
     plan: planFromApi(subscription.planId),
     started: formatDate(subscription.startedAt),
     next: subscription.nextBillingAt ? formatDate(subscription.nextBillingAt).slice(5) : "-",
+    billingCycle: inferredCycle,
     amount: subscription.amount
   };
 }
@@ -482,8 +675,15 @@ function mapPlan(plan: ApiPlan): PlanCard {
 }
 
 export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
-  const [dashboard, userData, supportData, billingSummary, paymentData, subscriptionData, failureData, planData, profile] = await Promise.all([
-    apiFetch<{ kpis: AdminBootstrap["kpis"]; services: typeof services; logs: typeof logs; revenueTrend: number[]; activeUserTrend: number[] }>("/api/v1/admin/dashboard/overview"),
+  const [dashboard, userData, supportData, billingSummary, paymentData, subscriptionData, failureData, planData, monitoringSnapshots, profile] = await Promise.all([
+    apiFetch<{
+      kpis: AdminBootstrap["kpis"];
+      services: ReadonlyArray<AdminServiceHealthSummary>;
+      logs: typeof logs;
+      revenueTrend: AdminTrendSeries;
+      activeUserTrend: AdminTrendSeries;
+      summary: AdminOverviewSummary;
+    }>("/api/v1/admin/dashboard/overview"),
     apiFetch<{ users: ApiUserRow[] }>("/api/v1/admin/users"),
     apiFetch<{ tickets: ApiTicket[] }>("/api/v1/admin/support/tickets"),
     apiFetch<{ monthlyRevenue: number; activeSubscriptions: number; mrr: number; failedPaymentCount: number }>("/api/v1/admin/billing/summary"),
@@ -491,26 +691,30 @@ export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
     apiFetch<{ subscriptions: ApiSubscription[] }>("/api/v1/admin/billing/subscriptions"),
     apiFetch<{ failures: ApiPaymentFailure[] }>("/api/v1/admin/billing/payment-failures"),
     apiFetch<{ plans: ApiPlan[] }>("/api/v1/admin/billing/plans"),
+    apiFetch<AdminMonitoringSnapshot[]>("/api/v1/admin/monitoring/snapshots"),
     apiFetch<AdminProfile>("/api/v1/admin/me")
   ]);
 
   const usersById = new Map(userData.users.map((user) => [user.userId, { name: user.name }]));
-  const usersByName = new Map(userData.users.map((user) => [user.name, user.userId]));
-  const planOverrides = buildPlanOverrides(subscriptionData.subscriptions, paymentData.payments, usersById, usersByName);
 
   return {
+    kpis: dashboard.kpis,
     services: dashboard.services,
     logs: dashboard.logs,
-    revenueBars: dashboard.revenueTrend,
-    traffic: dashboard.activeUserTrend,
-    users: userData.users.map((user) => mapUser(user, planOverrides.get(user.userId))),
+    revenueBars: dashboard.revenueTrend.values,
+    activeUserSeries: dashboard.activeUserTrend.values,
+    revenueTrendMeta: dashboard.revenueTrend,
+    activeUserTrendMeta: dashboard.activeUserTrend,
+    overviewSummary: dashboard.summary,
+    users: userData.users.map((user) => mapUser(user)),
     inquiries: supportData.tickets.map(mapTicket),
     billingTransactions: paymentData.payments.map((payment) => mapPayment(payment, usersById)),
     billingSubscriptions: subscriptionData.subscriptions.map((subscription) => mapSubscription(subscription, usersById)),
     failedBilling: failureData.failures.map((failure) => mapPaymentFailure(failure, usersById)),
     planCards: planData.plans.map(mapPlan),
+    monitoringSnapshots,
     billingSummary,
-    adminProfile: profile,
+    adminProfile: profile, /*
     // Touch summary in the client so the contract shape is exercised even before
     // the KPI text is fully moved out of the presentational component.
     kpis: [
@@ -518,7 +722,7 @@ export async function loadAdminBootstrap(): Promise<AdminBootstrap> {
       { label: "활성 구독", value: billingSummary.activeSubscriptions.toLocaleString("ko-KR"), delta: "+3.1%", tone: "good", sub: "현재 유료 구독" },
       { label: "MRR", value: `₩${(billingSummary.mrr / 1000000).toFixed(1)}M`, delta: "+18.4%", tone: "good", sub: "월 반복 매출" },
       { label: "결제 실패", value: billingSummary.failedPaymentCount.toLocaleString("ko-KR"), delta: "-0.3%", tone: "bad", sub: "재시도 필요" }
-    ]
+    ] */
   };
 }
 
@@ -530,12 +734,27 @@ export const adminApi = {
     }),
   getMe: () => apiFetch<AdminProfile>("/api/v1/admin/me"),
   listAdminAccounts: () => apiFetch<{ admins: AdminAccountRow[] }>("/api/v1/admin/admin-accounts").then((data) => data.admins),
-  createAdminAccount: (body: { name: string; loginId: string; role: AdminRole }) =>
+  listAdminMessages: (viewer?: AdminMessageViewer) =>
+    apiFetchOptional<AdminMessagesData>(buildAdminMessagePath("/api/v1/admin/messages", viewer), {
+      headers: currentAdminMessageHeaders(viewer)
+    }),
+  sendAdminMessage: (body: { recipientScope: AdminMessageScope; recipientAdminUserIds?: string[]; body: string }, viewer?: AdminMessageViewer) =>
+    apiFetchOptional<{ message: AdminMessage; unreadCount: number }>(buildAdminMessagePath("/api/v1/admin/messages", viewer), {
+      method: "POST",
+      headers: currentAdminMessageHeaders(viewer),
+      body: JSON.stringify(body)
+    }),
+  markAdminMessageRead: (messageId: string, viewer?: AdminMessageViewer) =>
+    apiFetchOptional<{ messageId: string; unreadCount: number }>(buildAdminMessagePath("/api/v1/admin/messages/" + messageId + "/read", viewer), {
+      method: "POST",
+      headers: currentAdminMessageHeaders(viewer)
+    }),
+  createAdminAccount: (body: { name: string; loginId: string; email?: string | null; role: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow; temporaryPassword: string }>("/api/v1/admin/admin-accounts", {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; role?: AdminRole }) =>
+  updateAdminAccount: (adminId: string, body: { loginId?: string; name?: string; email?: string | null; role?: AdminRole }) =>
     apiFetch<{ admin: AdminAccountRow }>("/api/v1/admin/admin-accounts/" + adminId, {
       method: "PATCH",
       body: JSON.stringify(body)
@@ -551,17 +770,28 @@ export const adminApi = {
       method: "PATCH",
       body: JSON.stringify({ targetPlanId: planToApi(targetPlanId) })
     }),
-  changeUserStatus: (userId: string, status: UserStatus) =>
+  changeUserStatus: (userId: string, status: UserStatus, options?: { reason?: string; suspendedDays?: number }) =>
     apiFetch<{ userId: string; status: ApiUserStatus }>("/api/v1/admin/users/" + userId + "/status", {
       method: "PATCH",
-      body: JSON.stringify({ status: userStatusToApi[status] })
+      body: JSON.stringify({ status: userStatusToApi[status], reason: options?.reason, suspendedDays: options?.suspendedDays })
     }),
-  withdrawUser: (userId: string) =>
-    apiFetch<{ userId: string; deletionRequestId: string }>("/api/v1/admin/users/" + userId + "/withdrawal", { method: "POST", body: JSON.stringify({}) }),
-  runUserBulkAction: (userIds: string[], action: "CHANGE_PLAN" | "SUSPEND" | "REACTIVATE" | "WITHDRAW" | "SEND_NOTICE", targetPlanId?: Plan) =>
+  withdrawUser: (userId: string, reason?: string) =>
+    apiFetch<{ userId: string; deletionRequestId: string }>("/api/v1/admin/users/" + userId + "/withdrawal", { method: "POST", body: JSON.stringify({ reason }) }),
+  runUserBulkAction: (
+    userIds: string[],
+    action: "CHANGE_PLAN" | "SUSPEND" | "REACTIVATE" | "WITHDRAW" | "SEND_NOTICE",
+    options?: { targetPlanId?: Plan; notice?: { title: string; body: string }; reason?: string; suspendedDays?: number }
+  ) =>
     apiFetch<{ accepted: number; failed: number }>("/api/v1/admin/users/bulk-actions", {
       method: "POST",
-      body: JSON.stringify({ userIds, action, targetPlanId: targetPlanId ? planToApi(targetPlanId) : undefined })
+      body: JSON.stringify({
+        userIds,
+        action,
+        targetPlanId: options?.targetPlanId ? planToApi(options.targetPlanId) : undefined,
+        notice: options?.notice,
+        reason: options?.reason,
+        suspendedDays: options?.suspendedDays
+      })
     }),
   updateTicket: (ticketId: string, body: { status?: InquiryStatus; assigneeAdminUserId?: string | null }) =>
     apiFetch<{ ticket: ApiTicket }>("/api/v1/admin/support/tickets/" + ticketId, {
@@ -570,8 +800,11 @@ export const adminApi = {
     }),
   replyTicket: (ticketId: string, body: { body: string; faq?: boolean }) =>
     apiFetch<{ replyId: string }>("/api/v1/admin/support/tickets/" + ticketId + "/replies", { method: "POST", body: JSON.stringify(body) }),
-  refundPayment: (paymentId: string) =>
-    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", { method: "POST", body: JSON.stringify({}) }),
+  refundPayment: (paymentId: string, body?: { amount?: number; reason?: string }) =>
+    apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/refund", {
+      method: "POST",
+      body: JSON.stringify(body ?? {})
+    }),
   retryPayment: (paymentId: string) =>
     apiFetch<{ paymentId: string; status: string }>("/api/v1/admin/billing/payments/" + paymentId + "/retry", { method: "POST" }),
   sendPaymentFailureNotice: (paymentId: string) =>
@@ -585,6 +818,7 @@ export const adminApi = {
       body: JSON.stringify({ price, currency: "KRW", applyTiming })
     }),
   getMonitoringSnapshots: () => apiFetch<AdminMonitoringSnapshot[]>("/api/v1/admin/monitoring/snapshots"),
+  getKafkaLag: () => apiFetch<AdminKafkaLagData>("/api/v1/admin/monitoring/kafka-lag"),
   deleteMonitoringSnapshot: (id: string) =>
     apiFetch<void>("/api/v1/admin/monitoring/snapshots/" + id, { method: "DELETE" }),
   getHealthSnapshots: () => apiFetch<AdminServiceHealthSnapshot[]>("/api/v1/admin/monitoring/health"),
@@ -593,7 +827,8 @@ export const adminApi = {
   getUserDetail: (userId: string) =>
     apiFetch<ApiUserDetail>("/api/v1/admin/users/" + userId).then((row) => ({
       ...mapUser(row),
-      sessions: (row.sessions ?? []).map(mapSession)
+      sessions: normalizeSessions(row.sessions ?? []).map(mapSession),
+      activities: buildActivities(row)
     })),
   deleteTicket: (ticketId: string) =>
     apiFetch<void>("/api/v1/admin/support/tickets/" + ticketId, { method: "DELETE" }),
