@@ -99,7 +99,7 @@ function inlineHtml(text: string) {
     .replace(/`([^`\n]+)`/g, "<code>$1</code>");
 }
 
-function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string): string {
   const lines = md.split("\n");
   const out: string[] = [];
   let inCode = false;

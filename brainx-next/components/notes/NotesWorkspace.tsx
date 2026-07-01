@@ -45,6 +45,7 @@ import RightSidebar, { type PendingAiRequest } from "./RightSidebar";
 import { moveNoteIntoFolder, reorderNoteRelativeTo, moveFolderUnder, reorderFolderRelativeTo } from "@/lib/notes/folderDnd";
 import { exportNote, uploadAndImportFile, type ExportFormat } from "@/lib/ingestion-api";
 import { downloadPdfFile, downloadTextFile, htmlToMarkdown, htmlToPlainText, safeFileName } from "@/lib/notes/exportNoteContent";
+import { markdownToHtml } from "./NoteEditor";
 import { useBrainX } from "@/components/brainx-provider";
 import { consumePendingNoteClaim, readAuthSession } from "@/lib/auth-api";
 
@@ -1683,10 +1684,12 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     try {
       exportNote(activeNote.id, format).catch(() => {});
       const fileName = safeFileName(activeNote.title);
-      // 에디터가 렌더링한 HTML을 우선 사용한다. 노션에서 가져온 노트처럼 content가
-      // 마크다운으로 저장된 경우, 에디터는 이미 HTML로 변환해 표시하고 있으므로
-      // getHTML()이 정확한 렌더링 결과를 반환한다.
-      const html = activeEditorHandle?.getHTML() || activeNote.content;
+      // 에디터 HTML 우선, 없으면 content가 마크다운인지 판별 후 직접 변환한다.
+      // 노션 가져오기 등 마크다운으로 저장된 노트는 "<"로 시작하지 않는다.
+      const rawContent = activeNote.content;
+      const html =
+        activeEditorHandle?.getHTML() ||
+        (rawContent.trim().startsWith("<") ? rawContent : markdownToHtml(rawContent));
       if (format === "TXT") {
         downloadTextFile(`${fileName}.txt`, htmlToPlainText(html), "text/plain;charset=utf-8");
       } else if (format === "MD") {
