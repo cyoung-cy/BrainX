@@ -16,6 +16,7 @@ import {
   Table2,
   Image as ImageIcon,
   Workflow,
+  ChevronRight,
   type LucideIcon,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
@@ -136,6 +137,23 @@ const COMMANDS: SlashCommandItem[] = [
         .deleteRange(range)
         .setCodeBlock({ language: "mermaid" })
         .updateAttributes("codeBlock", { preview: false })
+        .run(),
+  },
+  {
+    id: "toggle",
+    label: "토글 블록",
+    keywords: ["toggle", "토글", "접기", "펼치기", "details"],
+    icon: ChevronRight,
+    run: (editor, range) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "toggleNode",
+          attrs: { open: true, summary: "토글" },
+          content: [{ type: "paragraph" }],
+        })
         .run(),
   },
 ];

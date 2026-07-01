@@ -499,6 +499,27 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     folders: USE_MOCK_NOTES ? [...MOCK_FOLDERS] : [],
   });
 
+  /* 게스트 여부 — 인증 세션이 없으면 게스트 */
+  const isGuest = useMemo(() => {
+    const session = readAuthSession();
+    return !session?.accessToken;
+  }, []);
+
+  /* 같은 depth에서 동일 이름의 노트 중복 여부 확인 (노트↔노트만, 폴더와는 허용) */
+  const checkNoteDuplicate = useCallback((title: string, folderId: string | null | undefined): boolean => {
+    const normalizedFolderId = folderId ?? null;
+    return notes.some(
+      (n) => (n.folderId ?? null) === normalizedFolderId && n.title.trim() === title.trim()
+    );
+  }, [notes]);
+
+  /* 같은 depth에서 동일 이름의 폴더 중복 여부 확인 (폴더↔폴더만, 형제 폴더 기준) */
+  const checkFolderDuplicate = useCallback((name: string, parentFolderId: string | null, excludeId?: string): boolean => {
+    return folders.some(
+      (f) => f.id !== excludeId && (f.parentFolderId ?? null) === (parentFolderId ?? null) && f.name.trim() === name.trim()
+    );
+  }, [folders]);
+
   const panelCount = countLeaves(state.root);
   const hasSplitPanels = panelCount > 1;
   const primaryPaneId = useMemo(() => resolveVisiblePaneId(state.root, state.activeId), [state.root, state.activeId]);
@@ -880,6 +901,17 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
   /* 새 노트 생성 (선택된 폴더 또는 지정된 폴더 안에 생성), 지정한 패널의 새 탭으로 연다.
      title을 주면(위키링크에서 생성하는 경우) 그 제목으로 바로 생성한다. */
   const createNote = useCallback((folderId: string | undefined, paneId: string, title?: string) => {
+    /* 게스트 노트 생성 제한 */
+    if (isGuest && notes.length >= 10) {
+      pushToast("체험 모드에서는 노트를 최대 10개까지 생성할 수 있습니다.", "err");
+      return "";
+    }
+    const noteTitle = title ?? "새 노트";
+    /* 같은 depth 동일 이름 노트 중복 방지 */
+    if (checkNoteDuplicate(noteTitle, folderId ?? null)) {
+      pushToast("같은 위치에 동일한 이름의 노트가 이미 있습니다.", "err");
+      return "";
+    }
     const newNote = makeBlankNote(folderId);
     if (title) newNote.title = title;
     const localNoteId = newNote.id;
@@ -917,7 +949,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     }
 
     return newNote.id;
-  }, [onActiveNoteChange]);
+  }, [isGuest, notes, checkNoteDuplicate, pushToast, onActiveNoteChange]);
 
   /* 사이드바 "+ 새 노트" 버튼 → 현재 선택된 폴더 안에, 활성 패널의 새 탭으로 생성 */
   const handleNewNote = useCallback((folderId?: string) => {
@@ -1032,6 +1064,16 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
      승계되려면(claim 시 workspaceService.reassignGuestFolders) 처음부터 Postgres에 있어야
      한다. 실패하면 토스트만 띄우고 로컬 상태는 그대로 둔다(화면에서만 사라지는 일 방지). */
   const handleCreateFolder = useCallback((parentFolderId: string | null, name: string) => {
+    /* 게스트 폴더 생성 제한 */
+    if (isGuest && folders.length >= 10) {
+      pushToast("체험 모드에서는 폴더를 최대 10개까지 생성할 수 있습니다.", "err");
+      return;
+    }
+    /* 같은 depth 동일 이름 폴더 중복 방지 */
+    if (checkFolderDuplicate(name, parentFolderId)) {
+      pushToast("같은 위치에 동일한 이름의 폴더가 이미 있습니다.", "err");
+      return;
+    }
     if (USE_MOCK_NOTES) {
       setFolders((prev) => [...prev, { id: `folder-${uid()}`, name, parentFolderId }]);
       return;
@@ -1043,9 +1085,14 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "폴더를 만들지 못했습니다.", "err");
       });
-  }, [pushToast]);
+  }, [isGuest, folders, checkFolderDuplicate, pushToast]);
 
   const handleRenameFolder = useCallback((folderId: string, newName: string) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (folder && checkFolderDuplicate(newName, folder.parentFolderId, folderId)) {
+      pushToast("같은 위치에 동일한 이름의 폴더가 이미 있습니다.", "err");
+      return;
+    }
     if (USE_MOCK_NOTES) {
       setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name: newName } : f)));
       return;
@@ -1059,7 +1106,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "폴더 이름을 바꾸지 못했습니다.", "err");
       });
-  }, [pushToast]);
+  }, [folders, checkFolderDuplicate, pushToast]);
 
   const handleChangeFolderColor = useCallback((folderId: string, color: string) => {
     setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, color } : f)));
@@ -1198,14 +1245,53 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       });
   }, [folders, notes, applyLocalNotesDeletion, pushToast]);
 
+  /* 다중 삭제 — 탐색기에서 Ctrl/Shift 다중 선택 후 Delete 키 또는 컨텍스트 메뉴로 호출된다.
+     폴더 삭제는 cascade(하위 포함)이므로 먼저 폴더를 처리해 중복 처리를 방지한다. */
+  const handleDeleteMultiple = useCallback((noteIds: string[], folderIds: string[]) => {
+    /* 폴더를 먼저 삭제(cascade로 하위 노트/폴더가 함께 사라지므로 순서가 중요) */
+    for (const fid of folderIds) {
+      handleDeleteFolder(fid);
+    }
+    /* 폴더 삭제로 이미 지워진 노트는 남은 notes에 없으므로 그대로 남은 noteIds만 처리 */
+    applyLocalNotesDeletion(new Set(noteIds));
+    if (!USE_MOCK_NOTES) {
+      noteIds.forEach((nid) => {
+        if (nid.startsWith("note_")) {
+          void deleteWorkspaceNote(nid, "trash").catch(() => {});
+        }
+      });
+    }
+  }, [handleDeleteFolder, applyLocalNotesDeletion]);
+
   const handleSelectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);
   }, []);
 
+  /* 탐색기에서 노트 이름 변경 (중복 체크 포함) */
+  const handleRenameNoteFromExplorer = useCallback((noteId: string, newTitle: string) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (checkNoteDuplicate(newTitle, note.folderId)) {
+      pushToast("같은 위치에 동일한 이름의 노트가 이미 있습니다.", "err");
+      return;
+    }
+    handleTitleChange(noteId, newTitle);
+  }, [notes, checkNoteDuplicate, handleTitleChange, pushToast]);
+
   /* 노트 탐색기 드래그앤드랍 — 노트를 폴더/루트로 이동, 또는 같은 레벨에서 순서 변경. */
   const handleMoveNoteToFolder = useCallback((noteId: string, targetFolderId: string | null) => {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      const titleConflict = notes.some(
+        (n) => n.id !== noteId && (n.folderId ?? null) === (targetFolderId ?? null) && n.title.trim() === note.title.trim()
+      );
+      if (titleConflict) {
+        pushToast("이동할 위치에 동일한 이름의 노트가 이미 있습니다.", "err");
+        return;
+      }
+    }
     setNotes((prev) => moveNoteIntoFolder(prev, noteId, targetFolderId));
-  }, []);
+  }, [notes, pushToast]);
 
   const handleReorderNote = useCallback((noteId: string, referenceNoteId: string, position: "before" | "after") => {
     setNotes((prev) => reorderNoteRelativeTo(prev, noteId, referenceNoteId, position));
@@ -1213,6 +1299,11 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   /* 폴더 이동 — 자기 자신/하위 폴더로의 이동은 folderDnd의 canFolderMoveUnder가 차단(null 반환 시 무시) */
   const handleMoveFolderToParent = useCallback((folderId: string, targetParentId: string | null) => {
+    /* 이동 목적지에 같은 이름의 형제 폴더가 있으면 막는다 */
+    if (checkFolderDuplicate(folders.find((f) => f.id === folderId)?.name ?? "", targetParentId, folderId)) {
+      pushToast("이동할 위치에 동일한 이름의 폴더가 이미 있습니다.", "err");
+      return;
+    }
     const next = moveFolderUnder(folders, folderId, targetParentId);
     if (!next) return;
     if (USE_MOCK_NOTES) {
@@ -1230,7 +1321,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       .catch((error) => {
         pushToast(error instanceof Error ? error.message : "폴더를 이동하지 못했습니다.", "err");
       });
-  }, [folders, pushToast]);
+  }, [folders, checkFolderDuplicate, pushToast]);
 
   const handleReorderFolder = useCallback((folderId: string, referenceFolderId: string, position: "before" | "after") => {
     setFolders((prev) => reorderFolderRelativeTo(prev, folderId, referenceFolderId, position) ?? prev);
@@ -1821,7 +1912,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
             onToggleFolderFavorite={handleToggleFolderFavorite}
             onDeleteFolder={handleDeleteFolder}
             onDeleteNote={handleDeleteNote}
-            onRenameNote={handleTitleChange}
+            onRenameNote={handleRenameNoteFromExplorer}
             onDragStart={handleSidebarDragStart}
             onDragEnd={handleDragEnd}
             onMoveNoteToFolder={handleMoveNoteToFolder}
@@ -1829,6 +1920,8 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
             onMoveFolderToParent={handleMoveFolderToParent}
             onReorderFolder={handleReorderFolder}
             onDropFiles={handleDropFiles}
+            isGuest={isGuest}
+            onDeleteMultiple={handleDeleteMultiple}
           />
         )}
 

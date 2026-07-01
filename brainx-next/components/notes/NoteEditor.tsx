@@ -44,6 +44,7 @@ import { TagSuggestion } from "./TagSuggestion";
 import { TagAutocomplete } from "./TagAutocomplete";
 import { TagNode } from "./TagNode";
 import { TaskListMarkdownBridge } from "./TaskListMarkdownBridge";
+import { ToggleNode } from "./ToggleNode";
 import { createInlineAssistStream, decideAiSuggestion } from "@/lib/intelligence-api";
 import {
   AI_CONTEXT_AROUND_CURSOR_CHARS,
@@ -2372,6 +2373,7 @@ const NOTE_EDITOR_EXTENSIONS = [
   TaskList,
   TaskItem.configure({ nested: true }),
   TaskListMarkdownBridge,
+  ToggleNode,
   SlashCommandSuggestion,
 ];
 
