@@ -613,10 +613,16 @@ public class AdminService {
     }
 
     public AdminBillingSummaryData billingSummary() {
-        return commerceRestClient.get()
-                .uri("/internal/v1/billing/summary")
-                .retrieve()
-                .body(AdminBillingSummaryData.class);
+        try {
+            AdminBillingSummaryData summary = commerceRestClient.get()
+                    .uri("/internal/v1/billing/summary")
+                    .retrieve()
+                    .body(AdminBillingSummaryData.class);
+            return summary != null ? summary : new AdminBillingSummaryData(BigDecimal.ZERO, 0, BigDecimal.ZERO, 0);
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to empty billing summary: {}", exception.getMessage());
+            return new AdminBillingSummaryData(BigDecimal.ZERO, 0, BigDecimal.ZERO, 0);
+        }
     }
 
     private TrendSeriesData fetchRevenueTrend(BigDecimal currentRevenue, int days) {
@@ -659,10 +665,16 @@ public class AdminService {
     }
 
     public AdminPaymentsData listPayments(PaymentStatus status, PlanId planId, int page, int size) {
-        List<InternalPaymentDto> payments = commerceRestClient.get()
-                .uri("/internal/v1/billing/payments")
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<InternalPaymentDto>>() {});
+        List<InternalPaymentDto> payments;
+        try {
+            payments = commerceRestClient.get()
+                    .uri("/internal/v1/billing/payments")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<InternalPaymentDto>>() {});
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to empty admin payment list: {}", exception.getMessage());
+            payments = Collections.emptyList();
+        }
 
         if (payments == null) {
             payments = Collections.emptyList();
@@ -803,10 +815,16 @@ public class AdminService {
     }
 
     public AdminPaymentFailuresData listPaymentFailures() {
-        List<InternalPaymentFailureDto> failures = commerceRestClient.get()
-                .uri("/internal/v1/billing/failures")
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<InternalPaymentFailureDto>>() {});
+        List<InternalPaymentFailureDto> failures;
+        try {
+            failures = commerceRestClient.get()
+                    .uri("/internal/v1/billing/failures")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<InternalPaymentFailureDto>>() {});
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to empty payment failure list: {}", exception.getMessage());
+            failures = Collections.emptyList();
+        }
 
         if (failures == null) {
             failures = Collections.emptyList();
@@ -866,11 +884,16 @@ public class AdminService {
     }
 
     private List<InternalSubscriptionDto> listSubscriptionsInternal() {
-        List<InternalSubscriptionDto> list = commerceRestClient.get()
-                .uri("/internal/v1/billing/subscriptions")
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<InternalSubscriptionDto>>() {});
-        return list != null ? list : Collections.emptyList();
+        try {
+            List<InternalSubscriptionDto> list = commerceRestClient.get()
+                    .uri("/internal/v1/billing/subscriptions")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<InternalSubscriptionDto>>() {});
+            return list != null ? list : Collections.emptyList();
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to empty subscription list: {}", exception.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     private List<PlanDataDto> listPlansInternal() {
@@ -906,10 +929,16 @@ public class AdminService {
                         this::preferHigherPlan
                 ));
 
-        List<InternalPaymentDto> payments = commerceRestClient.get()
-                .uri("/internal/v1/billing/payments")
-                .retrieve()
-                .body(new ParameterizedTypeReference<List<InternalPaymentDto>>() {});
+        List<InternalPaymentDto> payments;
+        try {
+            payments = commerceRestClient.get()
+                    .uri("/internal/v1/billing/payments")
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<InternalPaymentDto>>() {});
+        } catch (RuntimeException exception) {
+            log.warn("Falling back to subscription-only user plan resolution: {}", exception.getMessage());
+            payments = Collections.emptyList();
+        }
 
         if (payments != null) {
             payments.stream()
