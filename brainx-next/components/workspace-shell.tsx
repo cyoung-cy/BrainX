@@ -11,6 +11,7 @@ import { AccountSettingsModal } from "@/components/utility/account-settings-moda
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import type { BrainXNote } from "@/lib/brainx-data";
 import { cx, stripMarkdown } from "@/lib/utils";
+import { semanticSearch, type SemanticSearchData } from "@/lib/intelligence-api";
 import { formatTokenCount, formatTokenPercent, TOKEN_USAGE_SUMMARY } from "@/lib/token-usage";
 import {
   buildAuthPath,
@@ -56,7 +57,9 @@ const searchDateFormatter = new Intl.DateTimeFormat("ko-KR", {
 });
 
 type SearchFilter = (typeof SEARCH_FILTERS)[number];
-type SearchMatchField = "제목" | "본문" | "태그" | "최근";
+type SearchMatchField = "제목" | "본문" | "태그" | "최근" | "의미" | "혼합" | "키워드";
+type SemanticSearchStatus = "idle" | "loading" | "success" | "error";
+type SemanticSearchResultItem = SemanticSearchData["results"][number];
 type SearchableNote = {
   note: BrainXNote;
   title: string;
@@ -71,6 +74,23 @@ type SearchResult = SearchableNote & {
   matchField: SearchMatchField;
   score: number;
   snippet: string;
+};
+type DisplaySearchResult = {
+  key: string;
+  noteId: string;
+  title: string;
+  snippet: string;
+  tags: string[];
+  updatedTime: number;
+  matchField: SearchMatchField;
+  source: "keyword" | "semantic";
+  score?: number;
+};
+type SemanticSearchState = {
+  status: SemanticSearchStatus;
+  query: string;
+  results: SemanticSearchResultItem[];
+  error: string | null;
 };
 
 function normalizeSearchText(value: string) {
@@ -175,6 +195,55 @@ function sortSearchResults(a: SearchResult, b: SearchResult, filter: SearchFilte
   return b.score - a.score || b.updatedTime - a.updatedTime;
 }
 
+function createKeywordDisplayResult(result: SearchResult): DisplaySearchResult {
+  return {
+    key: `keyword-${result.note.id}`,
+    noteId: result.note.id,
+    title: result.title,
+    snippet: result.snippet,
+    tags: result.tags,
+    updatedTime: result.updatedTime,
+    matchField: result.matchField,
+    source: "keyword",
+    score: result.score,
+  };
+}
+
+function semanticMatchField(matchedType: SemanticSearchResultItem["matchedType"]): SearchMatchField {
+  if (matchedType === "HYBRID") return "혼합";
+  if (matchedType === "KEYWORD") return "키워드";
+  return "의미";
+}
+
+function createSemanticDisplayResult(
+  result: SemanticSearchResultItem,
+  noteById: Map<string, BrainXNote>
+): DisplaySearchResult {
+  const note = noteById.get(result.noteId);
+  const title = result.title?.trim() || note?.title.trim() || "Untitled";
+  const fallbackBody = note ? stripMarkdown(note.markdown ?? "") || note.summary : "";
+  const snippet = createSearchSnippet(result.excerpt?.trim() || fallbackBody, "");
+  return {
+    key: `semantic-${result.noteId}`,
+    noteId: result.noteId,
+    title,
+    snippet,
+    tags: note?.tags ?? [],
+    updatedTime: note ? parseSearchDate(note.updatedAt) || parseSearchDate(note.createdAt) : 0,
+    matchField: semanticMatchField(result.matchedType),
+    source: "semantic",
+    score: result.score,
+  };
+}
+
+function isAuthExpiredError(error: unknown) {
+  return error instanceof Error && error.message.includes("로그인이 만료되었습니다");
+}
+
+function isImeComposing(event: KeyboardEvent<HTMLInputElement>) {
+  return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
+}
+
 function SearchBar() {
   const [value, setValue] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("최신순");
@@ -182,22 +251,60 @@ function SearchBar() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [semanticState, setSemanticState] = useState<SemanticSearchState>({
+    status: "idle",
+    query: "",
+    results: [],
+    error: null,
+  });
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const semanticAbortRef = useRef<AbortController | null>(null);
   const router = useRouter();
   const searchId = useId();
   const { hydrated, notes, pushToast, saveStatus } = useBrainX();
   const query = normalizeSearchText(value);
   const searchIndex = useMemo(() => createSearchIndex(notes), [notes]);
+  const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
   const isLoadingNotes = !hydrated || (saveStatus === "saving" && notes.length === 0);
-  const results = useMemo(() => {
+  const keywordResults = useMemo(() => {
     const matches = searchIndex
       .map((item) => scoreSearchResult(item, query, filter))
       .filter((item): item is SearchResult => item !== null)
       .sort((a, b) => sortSearchResults(a, b, filter));
     return matches.slice(0, query ? SEARCH_RESULT_LIMIT : RECENT_RESULT_LIMIT);
   }, [filter, query, searchIndex]);
+  const keywordDisplayResults = useMemo(
+    () => keywordResults.map(createKeywordDisplayResult),
+    [keywordResults]
+  );
+  const semanticDisplayResults = useMemo(
+    () => semanticState.results.map((result) => createSemanticDisplayResult(result, noteById)),
+    [noteById, semanticState.results]
+  );
+  const semanticQueryIsCurrent = semanticState.query === query;
+  const semanticIsLoading = semantic && semanticQueryIsCurrent && semanticState.status === "loading";
+  const hasFreshSemanticResponse = semantic
+    && query.length >= 2
+    && semanticQueryIsCurrent
+    && (semanticState.status === "success" || semanticState.status === "error");
+  const useSemanticResults = semantic
+    && semanticQueryIsCurrent
+    && semanticState.status === "success"
+    && semanticDisplayResults.length > 0;
+  const results = useSemanticResults ? semanticDisplayResults : keywordDisplayResults;
   const activeResult = results[activeIndex] ?? null;
   const panelVisible = resultOpen;
+  const semanticStatusLabel = !query
+    ? "검색어 입력"
+    : query.length < 2
+      ? "2글자 이상"
+      : semanticIsLoading
+        ? "의미 검색 중…"
+        : useSemanticResults
+          ? `${results.length}개 의미 결과`
+          : hasFreshSemanticResponse
+            ? "키워드 결과"
+            : "Enter로 의미 검색";
   const resultCountLabel = query
     ? `${results.length}개 결과`
     : results.length > 0
@@ -207,6 +314,12 @@ function SearchBar() {
   useEffect(() => {
     setActiveIndex(0);
   }, [filter, query, notes.length, semantic]);
+
+  useEffect(() => {
+    return () => {
+      semanticAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (!resultOpen && !filterOpen) return;
@@ -227,15 +340,77 @@ function SearchBar() {
     setFilterOpen(false);
   }
 
+  function abortSemanticSearch() {
+    semanticAbortRef.current?.abort();
+    semanticAbortRef.current = null;
+  }
+
   function openResult(noteId: string) {
     router.push(`/notes/${encodeURIComponent(noteId)}`);
     closeSearch();
+  }
+
+  async function runSemanticSearch() {
+    if (query.length < 2) {
+      pushToast("의미 검색은 2글자 이상 입력해 주세요.", "info");
+      setResultOpen(true);
+      return;
+    }
+
+    const requestQuery = value.trim();
+    abortSemanticSearch();
+    const controller = new AbortController();
+    semanticAbortRef.current = controller;
+    setResultOpen(true);
+    setSemanticState({
+      status: "loading",
+      query,
+      results: [],
+      error: null,
+    });
+
+    try {
+      const result = await semanticSearch(
+        {
+          scope: "USER",
+          query: requestQuery,
+          limit: SEARCH_RESULT_LIMIT,
+        },
+        { signal: controller.signal }
+      );
+      if (controller.signal.aborted) return;
+      setSemanticState({
+        status: "success",
+        query,
+        results: result.results ?? [],
+        error: null,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (isAuthExpiredError(error)) {
+        pushToast((error as Error).message, "err");
+      }
+      setSemanticState({
+        status: "error",
+        query,
+        results: [],
+        error: error instanceof Error ? error.message : "의미 검색에 실패했습니다.",
+      });
+    } finally {
+      if (semanticAbortRef.current === controller) {
+        semanticAbortRef.current = null;
+      }
+    }
   }
 
   function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
       closeSearch();
+      return;
+    }
+
+    if (isImeComposing(event) && ["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
       return;
     }
 
@@ -253,9 +428,20 @@ function SearchBar() {
       return;
     }
 
-    if (event.key === "Enter" && activeResult) {
+    if (event.key === "Enter") {
       event.preventDefault();
-      openResult(activeResult.note.id);
+      if (semantic && query.length >= 2 && !semanticQueryIsCurrent) {
+        void runSemanticSearch();
+        return;
+      }
+      if (semanticIsLoading) return;
+      if (activeResult) {
+        openResult(activeResult.noteId);
+        return;
+      }
+      if (semantic) {
+        void runSemanticSearch();
+      }
     }
   }
 
@@ -270,13 +456,14 @@ function SearchBar() {
         )}
       >
         <Icon
-          name="search"
+          name={semanticIsLoading ? "refresh" : "search"}
           size={18}
-          className={semantic ? "text-accent" : "text-txt3"}
+          className={cx(semantic ? "text-accent" : "text-txt3", semanticIsLoading && "animate-spin")}
         />
         <input
           value={value}
           onChange={(event) => {
+            abortSemanticSearch();
             setValue(event.target.value);
             setResultOpen(true);
           }}
@@ -302,6 +489,7 @@ function SearchBar() {
             type="button"
             aria-label="검색어 지우기"
             onClick={() => {
+              abortSemanticSearch();
               setValue("");
               setResultOpen(true);
             }}
@@ -313,7 +501,10 @@ function SearchBar() {
         <button
           type="button"
           onClick={() => {
-            setSemantic((current) => !current);
+            setSemantic((current) => {
+              if (current) abortSemanticSearch();
+              return !current;
+            });
             setResultOpen(true);
           }}
           className={cx(
@@ -375,17 +566,25 @@ function SearchBar() {
         >
           <div className="flex min-w-0 items-center justify-between gap-3 border-b border-line/50 px-3 py-2">
             <div className="min-w-0 truncate text-[12px] font-semibold text-txt">
-              {query ? "검색 결과" : "최근 노트"}
+              {useSemanticResults ? "의미 검색 결과" : query ? "검색 결과" : "최근 노트"}
             </div>
             <div aria-live="polite" className="shrink-0 text-[11px] text-txt3">
-              {isLoadingNotes ? "불러오는 중…" : resultCountLabel}
+              {isLoadingNotes && !useSemanticResults ? "불러오는 중…" : semantic ? semanticStatusLabel : resultCountLabel}
             </div>
           </div>
           {semantic ? (
             <div className="flex min-w-0 items-start gap-2 border-b border-line/40 bg-accent/[0.06] px-3 py-2 text-[12px] leading-5 text-txt2">
-              <Icon name="sparkle" size={14} className="mt-0.5 shrink-0 text-accent" />
+              <Icon
+                name={semanticIsLoading ? "refresh" : "sparkle"}
+                size={14}
+                className={cx("mt-0.5 shrink-0 text-accent", semanticIsLoading && "animate-spin")}
+              />
               <span className="min-w-0 break-words">
-                의미 검색은 준비 중입니다. 지금은 키워드 결과를 보여드립니다.
+                {semanticIsLoading
+                  ? "의미 검색 중…"
+                  : query.length >= 2
+                    ? "Enter로 의미 검색을 실행합니다."
+                    : "2글자 이상 입력하면 Enter로 의미 검색할 수 있습니다."}
               </span>
             </div>
           ) : null}
@@ -398,11 +597,12 @@ function SearchBar() {
             id={`${searchId}-results`}
             role="listbox"
             aria-label="노트 검색 결과"
+            aria-busy={semanticIsLoading}
             className="max-h-[340px] overflow-y-auto py-1"
           >
-            {isLoadingNotes ? (
+            {isLoadingNotes && !useSemanticResults ? (
               <div className="px-3 py-5 text-center text-[13px] text-txt3">노트를 불러오는 중…</div>
-            ) : notes.length === 0 ? (
+            ) : results.length === 0 && notes.length === 0 ? (
               <div className="px-3 py-5 text-center text-[13px] text-txt3">검색할 노트가 없습니다.</div>
             ) : results.length === 0 ? (
               <div className="px-3 py-5 text-center text-[13px] text-txt3">
@@ -412,8 +612,8 @@ function SearchBar() {
               results.map((result, index) => (
                 <Link
                   id={`${searchId}-result-${index}`}
-                  key={result.note.id}
-                  href={`/notes/${encodeURIComponent(result.note.id)}`}
+                  key={result.key}
+                  href={`/notes/${encodeURIComponent(result.noteId)}`}
                   role="option"
                   aria-selected={index === activeIndex}
                   onClick={closeSearch}
@@ -430,7 +630,14 @@ function SearchBar() {
                     <span className="block truncate text-[13px] font-semibold text-txt">{result.title}</span>
                     <span className="mt-0.5 block truncate text-[12px] leading-5 text-txt3">{result.snippet}</span>
                     <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-txt3">
-                      <span className="shrink-0 rounded-md border border-line/50 px-1.5 py-0.5 text-[10px] text-txt2">
+                      <span
+                        className={cx(
+                          "shrink-0 rounded-md border px-1.5 py-0.5 text-[10px]",
+                          result.source === "semantic"
+                            ? "border-accent/40 bg-accent/[0.08] text-accent"
+                            : "border-line/50 text-txt2",
+                        )}
+                      >
                         {result.matchField}
                       </span>
                       {result.tags.slice(0, 2).map((tag) => (
@@ -812,7 +1019,7 @@ function TopBar({ onOpenSettings }: { onOpenSettings: (tab?: SettingsTab) => voi
     "pointer-events-none absolute top-[calc(100%+12px)] left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-txt px-2.5 py-1.5 text-[12px] font-medium text-bg2 opacity-0 shadow-md transition-opacity duration-200 group-hover:opacity-100";
 
   return (
-    <header className="relative z-10 border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
+    <header className="relative z-[100] border-b border-line/50 bg-bg2/30 backdrop-blur-xl">
       <div className="flex flex-col gap-3 px-4 py-3 md:h-[50px] md:flex-row md:items-center md:gap-2.5 md:pl-0 md:pr-4 md:py-0">
         <div className="hidden h-full w-[50px] shrink-0 items-center justify-center border-r border-line/50 md:flex">
           <button
@@ -1020,9 +1227,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-[100svh] w-full flex-col overflow-hidden">
       <TopBar onOpenSettings={openSettings} />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative z-0 flex min-h-0 flex-1">
         <Sidebar onOpenSettings={openSettings} notesExplorerOpen={notesExplorerOpen} />
-        <main className="scroll relative flex-1 min-w-0 overflow-y-auto">
+        <main className="scroll relative z-0 flex-1 min-w-0 overflow-y-auto">
           {children}
         </main>
       </div>
