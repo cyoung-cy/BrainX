@@ -7351,6 +7351,7 @@ paths:
       - CheckoutSessionCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: The checkout popup must forward the user-selected `billingCycle` (`MONTHLY` or `YEARLY`) together with `planId`, `successUrl`, and `cancelUrl`. Frontend monthly/yearly toggle state is part of the request contract and must not be dropped before the Toss SDK is launched.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:

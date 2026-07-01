@@ -1544,9 +1544,10 @@ function UpgradePanel({
   const startUpgrade = async (plan: CommercePlan) => {
     if (pendingPlanId) return;
     setPendingPlanId(plan.planId);
+    const billingCycle = billing === "yearly" ? "YEARLY" : "MONTHLY";
 
     const popup = window.open(
-      `/billing/checkout?planId=${encodeURIComponent(plan.planId)}`,
+      `/billing/checkout?planId=${encodeURIComponent(plan.planId)}&billingCycle=${billingCycle}`,
       "brainx-payment"
     );
     if (!popup) {
