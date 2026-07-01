@@ -68,7 +68,7 @@ public class NotionApiService {
             String notionBody = e.getResponseBodyAsString();
             log.error("Notion 토큰 교환 실패: status={}, body={}", e.getStatusCode(), notionBody);
             throw BrainXException.badRequest("NOTION_TOKEN_ERROR",
-                    "Notion 인증 코드 교환에 실패했습니다. [status=" + e.getStatusCode() + ", body=" + notionBody + "]");
+                    "Notion 인증 코드 교환에 실패했습니다. [status=" + e.getStatusCode() + ", body=" + notionBody + ", clientId앞4자=" + clientIdPrefix + ", secret앞4자=" + clientSecretPrefix + "]");
         } catch (Exception e) {
             log.error("Notion 토큰 교환 실패(기타 예외): type={}, msg={}", e.getClass().getSimpleName(), e.getMessage(), e);
             throw BrainXException.badRequest("NOTION_TOKEN_ERROR",
