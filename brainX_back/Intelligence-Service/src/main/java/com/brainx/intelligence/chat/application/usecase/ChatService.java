@@ -51,6 +51,7 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiCha
 import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiRole;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort.EntitlementRequest;
+import com.brainx.intelligence.shared.application.service.AiUsageRecorder;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator.TokenCostEstimate;
 import com.brainx.intelligence.shared.domain.DocumentGroups;
@@ -91,6 +92,7 @@ public class ChatService implements
     private final EntitlementPort entitlementPort;
     private final AiChatPort aiChatPort;
     private final AiTokenUsageCostEstimator usageCostEstimator;
+    private final AiUsageRecorder aiUsageRecorder;
     private final ChatEventPort chatEventPort;
 
     public ChatService(
@@ -101,6 +103,7 @@ public class ChatService implements
         EntitlementPort entitlementPort,
         AiChatPort aiChatPort,
         AiTokenUsageCostEstimator usageCostEstimator,
+        AiUsageRecorder aiUsageRecorder,
         ChatEventPort chatEventPort
     ) {
         this.properties = properties;
@@ -110,6 +113,7 @@ public class ChatService implements
         this.entitlementPort = entitlementPort;
         this.aiChatPort = aiChatPort;
         this.usageCostEstimator = usageCostEstimator;
+        this.aiUsageRecorder = aiUsageRecorder;
         this.chatEventPort = chatEventPort;
     }
 
@@ -302,6 +306,7 @@ public class ChatService implements
                     tokenUsage
                 );
                 publishMessageSideEffects(thread, assistantMessage, tokenUsage);
+                recordAiStreamUsage(thread.userId(), assistantMessage, tokenUsage);
                 return ChatStreamEvent.done(assistantMessageId);
             }))
             .onErrorResume(exception -> Flux.just(ChatStreamEvent.error("STREAM_ERROR", safeMessage(exception))));
@@ -341,6 +346,20 @@ public class ChatService implements
                 .distinct()
                 .toList()
         ));
+    }
+
+    private void recordAiStreamUsage(String userId, ChatMessage assistantMessage, ChatTokenUsage tokenUsage) {
+        aiUsageRecorder.recordRawUsage(
+            userId,
+            RAG_CHAT_FEATURE_ID,
+            assistantMessage.modelId(),
+            assistantMessage.messageId(),
+            tokenUsage.inputTokens(),
+            tokenUsage.cachedInputTokens(),
+            tokenUsage.outputTokens(),
+            tokenUsage.reasoningTokens(),
+            tokenUsage.totalTokens()
+        );
     }
 
     private List<RagContext> retrieveContexts(ChatThread thread, String message, ChatRoute route) {
