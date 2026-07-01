@@ -2,6 +2,8 @@ server:
   port: ${SERVER_PORT:8088}
 
 spring:
+  codec:
+    max-in-memory-size: -1
   config:
     import:
       - optional:file:../.env[.properties]
@@ -145,3 +147,5 @@ brainx:
         - /api/v1/auth/**
         - /api/v1/plans
         - /api/v1/plans/**
+        - /api/v1/assets/*/file
+        - /api/v1/assets/proxy-image
