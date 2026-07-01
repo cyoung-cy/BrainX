@@ -641,16 +641,57 @@ export default function NotesExplorer({
     setPendingDeleteIds(null);
   }, []);
 
-  /* 다중(또는 단일) 삭제 확인 — pendingDeleteIds 스냅샷만 사용하고 live selectedIds는 다시 읽지 않는다. */
+  /* 확인창 문구/실제 삭제에 쓸 "실제로 삭제될 총 개수" — 폴더를 선택하면 그 폴더 자신 + 하위 폴더
+     전부 + 하위(중첩 포함) 노트 전부가 함께 삭제되므로(handleDeleteFolder의 cascade 정책과 동일
+     기준), 선택한 원본 id 개수가 아니라 이 전개된 총 개수를 보여줘야 한다. Folder A와 그 하위인
+     Folder B를 동시에 선택해도 Set로 모으므로 하위가 두 번 집계되지 않는다. */
+  const pendingDeleteExpanded = useMemo(() => {
+    if (!pendingDeleteIds || pendingDeleteIds.length === 0) {
+      return { totalCount: 0, folderIds: [] as string[], noteIds: [] as string[] };
+    }
+    const selectedFolderIds = pendingDeleteIds.filter((id) => folders.some((f) => f.id === id));
+    const selectedNoteIds = pendingDeleteIds.filter((id) => notes.some((n) => n.id === id));
+
+    const allFolderIds = new Set<string>();
+    selectedFolderIds.forEach((rootId) => {
+      allFolderIds.add(rootId);
+      let frontier = [rootId];
+      while (frontier.length > 0) {
+        const next = folders
+          .filter((f) => f.parentFolderId && frontier.includes(f.parentFolderId) && !allFolderIds.has(f.id))
+          .map((f) => f.id);
+        next.forEach((id) => allFolderIds.add(id));
+        frontier = next;
+      }
+    });
+
+    const allNoteIds = new Set<string>(selectedNoteIds);
+    notes.forEach((n) => {
+      if (n.folderId && allFolderIds.has(n.folderId)) allNoteIds.add(n.id);
+    });
+
+    return {
+      totalCount: allFolderIds.size + allNoteIds.size,
+      folderIds: [...allFolderIds],
+      noteIds: [...allNoteIds],
+    };
+  }, [pendingDeleteIds, folders, notes]);
+
+  /* 다중(또는 단일) 삭제 확인 — pendingDeleteIds 스냅샷만 사용하고 live selectedIds는 다시 읽지 않는다.
+     실제 삭제 API 호출은 선택한 "최상위" 노트/폴더 id만 넘긴다 — handleDeleteFolder가 하위 폴더/노트를
+     자체적으로 cascade 삭제하므로, 여기서 미리 전개한 하위 id까지 같이 넘기면 같은 노트/폴더를 두 번
+     지우려는 중복 API 호출이 생긴다. pendingDeleteExpanded(전개된 집합)는 확인창 문구와, API 호출이
+     없는 로컬 즐겨찾기 정리에만 사용한다. */
   const confirmDelete = useCallback(() => {
     if (!pendingDeleteIds) return;
     const noteIds = pendingDeleteIds.filter((id) => notes.some((n) => n.id === id));
     const folderIds = pendingDeleteIds.filter((id) => folders.some((f) => f.id === id));
-    if (noteIds.length > 0) {
+    const expandedNoteIds = pendingDeleteExpanded.noteIds;
+    if (expandedNoteIds.length > 0) {
       setFavorites((prev) => {
-        if (!noteIds.some((id) => prev.has(id))) return prev;
+        if (!expandedNoteIds.some((id) => prev.has(id))) return prev;
         const next = new Set(prev);
-        noteIds.forEach((id) => next.delete(id));
+        expandedNoteIds.forEach((id) => next.delete(id));
         return next;
       });
     }
@@ -662,17 +703,18 @@ export default function NotesExplorer({
     }
     setPendingDeleteIds(null);
     setSelectedIds(new Set());
-  }, [pendingDeleteIds, notes, folders, onDeleteMultiple, onDeleteNote, onDeleteFolder]);
+  }, [pendingDeleteIds, pendingDeleteExpanded, notes, folders, onDeleteMultiple, onDeleteNote, onDeleteFolder]);
 
   const pendingDeleteLabel = useMemo(() => {
-    if (!pendingDeleteIds || pendingDeleteIds.length === 0) return "";
-    if (pendingDeleteIds.length === 1) {
+    const { totalCount } = pendingDeleteExpanded;
+    if (totalCount === 0 || !pendingDeleteIds) return "";
+    if (totalCount === 1) {
       const id = pendingDeleteIds[0];
       const name = notes.find((n) => n.id === id)?.title ?? folders.find((f) => f.id === id)?.name ?? "항목";
       return `"${name}"을(를) 삭제하시겠습니까?`;
     }
-    return `선택한 ${pendingDeleteIds.length}개의 항목을 삭제하시겠습니까?`;
-  }, [pendingDeleteIds, notes, folders]);
+    return `${totalCount}개의 항목을 삭제하시겠습니까?`;
+  }, [pendingDeleteExpanded, pendingDeleteIds, notes, folders]);
 
   /* Delete 키 처리 — 현재 다중 선택 전체를 스냅샷으로 삼는다(선택이 없으면 무시) */
   useEffect(() => {

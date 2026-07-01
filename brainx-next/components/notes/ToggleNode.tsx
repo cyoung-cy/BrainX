@@ -43,8 +43,12 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
      이 이벤트는 ProseMirror의 키보드 단축키 처리(=React가 관리하는 keydown 이벤트 핸들링) 도중
      동기적으로 dispatch되므로, 여기서 곧바로 setState를 하면 "렌더링 중 flushSync 호출" 에러가 나고
      그 여파로 상태 업데이트 자체가 유실돼(제목 값이 빈 문자열로 보이는 등) 버그로 이어졌다.
-     setTimeout으로 한 틱 미뤄 현재 커밋이 끝난 뒤에 안전하게 반영한다. */
+     setTimeout으로 한 틱 미뤄 현재 커밋이 끝난 뒤에 안전하게 반영한다.
+     이벤트를 `document`(전역)에 쏘면 화면분할로 여러 노트 에디터가 동시에 열려 있을 때, 서로 다른
+     패널의 "pos가 우연히 같은" 토글이 함께 반응해 엉뚱한 패널로 포커스가 튀는 버그가 있었다 —
+     `editor.view.dom`(이 에디터 인스턴스 자신의 DOM)에만 쏘고 들어서 다른 패널과 완전히 분리한다. */
   useEffect(() => {
+    const target = editor.view.dom;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ pos: number }>).detail;
       const pos = typeof getPos === "function" ? getPos() : undefined;
@@ -54,8 +58,11 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
         setEditingSummary(true);
       }, 0);
     };
-    document.addEventListener(FOCUS_TITLE_EVENT, handler);
-    return () => document.removeEventListener(FOCUS_TITLE_EVENT, handler);
+    target.addEventListener(FOCUS_TITLE_EVENT, handler);
+    return () => target.removeEventListener(FOCUS_TITLE_EVENT, handler);
+    // editor는 이 NodeView 인스턴스가 살아있는 동안 참조가 바뀌지 않으므로 deps에 넣지 않는다 —
+    // 넣으면 ReactNodeViewRenderer가 관리하는 렌더 경로에서 이 훅의 deps 배열 길이가 렌더마다
+    // 달라진 것처럼 보여 "size changed between renders" React 경고가 발생했다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summary]);
 
@@ -286,7 +293,10 @@ export const ToggleNode = Node.create({
         const togglePos = $from.before(toggleDepth);
 
         if (indexInToggle === 0) {
-          document.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: togglePos } }));
+          // this.editor.view.dom에만 쏜다 — document 전역에 쏘면 화면분할로 여러 에디터가 열려
+          //있을 때 다른 패널의 같은 pos 값을 가진 토글도 함께 반응해 포커스가 엉뚱한 패널로
+          // 튀는 버그가 있었다.
+          this.editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: togglePos } }));
           return true;
         }
 
