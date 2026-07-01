@@ -16,9 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class AdminAuthService {
+    private static final Logger log = LoggerFactory.getLogger(AdminAuthService.class);
 
     private static final Map<AdminRole, List<String>> ROLE_PERMISSIONS = Map.of(
             AdminRole.owner, List.of("최고관리자", "전체 접근 권한", "관리자 계정 관리"),
@@ -58,7 +61,12 @@ public class AdminAuthService {
 
         admin.setLastLoginAt(OffsetDateTime.now());
         adminAccountRepository.save(admin);
-        recordOperation(admin.getAdminId(), "ADMIN_LOGIN", "ADMIN_ACCOUNT", admin.getAdminId(), null);
+        try {
+            recordOperation(admin.getAdminId(), "ADMIN_LOGIN", "ADMIN_ACCOUNT", admin.getAdminId(), null);
+        } catch (RuntimeException exception) {
+            // Login must not fail just because audit logging failed.
+            log.warn("Admin login audit logging failed for adminId={}: {}", admin.getAdminId(), exception.getMessage());
+        }
 
         String accessToken = jwtTokenProvider.createAccessToken(admin);
         return new AdminLoginData(accessToken, toMeData(admin));

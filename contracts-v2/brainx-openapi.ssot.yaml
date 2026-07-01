@@ -12058,6 +12058,7 @@ components:
         accessToken:
           type: string
           nullable: true
+          description: Access token issued on login. User-Service defaults to a 10-hour lifetime.
         refreshToken:
           type: string
           nullable: true
