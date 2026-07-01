@@ -1197,33 +1197,32 @@ function StatsPanel() {
   const recentSeries = getRecentDailySeries(notes, 7);
   const totalNotes = workspaceStats?.noteCount ?? summary.totalNotes;
   const recentWeekCount = recentSeries.values.reduce((sum, value) => sum + value, 0);
-  const storageGb = workspaceStats ? workspaceStats.storageBytes / (1024 * 1024 * 1024) : 0;
-  const recentActivities = workspaceStats?.activities ?? [];
+  const previousWeekCount = notes.filter((note) => {
+    const timestamp = new Date(note.updatedAt || note.createdAt).getTime();
+    if (Number.isNaN(timestamp)) return false;
+    const diffDays = Math.floor((Date.now() - timestamp) / 86_400_000);
+    return diffDays >= 7 && diffDays < 14;
+  }).length;
+  const weeklyDelta = recentWeekCount - previousWeekCount;
 
   return (
     <>
       <header className="mb-7">
         <h1 className="text-[24px] font-bold tracking-[-0.01em] text-[#2f2d2a]">노트 통계</h1>
-        <p className="mt-3 text-[13px] text-[#6d6861]">
-          {loading ? "실제 Workspace 데이터를 불러오는 중입니다." : "실제 노트 데이터와 API 응답을 함께 보여줍니다."}
-        </p>
+        <p className="mt-3 text-[13px] text-[#6d6861]">노트 작성 활동을 한눈에 확인하세요.</p>
       </header>
       <section className="mb-7 grid grid-cols-2 gap-3">
         {[
-          ["작성한 노트", `${totalNotes}`, "실제 API"],
-          ["최근 7일 작성", `${recentWeekCount}`, recentWeekCount > 0 ? "활동 있음" : "데이터 없음"],
-          ["연속 작성", `${summary.writingStreak}일`, summary.writingStreak > 0 ? "활성" : "휴면"],
-          ["저장 공간", `${storageGb.toFixed(1)}GB`, workspaceStats ? "실제 저장량" : "로딩 중"]
+          ["작성한 노트", `${totalNotes}`, ""],
+          ["이번 주 작성", `${recentWeekCount}`, weeklyDelta !== 0 ? `${weeklyDelta > 0 ? "+" : ""}${weeklyDelta}` : ""],
+          ["연속 작성", `${summary.writingStreak}일`, "fire"],
+          ["총 단어", formatCompactCount(summary.totalWords), ""]
         ].map(([label, value, sub]) => (
           <div key={label} className="rounded-[12px] border border-[#e5e0d8] px-4 py-4">
             <p className="text-[12px] text-[#6d6861]">{label}</p>
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[27px] font-bold tracking-[-0.02em] text-[#36332f]">{value}</span>
-              {sub ? (
-                <span className={cx("text-[12px] font-bold", label === "저장 공간" ? "text-[#6c55f6]" : recentWeekCount > 0 ? "text-[#168a4f]" : "text-[#ff7a1a]")}>
-                  {sub}
-                </span>
-              ) : null}
+              {sub ? <span className={cx("text-[12px] font-bold", sub === "fire" ? "text-[#ff7a1a]" : "text-[#168a4f]")}>{sub === "fire" ? "🔥" : sub}</span> : null}
             </div>
           </div>
         ))}
@@ -1248,32 +1247,15 @@ function StatsPanel() {
           </div>
         ))}
       </section>
-      <section>
-        <SectionLabel>최근 활동</SectionLabel>
-        {recentActivities.length ? (
-          <div className="space-y-2">
-            {recentActivities.slice(0, 3).map((activity) => (
-              <div key={`${activity.noteId}-${activity.occurredAt}`} className="rounded-[10px] border border-[#e8e3db] bg-[#fbfaf8] px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-[#36332f]">{activity.title}</div>
-                    <div className="mt-0.5 text-[12px] text-[#8c877f]">{activity.type}</div>
-                  </div>
-                  <div className="shrink-0 text-[12px] text-[#6d6861]">
-                    {new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(activity.occurredAt))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-[10px] border border-[#e8e3db] bg-[#fbfaf8] px-4 py-5 text-center text-[12px] text-[#8c877f]">
-            아직 최근 활동 데이터가 없습니다.
-          </div>
-        )}
-      </section>
     </>
   );
+}
+
+function formatCompactCount(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(value);
 }
 
 function SupportPanel() {
