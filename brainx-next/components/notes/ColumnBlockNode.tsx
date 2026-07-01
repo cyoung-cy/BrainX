@@ -1,6 +1,7 @@
 "use client";
 
 import { Node, mergeAttributes } from "@tiptap/core";
+import { Fragment } from "@tiptap/pm/model";
 import type { Editor } from "@tiptap/core";
 import { NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 
@@ -118,6 +119,44 @@ export const Column = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     return ["div", mergeAttributes(HTMLAttributes, { "data-type": "column", class: "split-column" }), 0];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => {
+        const { state } = this.editor;
+        const { selection } = state;
+        const { $from, empty } = selection;
+
+        // 선택 영역이 있으면 기본 동작에 맡긴다
+        if (!empty) return false;
+
+        // column 노드가 조상에 있는지 확인
+        let columnDepth = -1;
+        for (let d = $from.depth; d >= 1; d--) {
+          if ($from.node(d).type.name === "column") { columnDepth = d; break; }
+        }
+        if (columnDepth < 0) return false;
+
+        // 커서가 column 안 첫 번째 블록의 맨 앞이어야만 동작
+        const isAtColumnStart = $from.parentOffset === 0 && $from.index(columnDepth) === 0;
+        if (!isAtColumnStart) return false;
+
+        // columnList 찾기
+        const columnListNode = $from.node(columnDepth - 1);
+        if (columnListNode.type.name !== "columnList") return false;
+        const columnListPos = $from.before(columnDepth - 1);
+
+        // 모든 column의 내용을 하나의 Fragment로 합친다
+        let flat = Fragment.empty;
+        columnListNode.forEach((col) => { flat = flat.append(col.content); });
+
+        this.editor.view.dispatch(
+          state.tr.replaceWith(columnListPos, columnListPos + columnListNode.nodeSize, flat)
+        );
+        return true;
+      },
+    };
   },
 
   addNodeView() {

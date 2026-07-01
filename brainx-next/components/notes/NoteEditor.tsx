@@ -16,7 +16,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X } from "lucide-react";
+import { Check, Link2, Highlighter, Loader2, Sparkles, Wand2, RotateCcw, Search, FileText, ExternalLink, X, AlertTriangle } from "lucide-react";
 import { Table, TableRow, TableHeader, TableCell, TableView } from "@tiptap/extension-table";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
 import type { Fragment, Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -2668,6 +2668,12 @@ function CustomBubbleMenu({
 const EDITOR_HINT_TEXT =
   "# 제목 · - 목록 · > 인용 · **굵게** · `코드` · ``` 코드블록 · ```mermaid 다이어그램 · ![](url) 이미지 · 텍스트 선택 → 버블 툴바";
 
+/** Notion S3 presigned URL(X-Amz-Expires 파라미터)이 포함된 이미지가 있으면 true.
+    가져오기 중 이미지 다운로드에 실패해 원본 URL로 폴백된 경우에만 해당하며, 1시간 후 만료된다. */
+function hasExpiringNotionImages(content: string): boolean {
+  return content.includes("X-Amz-Expires");
+}
+
 interface NoteEditorProps {
   note: MockNote;
   mode: EditMode;
@@ -2700,6 +2706,11 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
   const [isEmpty, setIsEmpty] = useState(() => note.content.trim() === "");
   const [focused, setFocused] = useState(false);
   const [contextMenu, setContextMenu] = useState<EditorContextTarget | null>(null);
+  const [showExpiringBanner, setShowExpiringBanner] = useState(() => hasExpiringNotionImages(note.content));
+
+  useEffect(() => {
+    setShowExpiringBanner(hasExpiringNotionImages(note.content));
+  }, [note.id, note.content]);
   const [cursorAiAnchor, setCursorAiAnchor] = useState<{ left: number; top: number } | null>(null);
   const [continueDraftView, setContinueDraftView] = useState<ContinueSuggestionState | null>(null);
   const [continueDraftAnchor, setContinueDraftAnchor] = useState<{ left: number; top: number } | null>(null);
@@ -3359,6 +3370,22 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
           onInsertTable={(rows, cols) => editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run()}
           onSplitColumns={(count) => splitBlockIntoColumns(editor, count)}
         />
+      )}
+      {showExpiringBanner && (
+        <div className="flex items-start gap-2 mb-3 rounded-lg border border-yellow-400/40 bg-yellow-50/70 px-3 py-2 text-[12px] text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-400/25 dark:text-yellow-300">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-yellow-500" />
+          <span className="flex-1 leading-relaxed">
+            이 노트의 일부 이미지는 Notion에서 가져올 때 영구 저장에 실패해 <strong>1시간 후 만료</strong>됩니다.
+            Notion에서 다시 가져오기하면 이미지를 영구 저장할 수 있습니다.
+          </span>
+          <button
+            className="shrink-0 opacity-50 hover:opacity-100 transition-opacity mt-0.5"
+            onClick={() => setShowExpiringBanner(false)}
+            aria-label="닫기"
+          >
+            <X size={12} />
+          </button>
+        </div>
       )}
       <EditorContent editor={editor} />
       {showHint && (

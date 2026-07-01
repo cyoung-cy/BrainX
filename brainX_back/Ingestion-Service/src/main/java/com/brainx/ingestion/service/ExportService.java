@@ -29,6 +29,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -119,15 +121,40 @@ public class ExportService {
         String markdown = note.markdown() != null ? note.markdown() : "";
 
         return switch (format) {
-            case MD -> ("# " + title + "\n\n" + markdown).getBytes(StandardCharsets.UTF_8);
+            case MD -> {
+                // asset://uuid → 영구 CDN URL로 치환. 외부 S3 URL은 내보내기 당시 유효하다면
+                // 그대로 두고, 만료 여부는 수신자가 판단한다(재import로 영구화 가능).
+                String resolved = resolveAssetUrlsForMdExport(markdown);
+                yield ("# " + title + "\n\n" + resolved).getBytes(StandardCharsets.UTF_8);
+            }
             case TXT -> (title + "\n\n" + toPlainText(markdown)).getBytes(StandardCharsets.UTF_8);
             case PDF -> renderPdf(title, toPlainText(markdown));
         };
     }
 
+    /**
+     * 마크다운 내 asset://uuid 의사 URL만 실제 CDN URL로 치환한다.
+     * 외부 HTTP(S) URL은 건드리지 않는다 — 에디터 이미지 표시 로직과 분리된 export 전용 처리.
+     */
+    private String resolveAssetUrlsForMdExport(String content) {
+        StringBuffer sb = new StringBuffer();
+        Matcher m = Pattern.compile("!\\[([^\\]]*)]\\(([^)]+)\\)").matcher(content);
+        while (m.find()) {
+            String alt = m.group(1);
+            String url = m.group(2);
+            String resolved = url.startsWith("asset://")
+                    ? cdnBaseUrl + "/api/v1/assets/" + url.substring("asset://".length()) + "/file"
+                    : url;
+            m.appendReplacement(sb, Matcher.quoteReplacement("![" + alt + "](" + resolved + ")"));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
     /** 마크다운 기호(#, *, _, 링크 문법 등)를 제거해 TXT/PDF에서 읽기 좋은 평문으로 만든다. */
     private String toPlainText(String markdown) {
         return markdown
+                .replaceAll("!\\[([^\\]]*)]\\([^)]*\\)", "")  // 이미지 완전 제거 (링크 제거보다 먼저)
                 .replaceAll("(?m)^#{1,6}\\s*", "")
                 .replaceAll("\\*\\*([^*]+)\\*\\*", "$1")
                 .replaceAll("\\*([^*]+)\\*", "$1")

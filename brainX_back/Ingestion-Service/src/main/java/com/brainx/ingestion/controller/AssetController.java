@@ -138,7 +138,7 @@ public class AssetController {
             if (!contentType.toLowerCase().startsWith("image/")) {
                 throw BrainXException.badRequest("INVALID_CONTENT_TYPE", "이미지가 아닙니다");
             }
-            log.info("이미지 프록시 성공: userId={}, host={}, bytes={}", auth.getName(), uri.getHost(), body.length);
+            log.info("이미지 프록시 성공: userId={}, host={}, bytes={}", auth != null ? auth.getName() : "anonymous", uri.getHost(), body.length);
             return ResponseEntity.ok().contentType(MediaType.parseMediaType(contentType)).body(body);
         } catch (IOException | InterruptedException e) {
             log.warn("이미지 프록시 실패: url={}, error={}", url, e.getMessage());
