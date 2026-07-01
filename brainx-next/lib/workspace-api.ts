@@ -45,6 +45,13 @@ export type NoteCreated = {
   createdAt: string;
 };
 
+export type WorkspaceNoteCreatePayload = {
+  title: string;
+  markdown?: string | null;
+  folderId?: string | null;
+  tags?: string[];
+};
+
 export type WorkspaceNoteLinkCreateRequest = {
   targetNoteId?: string | null;
   targetTitle: string;
@@ -203,15 +210,24 @@ export async function deleteWorkspaceFolder(folderId: string, mode: "trash" | "p
   });
 }
 
-export async function createWorkspaceNote(note: MockNote) {
+export async function createWorkspaceNoteFromPayload(payload: WorkspaceNoteCreatePayload) {
   return authedRequest<NoteCreated>("/api/v1/notes", {
     method: "POST",
     body: JSON.stringify({
-      title: note.title,
-      markdown: note.content,
-      folderId: note.folderId ?? null,
-      tags: note.tags
+      title: payload.title,
+      markdown: payload.markdown ?? null,
+      folderId: payload.folderId ?? null,
+      tags: payload.tags ?? []
     })
+  });
+}
+
+export async function createWorkspaceNote(note: MockNote) {
+  return createWorkspaceNoteFromPayload({
+    title: note.title,
+    markdown: note.content,
+    folderId: note.folderId ?? null,
+    tags: note.tags
   });
 }
 
