@@ -3,7 +3,6 @@ package com.brainx.intelligence.infrastructure.workspace;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -15,6 +14,8 @@ import com.brainx.intelligence.shared.application.port.outbound.WorkspaceNotePor
 
 @Component
 public class ExternalWorkspaceNoteAdapter implements WorkspaceNotePort {
+
+    static final String SERVICE_TOKEN_HEADER = "X-Service-Token";
 
     private final RestClient restClient;
     private final WorkspaceClientProperties properties;
@@ -37,7 +38,7 @@ public class ExternalWorkspaceNoteAdapter implements WorkspaceNotePort {
         try {
             SnapshotResponse response = restClient.get()
                 .uri("/internal/v1/workspace/notes/{noteId}/snapshot", noteId)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getServiceToken())
+                .header(SERVICE_TOKEN_HEADER, properties.getServiceToken())
                 .retrieve()
                 .body(SnapshotResponse.class);
             if (response == null || response.data() == null) {

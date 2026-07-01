@@ -1,5 +1,5 @@
 {$PUBLIC_SITE_ADDRESS} {
-	@intelligence path /api/v1/ai/* /api/v1/intelligence/* /api/v1/notes/*/summary
+	@intelligence path /api/v1/ai/* /api/v1/intelligence/* /api/v1/notes/*/summary /api/v1/users/me/style-profile
 	handle @intelligence {
 		reverse_proxy intelligence-service:8086
 	}

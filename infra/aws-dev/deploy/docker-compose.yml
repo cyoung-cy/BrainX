@@ -243,6 +243,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: "8086"
+      SPRING_APPLICATION_NAME: intelligence-service
       JAVA_TOOL_OPTIONS: -Xms256m -Xmx2048m -XX:+ExitOnOutOfMemoryError
       SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/brainx_intelligence
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
