@@ -1,14 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import type { KeyboardEvent, ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useGuideStore } from "@/lib/use-guide-store";
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
-import { cx } from "@/lib/utils";
+import type { BrainXNote } from "@/lib/brainx-data";
+import { cx, stripMarkdown } from "@/lib/utils";
 import {
   buildAuthPath,
   readAuthSession,
@@ -51,19 +53,223 @@ function planLabel(subscription: Subscription | null) {
   return name === "무료" ? "Free" : name || "Free";
 }
 
+const SEARCH_FILTERS = ["최신순", "오래된순", "제목 기준", "내용 기준", "기간 검색"] as const;
+const SEARCH_RESULT_LIMIT = 8;
+const RECENT_RESULT_LIMIT = 5;
+const searchDateFormatter = new Intl.DateTimeFormat("ko-KR", {
+  month: "2-digit",
+  day: "2-digit",
+});
+
+type SearchFilter = (typeof SEARCH_FILTERS)[number];
+type SearchMatchField = "제목" | "본문" | "태그" | "최근";
+type SearchableNote = {
+  note: BrainXNote;
+  title: string;
+  body: string;
+  tags: string[];
+  normalizedTitle: string;
+  normalizedBody: string;
+  normalizedTags: string[];
+  updatedTime: number;
+};
+type SearchResult = SearchableNote & {
+  matchField: SearchMatchField;
+  score: number;
+  snippet: string;
+};
+
+function normalizeSearchText(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("ko-KR").trim();
+}
+
+function parseSearchDate(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatSearchDate(timestamp: number) {
+  if (!timestamp) return "날짜 없음";
+  return searchDateFormatter.format(new Date(timestamp));
+}
+
+function createSearchSnippet(source: string, query: string) {
+  const compact = source.replace(/\s+/g, " ").trim();
+  if (!compact) return "본문 미리보기가 없습니다.";
+  if (!query) return compact.slice(0, 120);
+
+  const index = normalizeSearchText(compact).indexOf(query);
+  if (index < 0) return compact.slice(0, 120);
+
+  const start = Math.max(0, index - 34);
+  const end = Math.min(compact.length, index + query.length + 78);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < compact.length ? "…" : "";
+  return `${prefix}${compact.slice(start, end)}${suffix}`;
+}
+
+function createSearchIndex(notes: BrainXNote[]): SearchableNote[] {
+  return notes.map((note) => {
+    const title = note.title.trim() || "Untitled";
+    const body = stripMarkdown(note.markdown ?? "");
+    const tags = note.tags ?? [];
+    return {
+      note,
+      title,
+      body,
+      tags,
+      normalizedTitle: normalizeSearchText(title),
+      normalizedBody: normalizeSearchText(body),
+      normalizedTags: tags.map(normalizeSearchText),
+      updatedTime: parseSearchDate(note.updatedAt) || parseSearchDate(note.createdAt),
+    };
+  });
+}
+
+function scoreSearchResult(item: SearchableNote, query: string, filter: SearchFilter): SearchResult | null {
+  if (!query) {
+    return {
+      ...item,
+      matchField: "최근",
+      score: 0,
+      snippet: createSearchSnippet(item.body || item.note.summary, query),
+    };
+  }
+
+  const titleStarts = item.normalizedTitle.startsWith(query);
+  const titleIncludes = item.normalizedTitle.includes(query);
+  const bodyIncludes = item.normalizedBody.includes(query);
+  const tagIncludes = item.normalizedTags.some((tag) => tag.includes(query));
+
+  if (!titleIncludes && !bodyIncludes && !tagIncludes) return null;
+
+  let score = 0;
+  let matchField: SearchMatchField = "본문";
+  if (titleStarts) {
+    score = 100;
+    matchField = "제목";
+  } else if (titleIncludes) {
+    score = 90;
+    matchField = "제목";
+  } else if (tagIncludes) {
+    score = 80;
+    matchField = "태그";
+  } else if (bodyIncludes) {
+    score = 70;
+  }
+
+  if (filter === "제목 기준" && titleIncludes) score += 40;
+  if (filter === "내용 기준" && bodyIncludes) score += 40;
+
+  const tagSnippet = item.tags.length > 0 ? item.tags.map((tag) => `#${tag}`).join(" ") : "태그가 일치했습니다.";
+  return {
+    ...item,
+    matchField,
+    score,
+    snippet:
+      matchField === "제목"
+        ? createSearchSnippet(item.body || item.note.summary, "")
+        : matchField === "태그"
+          ? tagSnippet
+          : createSearchSnippet(item.body, query),
+  };
+}
+
+function sortSearchResults(a: SearchResult, b: SearchResult, filter: SearchFilter) {
+  if (filter === "오래된순") return a.updatedTime - b.updatedTime;
+  if (filter === "최신순" || filter === "기간 검색") return b.updatedTime - a.updatedTime;
+  return b.score - a.score || b.updatedTime - a.updatedTime;
+}
+
 function SearchBar() {
   const [value, setValue] = useState("");
-  const [filter, setFilter] = useState("최신순");
+  const [filter, setFilter] = useState<SearchFilter>("최신순");
   const [semantic, setSemantic] = useState(false);
-  const [open, setOpen] = useState(false);
-  const { pushToast, t } = useBrainX();
-  const options = ["최신순", "오래된순", "제목 기준", "내용 기준", "기간 검색"];
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
+  const searchId = useId();
+  const { hydrated, notes, pushToast, saveStatus } = useBrainX();
+  const query = normalizeSearchText(value);
+  const searchIndex = useMemo(() => createSearchIndex(notes), [notes]);
+  const isLoadingNotes = !hydrated || (saveStatus === "saving" && notes.length === 0);
+  const results = useMemo(() => {
+    const matches = searchIndex
+      .map((item) => scoreSearchResult(item, query, filter))
+      .filter((item): item is SearchResult => item !== null)
+      .sort((a, b) => sortSearchResults(a, b, filter));
+    return matches.slice(0, query ? SEARCH_RESULT_LIMIT : RECENT_RESULT_LIMIT);
+  }, [filter, query, searchIndex]);
+  const activeResult = results[activeIndex] ?? null;
+  const panelVisible = resultOpen;
+  const resultCountLabel = query
+    ? `${results.length}개 결과`
+    : results.length > 0
+      ? "최근 노트"
+      : "최근 노트 없음";
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [filter, query, notes.length, semantic]);
+
+  useEffect(() => {
+    if (!resultOpen && !filterOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (rootRef.current && event.target instanceof Node && !rootRef.current.contains(event.target)) {
+        setResultOpen(false);
+        setFilterOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [filterOpen, resultOpen]);
+
+  function closeSearch() {
+    setResultOpen(false);
+    setFilterOpen(false);
+  }
+
+  function openResult(noteId: string) {
+    router.push(`/notes/${encodeURIComponent(noteId)}`);
+    closeSearch();
+  }
+
+  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSearch();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setResultOpen(true);
+      setActiveIndex((current) => Math.min(current + 1, Math.max(results.length - 1, 0)));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setResultOpen(true);
+      setActiveIndex((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    if (event.key === "Enter" && activeResult) {
+      event.preventDefault();
+      openResult(activeResult.note.id);
+    }
+  }
 
   return (
-    <div className="relative w-full md:flex-1 md:max-w-xl tutorial-target-search">
+    <div ref={rootRef} className="relative w-full md:flex-1 md:max-w-xl tutorial-target-search">
       <div
         className={cx(
-          "group flex h-9 items-center gap-2 rounded-xl border px-3 transition-all duration-200",
+          "group flex h-9 items-center gap-2 rounded-xl border px-3 transition-colors duration-200 focus-within:ring-2 focus-within:ring-primary/35",
           semantic
             ? "border-accent/50 bg-accent/[0.06] shadow-glowv"
             : "border-line/60 bg-surface/60 hover:border-line",
@@ -76,27 +282,52 @@ function SearchBar() {
         />
         <input
           value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              pushToast(`"${value}" 검색 완료 · 8개 결과`, "ok");
-            }
+          onChange={(event) => {
+            setValue(event.target.value);
+            setResultOpen(true);
           }}
+          onFocus={() => setResultOpen(true)}
+          onKeyDown={handleInputKeyDown}
           placeholder={
             semantic
-              ? '의미로 검색… "어텐션이 왜 작동하는지"'
-              : "노트·메모·자료 검색"
+              ? "의미로 검색… 예: 어텐션이 왜 작동하는지"
+              : "노트 제목, 본문, 태그 검색…"
           }
-          className="flex-1 bg-transparent text-[14px] text-txt outline-none placeholder:text-txt3"
+          type="search"
+          name="global-note-search"
+          autoComplete="off"
+          aria-label="노트 검색"
+          role="combobox"
+          aria-expanded={panelVisible}
+          aria-controls={`${searchId}-results`}
+          aria-activedescendant={activeResult ? `${searchId}-result-${activeIndex}` : undefined}
+          className="min-w-0 flex-1 bg-transparent text-[14px] text-txt outline-none placeholder:text-txt3"
         />
+        {value ? (
+          <button
+            type="button"
+            aria-label="검색어 지우기"
+            onClick={() => {
+              setValue("");
+              setResultOpen(true);
+            }}
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-txt3 transition-colors hover:bg-surface2/60 hover:text-txt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <Icon name="x" size={13} />
+          </button>
+        ) : null}
         <button
           type="button"
-          onClick={() => setSemantic((current) => !current)}
+          onClick={() => {
+            setSemantic((current) => !current);
+            setResultOpen(true);
+          }}
           className={cx(
-            "flex h-6 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium whitespace-nowrap transition-all",
+            "flex h-6 items-center gap-1.5 rounded-md border px-2 text-[12px] font-medium whitespace-nowrap transition-colors",
             semantic
               ? "border-accent bg-accent text-white"
               : "border-line/60 bg-surface2/60 text-txt2 hover:text-txt",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           )}
         >
             <Icon name="sparkle" size={13} /> 의미
@@ -104,27 +335,33 @@ function SearchBar() {
         <div className="relative">
           <button
             type="button"
-            onClick={() => setOpen((current) => !current)}
-            className="flex h-6 items-center gap-1 rounded-md px-2 text-[12px] whitespace-nowrap text-txt2 hover:bg-surface2/60 hover:text-txt"
+            aria-haspopup="menu"
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((current) => !current)}
+            className="flex h-6 items-center gap-1 rounded-md px-2 text-[12px] whitespace-nowrap text-txt2 transition-colors hover:bg-surface2/60 hover:text-txt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           >
             <Icon name="filter" size={13} /> {filter}{" "}
             <Icon name="chevD" size={12} />
           </button>
-          {open ? (
+          {filterOpen ? (
             <div
-              className="fade-up glass absolute right-0 top-9 z-50 w-40 rounded-xl p-1.5 shadow-soft"
-              onMouseLeave={() => setOpen(false)}
+              role="menu"
+              className="fade-up glass absolute right-0 top-9 z-[60] w-40 rounded-xl p-1.5 shadow-soft"
             >
-              {options.map((item) => (
+              {SEARCH_FILTERS.map((item) => (
                 <button
                   key={item}
                   type="button"
+                  role="menuitemradio"
+                  aria-checked={item === filter}
                   onClick={() => {
                     setFilter(item);
-                    setOpen(false);
+                    setFilterOpen(false);
+                    setResultOpen(true);
+                    if (item === "기간 검색") pushToast("기간 검색은 준비 중입니다.", "info");
                   }}
                   className={cx(
-                    "flex h-8 w-full items-center justify-between rounded-lg px-3 text-left text-[13px]",
+                    "flex h-8 w-full items-center justify-between rounded-lg px-3 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
                     item === filter
                       ? "bg-surface2/60 text-primary"
                       : "text-txt2 hover:bg-surface2/50 hover:text-txt",
@@ -138,6 +375,84 @@ function SearchBar() {
           ) : null}
         </div>
       </div>
+      {panelVisible ? (
+        <div
+          className="fade-up absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-line/70 bg-bg shadow-soft"
+        >
+          <div className="flex min-w-0 items-center justify-between gap-3 border-b border-line/50 px-3 py-2">
+            <div className="min-w-0 truncate text-[12px] font-semibold text-txt">
+              {query ? "검색 결과" : "최근 노트"}
+            </div>
+            <div aria-live="polite" className="shrink-0 text-[11px] text-txt3">
+              {isLoadingNotes ? "불러오는 중…" : resultCountLabel}
+            </div>
+          </div>
+          {semantic ? (
+            <div className="flex min-w-0 items-start gap-2 border-b border-line/40 bg-accent/[0.06] px-3 py-2 text-[12px] leading-5 text-txt2">
+              <Icon name="sparkle" size={14} className="mt-0.5 shrink-0 text-accent" />
+              <span className="min-w-0 break-words">
+                의미 검색은 준비 중입니다. 지금은 키워드 결과를 보여드립니다.
+              </span>
+            </div>
+          ) : null}
+          {filter === "기간 검색" ? (
+            <div className="border-b border-line/40 px-3 py-2 text-[12px] text-txt3">
+              기간 검색은 준비 중입니다. 최신순 결과를 표시합니다.
+            </div>
+          ) : null}
+          <div
+            id={`${searchId}-results`}
+            role="listbox"
+            aria-label="노트 검색 결과"
+            className="max-h-[340px] overflow-y-auto py-1"
+          >
+            {isLoadingNotes ? (
+              <div className="px-3 py-5 text-center text-[13px] text-txt3">노트를 불러오는 중…</div>
+            ) : notes.length === 0 ? (
+              <div className="px-3 py-5 text-center text-[13px] text-txt3">검색할 노트가 없습니다.</div>
+            ) : results.length === 0 ? (
+              <div className="px-3 py-5 text-center text-[13px] text-txt3">
+                {query ? "일치하는 노트가 없습니다. 다른 키워드로 검색해 보세요." : "최근 노트가 없습니다."}
+              </div>
+            ) : (
+              results.map((result, index) => (
+                <Link
+                  id={`${searchId}-result-${index}`}
+                  key={result.note.id}
+                  href={`/notes/${encodeURIComponent(result.note.id)}`}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  onClick={closeSearch}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  className={cx(
+                    "flex min-w-0 gap-3 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
+                    index === activeIndex ? "bg-surface2/70" : "hover:bg-surface2/50",
+                  )}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line/50 bg-surface2/50 text-txt3">
+                    <Icon name="doc" size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-semibold text-txt">{result.title}</span>
+                    <span className="mt-0.5 block truncate text-[12px] leading-5 text-txt3">{result.snippet}</span>
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-txt3">
+                      <span className="shrink-0 rounded-md border border-line/50 px-1.5 py-0.5 text-[10px] text-txt2">
+                        {result.matchField}
+                      </span>
+                      {result.tags.slice(0, 2).map((tag) => (
+                        <span key={tag} className="min-w-0 truncate">
+                          #{tag}
+                        </span>
+                      ))}
+                      <span className="shrink-0 tabular-nums">{formatSearchDate(result.updatedTime)}</span>
+                    </span>
+                  </span>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
