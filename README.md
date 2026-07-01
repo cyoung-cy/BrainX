@@ -176,6 +176,8 @@ BrainX/
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
 
+- User-Service의 기본 access token TTL은 10시간(`JWT_ACCESS_EXPIRATION=36000000`)입니다. refresh token은 기존 7일 정책을 유지합니다.
+
 ### Service Boundary Rules
 
 - Browser/external client는 `/api/v1/**` public API를 기준으로 호출합니다.

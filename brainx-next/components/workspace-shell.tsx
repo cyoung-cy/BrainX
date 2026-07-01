@@ -9,6 +9,7 @@ import { Avatar, Badge, Btn, Icon, ThemeToggle } from "@/components/brainx-ui";
 import { AccountSettingsModal } from "@/components/utility/account-settings-modal";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { cx } from "@/lib/utils";
+import { formatTokenCount, formatTokenPercent, TOKEN_USAGE_SUMMARY } from "@/lib/token-usage";
 import {
   buildAuthPath,
   readAuthSession,
@@ -28,14 +29,7 @@ const NAV = [
   { id: "chat", labelKey: "nav.chat" as const, icon: "chat" as const, path: "/chat" },
 ];
 
-const NAV2 = [
-  {
-    id: "admin",
-    labelKey: "nav.admin" as const,
-    icon: "shield" as const,
-    path: "/admin",
-  },
-];
+type SettingsTab = "profile" | "general" | "notifications" | "import" | "usage" | "stats" | "support" | "upgrade";
 
 function isActive(pathname: string, path: string) {
   if (path === "/notes") return pathname.startsWith("/notes");
@@ -258,8 +252,7 @@ function SidebarItem({
   );
 }
 
-function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: () => void; notesExplorerOpen?: boolean }) {
-  const router = useRouter();
+function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: (tab?: SettingsTab) => void; notesExplorerOpen?: boolean }) {
   const { t } = useBrainX();
 
   return (
@@ -276,26 +269,17 @@ function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: () => 
             notesExplorerOpen={notesExplorerOpen}
           />
         ))}
-        <div className="my-3 mx-1 h-px bg-line/50" />
-        {NAV2.map((item) => (
-          <SidebarItem
-            key={item.id}
-            {...item}
-            label={t(item.labelKey)}
-          />
-        ))}
       </nav>
 
-      <div className="mt-auto px-1 pb-3 flex flex-col gap-2">
+      <div className="group relative mt-auto px-1 pb-3 flex flex-col gap-2">
         <button
           type="button"
-          onClick={() => router.push("/billing")}
-          className="group relative grid aspect-square w-full place-items-center rounded-[0.4rem] glass text-accent"
+          onClick={() => onOpenSettings("usage")}
+          className="group relative grid aspect-square w-full place-items-center rounded-[0.4rem] glass text-accent transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-soft"
+          aria-label="AI 토큰 사용량 보기"
         >
           <Icon name="bolt" size={18} />
-          <span 
-            className="pointer-events-none absolute left-[calc(100%+12px)] z-50 whitespace-nowrap rounded-[6px] px-2.5 py-1.5 text-[12px] font-medium bg-txt text-bg2 shadow-md opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-          >
+          <span className="hidden">
             업그레이드
             <div
               className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rotate-45 bg-txt"
@@ -303,6 +287,49 @@ function Sidebar({ onOpenSettings, notesExplorerOpen }: { onOpenSettings: () => 
             />
           </span>
         </button>
+        <div className="pointer-events-none absolute bottom-0 left-[calc(100%+12px)] z-50 w-[280px] opacity-0 transition duration-200 ease-out group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <button
+            type="button"
+            onClick={() => onOpenSettings("usage")}
+            className="w-full rounded-[18px] border border-[#ded8cf] bg-white p-4 text-left shadow-[0_18px_45px_rgba(18,16,14,.14)] transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#8c877f]">AI 토큰 사용량</div>
+                <div className="mt-2 text-[22px] font-bold tracking-[-0.03em] text-[#2f2d2a]">
+                  {formatTokenPercent(TOKEN_USAGE_SUMMARY.percent)}
+                </div>
+                <div className="mt-1 text-[12px] text-[#6d6861]">
+                  {formatTokenCount(TOKEN_USAGE_SUMMARY.used)} / {formatTokenCount(TOKEN_USAGE_SUMMARY.limit)} 토큰
+                </div>
+              </div>
+              <div className="rounded-full bg-[#f4efe8] px-2.5 py-1 text-[11px] font-semibold text-[#8c877f]">
+                이번 달
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between text-[11px] text-[#6d6861]">
+                <span>현재 전체 토큰 사용량</span>
+                <span>{formatTokenPercent(TOKEN_USAGE_SUMMARY.percent)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#ebe7e1]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-primary via-accent to-cyan"
+                  style={{ width: `${TOKEN_USAGE_SUMMARY.percent}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-[#eee7dc] pt-3">
+              <span className="text-[12px] font-medium text-[#4d4944]">자세히 보기</span>
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-[#f4efe8] text-[#6d6861]">
+                <Icon name="chevR" size={14} />
+              </span>
+            </div>
+          </button>
+          <div className="absolute bottom-6 left-[-5px] h-2.5 w-2.5 rotate-45 border-l border-b border-[#ded8cf] bg-white" />
+        </div>
       </div>
     </aside>
   );
@@ -321,7 +348,7 @@ function formatNotificationTime(value: string) {
   });
 }
 
-function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
+function TopBar({ onOpenSettings }: { onOpenSettings: (tab?: SettingsTab) => void }) {
   const { pushToast, t } = useBrainX();
   const router = useRouter();
   const pathname = usePathname();
@@ -643,6 +670,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
   const [notesExplorerOpen, setNotesExplorerOpen] = useState(true);
 
   useEffect(() => {
@@ -662,23 +690,30 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (pathname === "/mypage") {
       if (readAuthSession()?.accessToken) {
+        setSettingsTab("profile");
         setSettingsOpen(true);
       }
       router.replace("/home");
     }
   }, [pathname, router]);
 
+  const openSettings = (tab: SettingsTab = "profile") => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  };
+
   return (
     <div className="flex h-[100svh] w-full flex-col overflow-hidden">
-      <TopBar onOpenSettings={() => setSettingsOpen(true)} />
+      <TopBar onOpenSettings={openSettings} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar onOpenSettings={() => setSettingsOpen(true)} notesExplorerOpen={notesExplorerOpen} />
+        <Sidebar onOpenSettings={openSettings} notesExplorerOpen={notesExplorerOpen} />
         <main className="scroll relative flex-1 min-w-0 overflow-y-auto">
           {children}
         </main>
       </div>
       <AccountSettingsModal
         open={settingsOpen}
+        defaultTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
       />
     </div>
