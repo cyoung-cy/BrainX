@@ -490,6 +490,7 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | POST | `/api/v1/subscriptions/cancel` | 구독 취소 |
 
 자세한 결제 흐름과 DB 스키마는 `brainX_back/Commerce-Service/README.md`를 참고하세요.
+결제 팝업은 프런트의 월간/연간 토글 값을 `billingCycle`으로 체크아웃 세션 생성 API에 함께 전달해야 하며, 이 값이 빠지면 Toss SDK를 띄우기 전에 계약 검증 단계에서 실패합니다.
 
 ### Backend: Admin-Service API Contract
 
