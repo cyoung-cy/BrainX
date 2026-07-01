@@ -495,6 +495,8 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
+Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
+Commerce-Service는 운영 DB가 오래된 스키마로 남아 있어도 기동 시 `commerce_subscriptions.billing_cycle` 컬럼을 `MONTHLY` 기본값으로 보정하도록 self-healing repair를 둡니다. 그래도 운영 환경에서는 애플리케이션 재배포와 별개로 실제 PostgreSQL 원장 스키마를 정식 반영해 두는 것을 기준으로 삼습니다.
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
