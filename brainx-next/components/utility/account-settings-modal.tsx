@@ -37,7 +37,9 @@ import {
   type ConsentPayload,
   type MyProfile
 } from "@/lib/user-api";
+import { getMyWorkspaceStats, type WorkspaceUserStatsData } from "@/lib/workspace-api";
 import { createSupportTicket, getMySupportTicket, getMySupportTickets, type SupportTicket, type SupportTicketDetail, type SupportTicketPayload } from "@/lib/support-api";
+import { getRecentDailySeries, summarizeWorkspaceNotes } from "@/lib/workspace-note-stats";
 import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
@@ -1166,6 +1168,43 @@ function UsagePanel() {
 }
 
 function StatsPanel() {
+  const { notes, pushToast } = useBrainX();
+  const [workspaceStats, setWorkspaceStats] = useState<WorkspaceUserStatsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+
+    getMyWorkspaceStats()
+      .then((stats) => {
+        if (active) setWorkspaceStats(stats);
+      })
+      .catch((error) => {
+        if (active) setWorkspaceStats(null);
+        pushToast(error instanceof Error ? error.message : "노트 통계를 불러오지 못했습니다.", "err");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [pushToast]);
+
+  const summary = summarizeWorkspaceNotes(notes);
+  const recentSeries = getRecentDailySeries(notes, 7);
+  const totalNotes = workspaceStats?.noteCount ?? summary.totalNotes;
+  const recentWeekCount = recentSeries.values.reduce((sum, value) => sum + value, 0);
+  const previousWeekCount = notes.filter((note) => {
+    const timestamp = new Date(note.updatedAt || note.createdAt).getTime();
+    if (Number.isNaN(timestamp)) return false;
+    const diffDays = Math.floor((Date.now() - timestamp) / 86_400_000);
+    return diffDays >= 7 && diffDays < 14;
+  }).length;
+  const weeklyDelta = recentWeekCount - previousWeekCount;
+
   return (
     <>
       <header className="mb-7">
@@ -1174,42 +1213,49 @@ function StatsPanel() {
       </header>
       <section className="mb-7 grid grid-cols-2 gap-3">
         {[
-          ["작성한 노트", "248", ""],
-          ["이번 주 작성", "12", "+3"],
-          ["연속 작성", "7일", "fire"],
-          ["총 단어", "142.8K", ""]
+          ["작성한 노트", `${totalNotes}`, ""],
+          ["이번 주 작성", `${recentWeekCount}`, weeklyDelta !== 0 ? `${weeklyDelta > 0 ? "+" : ""}${weeklyDelta}` : ""],
+          ["연속 작성", `${summary.writingStreak}일`, "fire"],
+          ["총 단어", formatCompactCount(summary.totalWords), ""]
         ].map(([label, value, sub]) => (
           <div key={label} className="rounded-[12px] border border-[#e5e0d8] px-4 py-4">
             <p className="text-[12px] text-[#6d6861]">{label}</p>
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[27px] font-bold tracking-[-0.02em] text-[#36332f]">{value}</span>
-              {sub ? <span className={cx("text-[12px] font-bold", sub === "+3" ? "text-[#168a4f]" : "text-[#ff7a1a]")}>{sub === "fire" ? "🔥" : sub}</span> : null}
+              {sub ? <span className={cx("text-[12px] font-bold", sub === "fire" ? "text-[#ff7a1a]" : "text-[#168a4f]")}>{sub === "fire" ? "🔥" : sub}</span> : null}
             </div>
           </div>
         ))}
       </section>
       <section className="mb-7">
         <SectionLabel>주간 작성 활동</SectionLabel>
-        <MiniBars values={[32, 60, 86, 48, 88, 41, 28]} labels={["월", "화", "수", "목", "금", "토", "일"]} activeIndex={4} />
+        <MiniBars values={recentSeries.values} labels={recentSeries.labels} activeIndex={recentSeries.values.length - 1} />
       </section>
-      <section>
+      <section className="mb-7">
         <SectionLabel>인사이트</SectionLabel>
         {[
-          ["가장 활발한 시간대", "오후 9-11시", "clock"],
-          ["평균 노트 길이", "576 단어", "doc"],
-          ["가장 많이 쓴 태그", "#회의록", "sparkle"]
+          ["가장 활발한 시간대", summary.peakHour?.label ?? "데이터 없음", "clock"],
+          ["평균 노트 길이", `${summary.averageWords} 단어`, "doc"],
+          ["가장 많이 쓴 태그", summary.topTag ? `#${summary.topTag.label}` : "태그 없음", "sparkle"]
         ].map(([label, value, icon]) => (
           <div key={label} className="flex items-center justify-between border-b border-[#e8e3db] py-3 text-[12px] last:border-b-0">
             <span className="inline-flex items-center gap-2 text-[#6d6861]">
               <Icon name={icon as IconName} size={14} />
               {label}
             </span>
-            <span className={cx("font-medium", value.startsWith("#") ? "text-[#6c55f6]" : "text-[#4d4944]")}>{value}</span>
+            <span className={cx("font-medium", typeof value === "string" && value.startsWith("#") ? "text-[#6c55f6]" : "text-[#4d4944]")}>{value}</span>
           </div>
         ))}
       </section>
     </>
   );
+}
+
+function formatCompactCount(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1
+  }).format(value);
 }
 
 function SupportPanel() {

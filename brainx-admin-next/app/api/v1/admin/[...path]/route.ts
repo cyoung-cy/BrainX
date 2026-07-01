@@ -8,6 +8,7 @@ type RouteContext = {
 };
 
 const FORWARDED_REQUEST_HEADERS = ["authorization", "content-type", "accept", "idempotency-key"] as const;
+const TOKEN_COOKIE_KEY = "brainx_admin_access_token";
 
 function json(data: unknown, status = 200) {
   return Response.json({ success: true, data, message: "요청이 성공적으로 처리되었습니다." }, { status });
@@ -80,6 +81,23 @@ function shouldUseAdminMock() {
   return process.env.NODE_ENV !== "production" && process.env.ADMIN_MOCK_ENABLED === "true";
 }
 
+function readTokenFromCookie(request: Request) {
+  const rawCookie = request.headers.get("cookie");
+  if (!rawCookie) {
+    return null;
+  }
+
+  for (const part of rawCookie.split(";")) {
+    const [key, ...valueParts] = part.trim().split("=");
+    if (key === TOKEN_COOKIE_KEY) {
+      const value = valueParts.join("=");
+      return value ? decodeURIComponent(value) : null;
+    }
+  }
+
+  return null;
+}
+
 async function dispatch(request: Request, context: RouteContext) {
   const params = await context.params;
   const pathSegments = params.path ?? [];
@@ -100,6 +118,12 @@ async function dispatch(request: Request, context: RouteContext) {
     const headerValue = request.headers.get(headerName);
     if (headerValue) {
       headers.set(headerName, headerValue);
+    }
+  }
+  if (!headers.has("authorization")) {
+    const tokenFromCookie = readTokenFromCookie(request);
+    if (tokenFromCookie) {
+      headers.set("authorization", `Bearer ${tokenFromCookie}`);
     }
   }
 
