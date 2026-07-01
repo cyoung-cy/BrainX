@@ -12,7 +12,7 @@ import { createWorkspaceNote, createWorkspaceNoteLink, listWorkspaceNoteDrafts, 
 import { useBrainX } from "@/components/brainx-provider";
 import { Avatar, Badge, Btn, Card, Icon } from "@/components/brainx-ui";
 import { cx } from "@/lib/utils";
-import { ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useEdgesState, useReactFlow, useStoreApi, type Edge, type Node } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, SelectionMode, useNodesState, useEdgesState, useReactFlow, useStoreApi, type Edge, type Node, type SelectionRect, type Transform } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { UniverseBackground } from "./universe-background";
 import { PlanetNode } from "./planet-node";
@@ -313,6 +313,7 @@ const BRIDGE_MAX_NOTE_COUNT = 10;
 const BRIDGE_RECOMMENDATION_TAGS = ["bridge", "ai-suggestion"];
 const LINK_MIN_NOTE_COUNT = 1;
 const LINK_MAX_NOTE_COUNT = 10;
+const AI_BOX_SELECTION_MIN_SIZE = 4;
 
 function isFilteredOutByTime(note: BrainXNote, timeFilter: string) {
   if (timeFilter === "전체") return false;
@@ -348,6 +349,48 @@ function mergeBridgeSelectedIds(currentIds: string[], incomingIds: string[]) {
 
 function mergeLinkSelectedIds(currentIds: string[], incomingIds: string[]) {
   return mergeSelectedIds(currentIds, incomingIds, LINK_MAX_NOTE_COUNT);
+}
+
+function mergeDragSelectionIds(baseIds: string[], incomingIds: string[]) {
+  const nextIds = [...baseIds];
+  const seen = new Set(nextIds);
+  for (const id of incomingIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    nextIds.push(id);
+  }
+  return nextIds;
+}
+
+function flowBoundsFromSelectionRect(rect: SelectionRect, transform: Transform) {
+  const [viewportX, viewportY, zoom] = transform;
+  const minX = (rect.x - viewportX) / zoom;
+  const minY = (rect.y - viewportY) / zoom;
+  const maxX = (rect.x + rect.width - viewportX) / zoom;
+  const maxY = (rect.y + rect.height - viewportY) / zoom;
+  return { minX, minY, maxX, maxY };
+}
+
+function getAiBoxSelectedNodeIds(
+  rect: SelectionRect,
+  transform: Transform,
+  notes: BrainXNote[],
+  positions: Record<string, GraphNode>,
+  hiddenClusters: Partial<Record<ClusterId, boolean>>,
+  timeFilter: string
+) {
+  if (rect.width < AI_BOX_SELECTION_MIN_SIZE || rect.height < AI_BOX_SELECTION_MIN_SIZE) {
+    return [];
+  }
+  const bounds = flowBoundsFromSelectionRect(rect, transform);
+  return notes
+    .filter((note) => {
+      if (!isBridgeSelectableNote(note, hiddenClusters, timeFilter)) return false;
+      const point = positions[note.id];
+      if (!point) return false;
+      return point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY;
+    })
+    .map((note) => note.id);
 }
 
 function bridgeErrorMessage(error: unknown) {
@@ -435,8 +478,20 @@ function normalizeMarkdownText(value: string) {
   return value.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function escapeMarkdownLinkText(value: string) {
-  return normalizeMarkdownText(value).replace(/[\\[\]]/g, "\\$&");
+function wikiLink(value: string) {
+  const title = normalizeMarkdownText(value) || "무제 노트";
+  return `[[${title}]]`;
+}
+
+function bridgeSourceNotes(sourceNotes: BrainXNote[]) {
+  return sourceNotes.slice(0, 2);
+}
+
+function ensureBridgeReasonWikiLinks(reason: string, sourceNotes: BrainXNote[]) {
+  const requiredLinks = bridgeSourceNotes(sourceNotes).map((note) => wikiLink(note.title));
+  const missingLinks = requiredLinks.filter((link) => !reason.includes(link));
+  if (missingLinks.length === 0) return reason;
+  return `${reason} 연결 원본: ${missingLinks.join(", ")}.`;
 }
 
 function buildBridgeRecommendationMarkdown(recommendation: BridgeRecommendation, sourceNotes: BrainXNote[]) {
@@ -444,9 +499,10 @@ function buildBridgeRecommendationMarkdown(recommendation: BridgeRecommendation,
   const reason =
     recommendation.bridgeReason?.trim() ||
     "선택한 노트 사이를 이어줄 새 문서 주제로 제안되었습니다.";
-  const sourceLines = sourceNotes.map((note, index) => {
+  const linkedReason = ensureBridgeReasonWikiLinks(reason, sourceNotes);
+  const sourceLines = bridgeSourceNotes(sourceNotes).map((note, index) => {
     const tags = note.tags.length > 0 ? ` ${note.tags.map((tag) => `#${normalizeMarkdownText(tag)}`).join(" ")}` : "";
-    return `${index + 1}. [${escapeMarkdownLinkText(note.title)}](/notes/${encodeURIComponent(note.id)})${tags}`;
+    return `${index + 1}. ${wikiLink(note.title)}${tags}`;
   });
 
   return [
@@ -456,7 +512,7 @@ function buildBridgeRecommendationMarkdown(recommendation: BridgeRecommendation,
     "",
     "## 제안 이유",
     "",
-    reason,
+    linkedReason,
     "",
     "## 연결한 노트",
     "",
@@ -534,9 +590,9 @@ function GraphCanvasFlow({
   linkSelectedIds: string[];
   linkSelectionLocked: boolean;
   onBridgeSelect: (id: string) => void;
-  onBridgeSelectMany: (ids: string[]) => void;
+  onBridgeSelectMany: (ids: string[], replace?: boolean) => void;
   onLinkSelect: (id: string) => void;
-  onLinkSelectMany: (ids: string[]) => void;
+  onLinkSelectMany: (ids: string[], replace?: boolean) => void;
   onSelect: (id: string | null) => void;
 }) {
   const { setCenter, fitView, zoomTo, getViewport, fitBounds } = useReactFlow();
@@ -548,6 +604,7 @@ function GraphCanvasFlow({
   const isDraggingRef = useRef(false);
   const bridgeBoxSelectingRef = useRef(false);
   const reactFlowSelectionIdsRef = useRef<Set<string>>(new Set());
+  const selectionDragBaseIdsRef = useRef<string[]>([]);
   const bridgeSelectionSignatureRef = useRef("");
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   
@@ -572,6 +629,36 @@ function GraphCanvasFlow({
       return changed ? next : current;
     });
   }, [setRfNodes, store]);
+
+  useEffect(() => {
+    return store.subscribe((state) => {
+      if (!selectionModeActive || selectionLocked || !bridgeBoxSelectingRef.current) return;
+      if (!state.userSelectionRect) return;
+
+      const rectSelectedIds = getAiBoxSelectedNodeIds(
+        state.userSelectionRect,
+        state.transform,
+        notes,
+        positionsRef.current,
+        hiddenClusters,
+        timeFilter
+      );
+      const mergedSelectedIds = mergeDragSelectionIds(selectionDragBaseIdsRef.current, rectSelectedIds);
+      const selectedNodeIds = linkMode
+        ? mergeLinkSelectedIds([], mergedSelectedIds).ids
+        : mergeBridgeSelectedIds([], mergedSelectedIds).ids;
+      const signature = selectedNodeIds.join("|");
+      if (signature === bridgeSelectionSignatureRef.current) return;
+
+      bridgeSelectionSignatureRef.current = signature;
+      reactFlowSelectionIdsRef.current = new Set(selectedNodeIds);
+      if (linkMode) {
+        onLinkSelectMany(selectedNodeIds, true);
+      } else if (bridgeMode) {
+        onBridgeSelectMany(selectedNodeIds, true);
+      }
+    });
+  }, [bridgeMode, hiddenClusters, linkMode, notes, onBridgeSelectMany, onLinkSelectMany, selectionLocked, selectionModeActive, store, timeFilter]);
 
   // Sync positionsRef with notes to handle async data loading
   useEffect(() => {
@@ -998,12 +1085,7 @@ function GraphCanvasFlow({
       if (!bridgeBoxSelectingRef.current) {
         return newNodes;
       }
-      const selectedIds = new Set<string>(reactFlowSelectionIdsRef.current);
-      currentNodes.forEach((node) => {
-        if (node.selected) {
-          selectedIds.add(node.id);
-        }
-      });
+      const selectedIds = reactFlowSelectionIdsRef.current;
       if (selectedIds.size === 0) {
         return newNodes;
       }
@@ -1053,35 +1135,18 @@ function GraphCanvasFlow({
           if (!bridgeMode) onSelect(null);
         }}
         selectionKeyCode={selectionModeActive && !selectionLocked ? "Shift" : null}
-        selectionMode={SelectionMode.Partial}
+        selectionMode={SelectionMode.Full}
         onSelectionStart={() => {
           if (!selectionModeActive || selectionLocked) return;
           bridgeBoxSelectingRef.current = true;
           reactFlowSelectionIdsRef.current = new Set();
-          bridgeSelectionSignatureRef.current = "";
-        }}
-        onSelectionChange={({ nodes: selectedNodes }) => {
-          if (!selectionModeActive || selectionLocked || !bridgeBoxSelectingRef.current) return;
-          const selectedNodeIds = selectedNodes
-            .filter((node) => !node.data.dimmed)
-            .map((node) => node.id);
-          reactFlowSelectionIdsRef.current = new Set(selectedNodeIds);
-          if (selectedNodeIds.length === 0) {
-            bridgeSelectionSignatureRef.current = "";
-            return;
-          }
-          const signature = selectedNodeIds.join("|");
-          if (signature === bridgeSelectionSignatureRef.current) return;
-          bridgeSelectionSignatureRef.current = signature;
-          if (linkMode) {
-            onLinkSelectMany(selectedNodeIds);
-          } else {
-            onBridgeSelectMany(selectedNodeIds);
-          }
+          selectionDragBaseIdsRef.current = linkMode ? linkSelectedIds.slice() : bridgeSelectedIds.slice();
+          bridgeSelectionSignatureRef.current = selectionDragBaseIdsRef.current.join("|");
         }}
         onSelectionEnd={() => {
           bridgeBoxSelectingRef.current = false;
           reactFlowSelectionIdsRef.current = new Set();
+          selectionDragBaseIdsRef.current = [];
           bridgeSelectionSignatureRef.current = "";
           clearReactFlowNodeSelection();
           window.requestAnimationFrame(clearReactFlowNodeSelection);
@@ -1504,10 +1569,11 @@ function GraphScreenInner() {
   };
 
   const selectBridgeNotes = (noteIds: string[], replace = false) => {
-    if (bridgeSelectionLocked || noteIds.length === 0) return;
+    if (bridgeSelectionLocked || (!replace && noteIds.length === 0)) return;
     clearBridgeGeneratedState();
     const hasNewIncoming = noteIds.some((id) => !bridgeSelectedIds.includes(id));
-    setBridgeSelectedIds((current) => mergeBridgeSelectedIds(replace ? [] : current, noteIds).ids);
+    const result = mergeBridgeSelectedIds(replace ? [] : bridgeSelectedIds, noteIds);
+    setBridgeSelectedIds(result.ids);
     if (!replace && hasNewIncoming && bridgeSelectedIds.length >= BRIDGE_MAX_NOTE_COUNT) {
       pushToast(`징검다리 추천은 최대 ${BRIDGE_MAX_NOTE_COUNT}개 노트까지 선택할 수 있어요.`, "info");
     }
@@ -1542,10 +1608,11 @@ function GraphScreenInner() {
   };
 
   const selectLinkNotes = (noteIds: string[], replace = false) => {
-    if (linkSelectionLocked || noteIds.length === 0) return;
+    if (linkSelectionLocked || (!replace && noteIds.length === 0)) return;
     clearLinkGeneratedState();
     const hasNewIncoming = noteIds.some((id) => !linkSelectedIds.includes(id));
-    setLinkSelectedIds((current) => mergeLinkSelectedIds(replace ? [] : current, noteIds).ids);
+    const result = mergeLinkSelectedIds(replace ? [] : linkSelectedIds, noteIds);
+    setLinkSelectedIds(result.ids);
     if (!replace && hasNewIncoming && linkSelectedIds.length >= LINK_MAX_NOTE_COUNT) {
       pushToast(`AI 연결 추천은 최대 ${LINK_MAX_NOTE_COUNT}개 노트까지 선택할 수 있어요.`, "info");
     }
@@ -1879,9 +1946,9 @@ function GraphScreenInner() {
           linkSelectedIds={linkSelectedIds}
           linkSelectionLocked={linkSelectionLocked}
           onBridgeSelect={toggleBridgeNote}
-          onBridgeSelectMany={(ids) => selectBridgeNotes(ids)}
+          onBridgeSelectMany={(ids, replace) => selectBridgeNotes(ids, replace)}
           onLinkSelect={toggleLinkNote}
-          onLinkSelectMany={(ids) => selectLinkNotes(ids)}
+          onLinkSelectMany={(ids, replace) => selectLinkNotes(ids, replace)}
           onSelect={(id) => {
             setSelectedId(id);
           }}
