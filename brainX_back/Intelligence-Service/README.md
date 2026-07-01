@@ -82,6 +82,8 @@ Windows PowerShell 기준:
 
 `local` profile은 `src/main/resources/application-local.yaml`을 통해 project root의 `.brainx-local.properties`를 optional import합니다. 이 파일은 git ignore 대상이며 `OPENAI_API_KEY`, `SPRING_AI_MODEL_CHAT=openai`, `VOYAGE_API_KEY` 같은 로컬 runtime secret을 둘 때 사용합니다. `local` profile 없이 실행하면 `.brainx-local.properties`는 읽히지 않습니다.
 
+배포 환경에서 Workspace 이벤트를 소비해 note projection을 만들려면 `BRAINX_EVENTS_CONSUMER_ENABLED=true`, `KAFKA_BOOTSTRAP_SERVERS`, `SPRING_KAFKA_BOOTSTRAP_SERVERS`, `BRAINX_WORKSPACE_BASE_URL`, `BRAINX_WORKSPACE_SERVICE_TOKEN`이 필요합니다. Workspace internal snapshot API는 `X-Service-Token` 헤더를 사용하므로 `BRAINX_WORKSPACE_SERVICE_TOKEN`은 Workspace-Service의 `SERVICE_TOKEN`과 같아야 합니다.
+
 Swagger UI는 `http://localhost:8086/swagger-ui.html`, 생성된 OpenAPI JSON은 `http://localhost:8086/v3/api-docs`, health check는 `http://localhost:8086/actuator/health`에서 확인합니다. `local` profile에서는 Swagger 테스트 편의를 위해 `/api/v1/**` 인증을 요구하지 않습니다.
 
 Unix 계열 shell 기준:
