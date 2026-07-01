@@ -880,6 +880,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and the service startup may repair older environments by backfilling `MONTHLY` before serving reads.
       responses:
         '200':
           description: 성공
@@ -3751,7 +3752,10 @@ paths:
         표준 Workspace 노트 식별자이며, Workspace PostgreSQL 레코드, Neo4j 같은
         그래프 projection, Knowledge Intelligence read model/vector index, RAG citation,
         프론트엔드 그래프 상태에서 사용하는 식별자와 일치해야 한다. 그래프 projection은
-        read model이며 노트와 링크의 권위 원장은 Workspace가 유지한다.
+        read model이며 노트와 링크의 권위 원장은 Workspace가 유지한다. Neo4j projection은
+        노트 본문 `[[...]]` 위키링크, 수동 링크, 태그, 제목/본문 유사도를 다시 계산해
+        `LINKED` 관계를 최신 상태로 유지하며, 전체 그래프 재생성 대신 변경된 노트와
+        직접 관련된 노트만 증분 갱신한다.
       parameters:
       - name: folderId
         in: query
@@ -8267,7 +8271,7 @@ paths:
       - id: web.admin.users
         type: frontend
         description: BrainX-Admin user management list, filters and bulk actions
-      x-implementation-note: User rows must show the same current plan as the detail drawer. Do not infer the list plan from payment history; use the current subscription snapshot returned by Commerce-Service through Admin-Service.
+      x-implementation-note: User rows must show the same current plan as the detail drawer. Do not infer the list plan from payment history; use the current subscription snapshot returned by Commerce-Service through Admin-Service. If Commerce-Service billing reads fail, Admin-Service may return the list with `free` fallback plans instead of failing the whole screen.
       x-internal-sync-calls:
       - operationId: getUserAccountSnapshotInternal
         targetService: User-Service
@@ -8973,7 +8977,7 @@ paths:
         reason: signup and active user summary
       x-produces-events: []
       x-async-boundary: false
-      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. The dashboard read itself is non-persistent; a Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul.
+      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. The dashboard read itself is non-persistent; a Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
       responses:
         '200':
           description: Success
@@ -12074,6 +12078,7 @@ components:
         accessToken:
           type: string
           nullable: true
+          description: Access token issued on login. User-Service defaults to a 10-hour lifetime.
         refreshToken:
           type: string
           nullable: true
@@ -13367,8 +13372,8 @@ components:
     GraphEdgeData:
       type: object
       description: >
-        승인된 Workspace 노트 링크를 나타내는 그래프 엣지. 추천 링크는 사용자가 수락해
-        Workspace 링크 command로 변환되기 전까지 AI 제안 상태로 유지되어야 한다.
+        Workspace 노트 간의 의미 관계를 나타내는 그래프 엣지. `type`은 관계의 의미를,
+        `weight`는 연결 강도를, `reason`은 AI/규칙 추론 근거를 나타낸다.
       properties:
         id:
           type: string
@@ -13384,8 +13389,16 @@ components:
         type:
           type: string
           enum:
-          - MANUAL
-          - AI_SUGGESTED
+          - RELATED
+          - PARENT
+          - CHILD
+          - CAUSE
+          - RESULT
+          - WORKFLOW
+          - REFERENCE
+          - PROJECT
+          - TAG
+          - SIMILAR
         weight:
           type: number
           nullable: true

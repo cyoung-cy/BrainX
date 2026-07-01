@@ -49,7 +49,7 @@ brainx:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
   jwt:
     secret: ${JWT_SECRET:replace_with_at_least_32_byte_secret}
-    access-token-expiration-millis: ${JWT_ACCESS_EXPIRATION:3600000}
+    access-token-expiration-millis: ${JWT_ACCESS_EXPIRATION:36000000}
     refresh-token-expiration-millis: ${JWT_REFRESH_EXPIRATION:604800000}
   email:
     verification-expiration-minutes: ${EMAIL_VERIFICATION_EXPIRATION_MINUTES:30}

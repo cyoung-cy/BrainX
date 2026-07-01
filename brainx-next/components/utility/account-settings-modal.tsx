@@ -42,6 +42,7 @@ import { cx } from "@/lib/utils";
 import type { ThemeMode } from "@/components/brainx-provider";
 import type { LanguageCode } from "@/lib/i18n";
 import { useGuideStore } from "@/lib/use-guide-store";
+import { TOKEN_USAGE_SUMMARY } from "@/lib/token-usage";
 
 type TabId = "profile" | "general" | "notifications" | "import" | "usage" | "stats" | "support" | "upgrade";
 type SocialProvider = "google" | "kakao" | "naver";
@@ -91,12 +92,7 @@ const SOCIAL: Record<SocialProvider, { name: string; mark: string; bg: string; f
   naver: { name: "네이버", mark: "N", bg: "#03c75a", fg: "#fff", border: "#03b653" }
 };
 
-const usageRows: { label: string; value: number; percent: number; icon: IconName }[] = [
-  { label: "AI 글쓰기 도우미", value: 142800, percent: 50, icon: "rewrite" },
-  { label: "자동 요약", value: 68200, percent: 24, icon: "doc" },
-  { label: "시맨틱 검색", value: 44900, percent: 16, icon: "search" },
-  { label: "자동 태그·정리", value: 31500, percent: 11, icon: "sparkle" }
-];
+const usageRows = TOKEN_USAGE_SUMMARY.breakdown;
 
 function displayName(profile: MyProfile | null) {
   return profile?.nickname?.trim() || profile?.email?.split("@")[0] || readAuthSession()?.nickname || "사용자";
@@ -321,12 +317,20 @@ function MiniBars({
   );
 }
 
-export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AccountSettingsModal({
+  open,
+  onClose,
+  defaultTab = "profile"
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultTab?: TabId;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { pushToast, language, setLanguage, theme, setTheme, t } = useBrainX();
   const [mounted, setMounted] = useState(false);
-  const [tab, setTab] = useState<TabId>("profile");
+  const [tab, setTab] = useState<TabId>(defaultTab);
   const [profile, setProfile] = useState<MyProfile | null>(() => profileFromSession());
   const [subscription, setSubscription] = useState<CommerceSubscription | null>(null);
   const [loading, setLoading] = useState(false);
@@ -346,6 +350,11 @@ export function AccountSettingsModal({ open, onClose }: { open: boolean; onClose
   const profileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    setTab(defaultTab);
+  }, [defaultTab, open]);
 
   useEffect(() => {
     if (!open) return;

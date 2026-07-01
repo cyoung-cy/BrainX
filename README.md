@@ -122,8 +122,10 @@ BrainX/
 - `BrainXNote`: 노트 도메인 타입
 - `CLUSTERS`: 지식 클러스터 정의
 - `seedNotes()`: 초기 노트 데이터
-- `deriveGraphEdges()`: 노트 링크 기반 그래프 edge 생성
+- `deriveGraphEdges()`: 노트 본문, 태그, 위키링크, 제목 유사도를 함께 분석해 의미 관계 그래프 edge 생성
 - `createNoteSeed()`, `updateNoteDerived()`: 노트 생성/수정 파생값 관리
+
+`deriveGraphEdges()`는 단순 링크만 보지 않고 `REFERENCE`, `RELATED`, `PARENT`/`CHILD`, `CAUSE`/`RESULT`, `WORKFLOW`, `PROJECT`, `TAG`, `SIMILAR` 관계를 weight와 reason과 함께 산출한다. 그래프 UI와 SSOT의 `/api/v1/graph` 계약은 이 의미 관계를 전제로 한다.
 
 ### Frontend API Boundary
 
@@ -175,6 +177,8 @@ BrainX/
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
+
+- User-Service의 기본 access token TTL은 10시간(`JWT_ACCESS_EXPIRATION=36000000`)입니다. refresh token은 기존 7일 정책을 유지합니다.
 
 ### Service Boundary Rules
 
@@ -344,6 +348,7 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
 
 기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
+Workspace-Service의 Neo4j projection은 노트 본문 `[[...]]` 위키링크, 수동 `NoteLink`, 태그, 제목/본문 유사도를 다시 계산해 `LINKED` 관계를 MERGE 방식으로 갱신합니다. 노트가 수정되면 전체 그래프를 다시 만들지 않고, 변경된 노트와 그 노트를 직접 참조하는 관련 노트만 증분 갱신합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
@@ -493,6 +498,8 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
+Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
+Commerce-Service는 운영 DB가 오래된 스키마로 남아 있어도 기동 시 `commerce_subscriptions.billing_cycle` 컬럼을 `MONTHLY` 기본값으로 보정하도록 self-healing repair를 둡니다. 그래도 운영 환경에서는 애플리케이션 재배포와 별개로 실제 PostgreSQL 원장 스키마를 정식 반영해 두는 것을 기준으로 삼습니다.
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
