@@ -218,6 +218,7 @@ export type AdminMonitoringSnapshot = {
   kafkaLagState: ApiKafkaLagState;
   kafkaLagDetail: string | null;
   capturedAt: string;
+  persisted: boolean;
 };
 
 export type AdminKafkaLagData = {

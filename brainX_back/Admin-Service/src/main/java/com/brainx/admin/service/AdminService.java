@@ -260,6 +260,29 @@ public class AdminService {
         return new SnapshotWindow(snapshotDate, start, end);
     }
 
+    private AdminMonitoringSnapshotData buildLiveMonitoringSnapshotData(OffsetDateTime capturedAt) {
+        AdminBillingSummaryData summary = billingSummary();
+        InternalUserGrowthSummaryDto userGrowthSummary = fetchUserGrowthSummary(OVERVIEW_TREND_DAYS);
+        int activeUsers = userGrowthSummary != null ? userGrowthSummary.activeUsers() : countActiveUsers();
+        AdminKafkaLagObservation kafkaLag = kafkaLagCollector.collect(kafkaMonitoringConsumerGroupId);
+        String snapshotDate = snapshotWindow(capturedAt).snapshotDate().toString().replace("-", "");
+
+        return new AdminMonitoringSnapshotData(
+                "live_" + snapshotDate,
+                summary.monthlyRevenue(),
+                summary.activeSubscriptions(),
+                summary.mrr(),
+                summary.failedPaymentCount(),
+                activeUsers,
+                kafkaLag.messages(),
+                kafkaLag.consumerGroupId(),
+                kafkaLag.state(),
+                kafkaLag.detail(),
+                capturedAt,
+                false
+        );
+    }
+
     private record SnapshotWindow(LocalDate snapshotDate, OffsetDateTime start, OffsetDateTime end) {
     }
 
@@ -319,7 +342,8 @@ public class AdminService {
                 snapshot.getKafkaConsumerGroupId(),
                 snapshot.getKafkaLagState(),
                 snapshot.getKafkaLagDetail(),
-                snapshot.getCapturedAt()
+                snapshot.getCapturedAt(),
+                true
         );
     }
 
@@ -336,9 +360,22 @@ public class AdminService {
     }
 
     public List<AdminMonitoringSnapshotData> getMonitoringSnapshots() {
-        return monitoringSnapshotRepository.findAllByOrderByCapturedAtDesc().stream()
+        OffsetDateTime now = OffsetDateTime.now(monitoringZoneId());
+        SnapshotWindow today = snapshotWindow(now);
+        List<AdminMonitoringSnapshotData> persistedSnapshots = monitoringSnapshotRepository.findAllByOrderByCapturedAtDesc().stream()
                 .map(this::toMonitoringSnapshotData)
                 .toList();
+
+        boolean hasTodaySnapshot = persistedSnapshots.stream()
+                .anyMatch(snapshot -> !snapshot.capturedAt().isBefore(today.start()) && snapshot.capturedAt().isBefore(today.end()));
+        if (hasTodaySnapshot) {
+            return persistedSnapshots;
+        }
+
+        List<AdminMonitoringSnapshotData> snapshots = new ArrayList<>();
+        snapshots.add(buildLiveMonitoringSnapshotData(now));
+        snapshots.addAll(persistedSnapshots);
+        return snapshots;
     }
 
     public void deleteMonitoringSnapshot(String id) {

@@ -349,7 +349,7 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
 
 기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
-Workspace-Service의 Neo4j projection은 노트 본문 `[[...]]` 위키링크, 수동 `NoteLink`, 태그, 제목/본문 유사도를 다시 계산해 `LINKED` 관계를 MERGE 방식으로 갱신합니다. 노트가 수정되면 전체 그래프를 다시 만들지 않고, 변경된 노트와 그 노트를 직접 참조하는 관련 노트만 증분 갱신합니다.
+Workspace-Service는 노트 저장 시 본문 `[[...]]` 위키링크와 TipTap `data-wiki-link` span을 authoritative `workspace_note_links` 원장으로 정규화하고, Neo4j는 그 원장을 projection/read model로 반영합니다. 타깃 노트가 나중에 생성되거나 제목이 바뀌는 경우에도 기존 노트들을 다시 스캔해 wiki-link 관계를 재물질화합니다. `/api/v1/graph/sync`는 기존 노트 전체를 다시 스캔해 위키링크 원장을 백필한 뒤 Neo4j `LINKED` 관계를 재구성합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
@@ -506,10 +506,11 @@ Commerce-Service는 EC2에서 수동으로 넣었던 `commerce_subscriptions.bil
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
-모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. 이 persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 대시보드 조회 자체는 더 이상 새 스냅샷을 쓰지 않습니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 오늘 날짜가 아직 `23:59 Asia/Seoul` 이전이면 관리자 화면은 persisted 이력만 보지 않고 live overview와 current-day monitoring overlay를 함께 새로고침해야 합니다.
 서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
 overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
 overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.
+`/api/v1/admin/monitoring/snapshots`는 과거 날짜에 대해서는 persisted row만 내려주고, 오늘 날짜의 persisted row가 아직 없으면 live KPI/active user/Kafka lag를 합성한 `persisted=false` current-day overlay row를 맨 앞에 함께 내려줍니다. `brainx-admin-next` 모니터링 화면은 이 목록과 overview를 주기적으로 다시 읽고, `새로고침` 버튼도 실제 API reload를 수행해야 합니다.
 관리자 모니터링 화면은 상단 선형 차트를 활성 사용자 추이로, 하단 막대 차트를 매출 분석으로 분리해 overview의 `activeUserTrend`와 `revenueTrend`를 각각 실데이터 그대로 사용합니다.
 overview summary는 결제/사용자 지표 외에 `Workspace-Service`의 `/internal/v1/workspace/monitoring/summary`를 통해 전체 노트 수, 총 저장량, 오늘 생성된 노트 수를 함께 내려줍니다. 관리자 모니터링의 Workspace 원장 카드와 일부 실시간 로그는 이 내부 API의 최근 활동 목록을 사용합니다.
 

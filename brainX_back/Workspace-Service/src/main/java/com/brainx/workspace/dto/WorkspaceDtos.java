@@ -139,10 +139,12 @@ public final class WorkspaceDtos {
     public record FavoriteData(String targetType, String targetId, boolean enabled) {
     }
 
-    public record NoteLinkCreateRequest(String targetNoteId, String targetTitle, @NotNull Boolean createIfMissing) {
+    public record NoteLinkCreateRequest(String targetNoteId, String targetTitle, @NotNull Boolean createIfMissing,
+                                        String anchorText, String headingAnchor) {
     }
 
-    public record NoteLinkData(String linkId, String sourceNoteId, String targetNoteId, String targetTitle) {
+    public record NoteLinkData(String linkId, String sourceNoteId, String targetNoteId, String targetTitle,
+                               String anchorText, String headingAnchor) {
     }
 
     public record BacklinksData(List<BacklinkItem> backlinks) {

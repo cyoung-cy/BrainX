@@ -385,7 +385,8 @@ export async function handleAdminMockRequest(request: Request, segments: string[
         kafkaConsumerGroupId: "intelligence-service",
         kafkaLagState: "HEALTHY",
         kafkaLagDetail: "현재 lag 1842 msgs",
-        capturedAt: now
+        capturedAt: now,
+        persisted: true
       }
     ]);
   }

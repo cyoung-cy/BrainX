@@ -121,12 +121,18 @@ public class Neo4jGraphProjection {
                         MERGE (source)-[r:LINKED {linkId: $linkId}]->(target)
                         SET r.sourceNoteId = $sourceNoteId,
                             r.targetNoteId = $targetNoteId,
+                            r.linkType = $linkType,
+                            r.anchorText = $anchorText,
+                            r.headingAnchor = $headingAnchor,
                             r.createdAt = $createdAt
                         """, params(
                         "userId", link.getUserId(),
                         "sourceNoteId", link.getSourceNoteId(),
                         "targetNoteId", link.getTargetNoteId(),
                         "linkId", link.getLinkId(),
+                        "linkType", link.getLinkType(),
+                        "anchorText", link.getAnchorText(),
+                        "headingAnchor", link.getHeadingAnchor(),
                         "createdAt", iso(link.getCreatedAt())
                 )).consume());
                 linkSuccessCount++;
@@ -254,6 +260,9 @@ public class Neo4jGraphProjection {
         String sourceNoteId = requiredString(payload, "sourceNoteId", null);
         String targetNoteId = requiredString(payload, "targetNoteId", null);
         String linkId = requiredString(payload, "linkId", null);
+        String linkType = stringOrDefault(payload, "linkType", "MANUAL");
+        String anchorText = nullableString(payload, "anchorText");
+        String headingAnchor = nullableString(payload, "headingAnchor");
         session.executeWrite(tx -> tx.run("""
                 MERGE (source:Note {userId: $userId, noteId: $sourceNoteId})
                 ON CREATE SET source.deleted = false
@@ -262,12 +271,18 @@ public class Neo4jGraphProjection {
                 MERGE (source)-[r:LINKED {linkId: $linkId}]->(target)
                 SET r.sourceNoteId = $sourceNoteId,
                     r.targetNoteId = $targetNoteId,
+                    r.linkType = $linkType,
+                    r.anchorText = $anchorText,
+                    r.headingAnchor = $headingAnchor,
                     r.createdAt = $occurredAt
                 """, params(
                 "userId", userId,
                 "sourceNoteId", sourceNoteId,
                 "targetNoteId", targetNoteId,
                 "linkId", linkId,
+                "linkType", linkType,
+                "anchorText", anchorText,
+                "headingAnchor", headingAnchor,
                 "occurredAt", iso(event.occurredAt())
         )).consume());
     }
@@ -350,12 +365,18 @@ public class Neo4jGraphProjection {
                             MERGE (source)-[r:LINKED {linkId: $linkId}]->(target)
                             SET r.sourceNoteId = $sourceNoteId,
                                 r.targetNoteId = $targetNoteId,
+                                r.linkType = $linkType,
+                                r.anchorText = $anchorText,
+                                r.headingAnchor = $headingAnchor,
                                 r.createdAt = $createdAt
                             """, params(
                             "userId", link.getUserId(),
                             "sourceNoteId", link.getSourceNoteId(),
                             "targetNoteId", link.getTargetNoteId(),
                             "linkId", link.getLinkId(),
+                            "linkType", link.getLinkType(),
+                            "anchorText", link.getAnchorText(),
+                            "headingAnchor", link.getHeadingAnchor(),
                             "createdAt", iso(link.getCreatedAt())
                     )).consume());
                     linkSuccessCount++;
@@ -390,7 +411,8 @@ public class Neo4jGraphProjection {
         }
     }
 
-    public void upsertManualLink(String userId, String sourceNoteId, String targetNoteId, String linkId, Instant createdAt) {
+    public void upsertManualLink(String userId, String sourceNoteId, String targetNoteId, String linkId,
+                                 String linkType, String anchorText, String headingAnchor, Instant createdAt) {
         Driver driver = driverProvider.getIfAvailable();
         if (!enabled) {
             log.info("[Neo4jGraphProjection] Neo4j is disabled by configuration (enabled=false). Skip upsertManualLink.");
@@ -409,6 +431,9 @@ public class Neo4jGraphProjection {
                 MERGE (source)-[r:LINKED {linkId: $linkId}]->(target)
                 SET r.sourceNoteId = $sourceNoteId,
                     r.targetNoteId = $targetNoteId,
+                    r.linkType = $linkType,
+                    r.anchorText = $anchorText,
+                    r.headingAnchor = $headingAnchor,
                     r.createdAt = $createdAt
                 """;
 
@@ -417,6 +442,9 @@ public class Neo4jGraphProjection {
                 "sourceNoteId", sourceNoteId,
                 "targetNoteId", targetNoteId,
                 "linkId", linkId,
+                "linkType", linkType,
+                "anchorText", anchorText,
+                "headingAnchor", headingAnchor,
                 "createdAt", iso(createdAt)
         );
 
