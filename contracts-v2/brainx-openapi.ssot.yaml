@@ -880,7 +880,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and the service startup may repair older environments by backfilling `MONTHLY` before serving reads.
+      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so older environments are repaired before serving reads.
       responses:
         '200':
           description: 성공
@@ -9472,6 +9472,7 @@ paths:
         reason: Commerce owns payment ledger
       x-produces-events: []
       x-async-boundary: false
+      x-implementation-note: Payment history relies on the Commerce checkout-session ledger, including the persisted `billingCycle` field on `commerce_checkout_sessions`. Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so admin payment tables do not silently fall back to empty data after schema drift.
       parameters:
       - name: status
         in: query

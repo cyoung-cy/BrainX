@@ -18,6 +18,11 @@ spring:
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:change_me}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+  sql:
+    init:
+      mode: always
+      schema-locations:
+        - classpath:db/migration/V20260701_01__repair_billing_cycle_columns.sql
   jpa:
     hibernate:
       ddl-auto: ${JPA_DDL_AUTO:update}
