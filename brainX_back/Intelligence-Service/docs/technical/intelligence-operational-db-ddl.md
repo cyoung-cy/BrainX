@@ -162,7 +162,9 @@ create table if not exists intelligence_chat_threads (
   document_group_id varchar(120) not null,
   title varchar(500) not null,
   model_id varchar(120) not null,
-  created_at timestamp(6) with time zone not null
+  created_at timestamp(6) with time zone not null,
+  archived_at timestamp(6) with time zone,
+  deleted_at timestamp(6) with time zone
 );
 
 create table if not exists intelligence_chat_messages (
@@ -263,6 +265,9 @@ create index if not exists idx_exploration_note_summaries_user_note
 
 create index if not exists idx_chat_threads_user_thread
   on intelligence_chat_threads (user_id, thread_id);
+
+create index if not exists idx_chat_threads_user_state_created
+  on intelligence_chat_threads (user_id, deleted_at, archived_at, created_at desc, thread_id desc);
 
 create index if not exists idx_chat_messages_user_thread_created
   on intelligence_chat_messages (user_id, thread_id, created_at, message_id);

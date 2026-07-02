@@ -517,6 +517,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -1047,6 +1048,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -1462,6 +1464,74 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+    delete:
+      operationId: cancelMyDeletion
+      summary: 회원 탈퇴 요청 취소
+      tags:
+      - Identity & Access
+      x-producer-service: identity-access
+      x-visibility: public
+      x-consumers:
+      - id: web.settings
+        type: frontend
+        description: 계정, 프로필, 보안 및 AI 설정 화면
+      x-produces-events:
+      - UserDeletionCancelled
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      type: object
+                      nullable: true
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/users/me/notifications:
     get:
       operationId: listMyNotifications
@@ -1528,73 +1598,6 @@ paths:
                   properties:
                     data:
                       $ref: '#/components/schemas/UserNotificationData'
-      security:
-      - bearerAuth: []
-    delete:
-      operationId: cancelMyDeletion
-      summary: 회원 탈퇴 요청 취소
-      tags:
-      - Identity & Access
-      x-producer-service: identity-access
-      x-visibility: public
-      x-consumers:
-      - id: web.settings
-        type: frontend
-        description: 계정, 프로필, 보안 및 AI 설정 화면
-      x-produces-events:
-      - UserDeletionCancelled
-      x-internal-sync-calls: []
-      x-async-boundary: false
-      responses:
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                allOf:
-                - $ref: '#/components/schemas/ApiSuccessBase'
-                - type: object
-                  required:
-                  - data
-                  properties:
-                    data:
-                      nullable: true
-        '400':
-          description: 잘못된 요청
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '401':
-          description: 인증 필요
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '403':
-          description: 권한 없음
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '404':
-          description: 찾을 수 없음
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '409':
-          description: 충돌
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '500':
-          description: 서버 내부 오류
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
   /api/v1/support/tickets:
@@ -2477,6 +2480,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
                       allOf:
                       - $ref: '#/components/schemas/NoteDraftData'
@@ -2865,6 +2869,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -3668,6 +3673,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -6002,6 +6008,16 @@ paths:
         schema:
           type: string
           description: 이전 응답의 nextCursor. 값은 opaque cursor로 취급한다.
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - active
+          - archived
+          default: active
+          description: active는 보관/삭제되지 않은 스레드, archived는 보관되었지만 삭제되지 않은 스레드를 조회한다.
       responses:
         '200':
           description: 성공
@@ -6271,6 +6287,151 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+    patch:
+      operationId: updateChatThread
+      summary: 채팅 스레드 상태 수정
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG 챗봇 UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatThreadUpdateRequest'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+    delete:
+      operationId: deleteChatThread
+      summary: 채팅 스레드 삭제
+      description: v1 삭제는 메시지와 스레드 row를 물리 삭제하지 않고 사용자 목록/조회에서 숨기는 soft-delete로 처리한다.
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG 챗봇 UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadDeleteData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
@@ -7700,6 +7861,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -8046,6 +8208,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -8205,6 +8368,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -11906,6 +12070,7 @@ components:
           enum:
           - false
         data:
+          type: object
           nullable: true
         message:
           type: string
@@ -12110,6 +12275,27 @@ components:
       - verificationCode
       - password
       - passwordConfirm
+      - consents
+      additionalProperties: false
+    OnboardingCompleteRequest:
+      type: object
+      properties:
+        onboardingToken:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+        interests:
+          type: array
+          items:
+            type: string
+        consents:
+          $ref: '#/components/schemas/ConsentFlags'
+      required:
+      - onboardingToken
+      - nickname
       - consents
       additionalProperties: false
     AuthTokenData:
@@ -13380,6 +13566,19 @@ components:
       - nodes
       - edges
       additionalProperties: false
+    GraphNodePosition:
+      type: object
+      properties:
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+      required:
+      - x
+      - y
+      additionalProperties: false
     GraphNodeData:
       type: object
       description: >
@@ -14235,6 +14434,14 @@ components:
       - title
       - modelId
       additionalProperties: false
+    ChatThreadUpdateRequest:
+      type: object
+      properties:
+        archived:
+          type: boolean
+      required:
+      - archived
+      additionalProperties: false
     ChatThreadData:
       type: object
       properties:
@@ -14249,12 +14456,34 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
       - threadId
       - documentGroupId
       - title
       - modelId
       - createdAt
+      - archivedAt
+      - deletedAt
+      additionalProperties: false
+    ChatThreadDeleteData:
+      type: object
+      properties:
+        threadId:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+      required:
+      - threadId
+      - deletedAt
       additionalProperties: false
     ChatThreadListItemData:
       type: object
@@ -14270,6 +14499,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
         lastMessageAt:
           type: string
           format: date-time
@@ -14285,6 +14522,8 @@ components:
       - title
       - modelId
       - createdAt
+      - archivedAt
+      - deletedAt
       - lastMessageAt
       - messageCount
       additionalProperties: false

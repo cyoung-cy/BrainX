@@ -12,7 +12,9 @@ export type InlineAssistRequest = Schemas["InlineAssistRequest"];
 export type AiSuggestionDecisionRequest = Schemas["AiSuggestionDecisionRequest"];
 export type AiSuggestionDecisionData = Schemas["AiSuggestionDecisionData"];
 export type ChatThreadCreateRequest = Schemas["ChatThreadCreateRequest"];
+export type ChatThreadUpdateRequest = Schemas["ChatThreadUpdateRequest"];
 export type ChatThreadData = Schemas["ChatThreadData"];
+export type ChatThreadDeleteData = Schemas["ChatThreadDeleteData"];
 export type ChatThreadListData = Schemas["ChatThreadListData"];
 export type ChatMessageCreateRequest = Schemas["ChatMessageCreateRequest"];
 export type ChatThreadDetailData = Schemas["ChatThreadDetailData"];
@@ -36,6 +38,8 @@ export type InlineAssistDoneEvent = {
 export type ChatMessageDoneEvent = {
   messageId: string;
 };
+
+export type ChatThreadListStatus = "active" | "archived";
 
 export type IntelligenceRequestOptions = {
   idempotencyKey?: string;
@@ -238,7 +242,7 @@ export function createChatThread(payload: ChatThreadCreateRequest, options?: Int
 }
 
 export function listChatThreads(
-  params: { limit?: number; cursor?: string | null } = {},
+  params: { limit?: number; cursor?: string | null; status?: ChatThreadListStatus } = {},
   options?: IntelligenceRequestOptions
 ) {
   const searchParams = new URLSearchParams();
@@ -247,6 +251,9 @@ export function listChatThreads(
   }
   if (params.cursor) {
     searchParams.set("cursor", params.cursor);
+  }
+  if (params.status) {
+    searchParams.set("status", params.status);
   }
   const query = searchParams.toString();
   return authedRequest<ChatThreadListData>(
@@ -272,6 +279,31 @@ export function getChatThread(threadId: string, options?: IntelligenceRequestOpt
   return authedRequest<ChatThreadDetailData>(
     `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
     undefined,
+    options
+  );
+}
+
+export function updateChatThread(
+  threadId: string,
+  payload: ChatThreadUpdateRequest,
+  options?: IntelligenceRequestOptions
+) {
+  return authedRequest<ChatThreadData>(
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function deleteChatThread(threadId: string, options?: IntelligenceRequestOptions) {
+  return authedRequest<ChatThreadDeleteData>(
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    {
+      method: "DELETE",
+    },
     options
   );
 }
