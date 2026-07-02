@@ -2320,6 +2320,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 채팅 스레드를 찾을 수 없거나 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 보관된 채팅 스레드에는 새 메시지를 전송할 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: 서버 내부 오류
           content:

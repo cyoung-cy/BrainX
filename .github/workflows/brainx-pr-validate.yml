@@ -71,6 +71,16 @@ jobs:
           backend_services = [service for service in services if service.endswith("-service")]
 
           contracts_changed = any(path.startswith("contracts-v2/") for path in changed_files)
+          if contracts_changed:
+              backend_services = sorted(set(backend_services) | {
+                  "gateway-service",
+                  "user-service",
+                  "workspace-service",
+                  "ingestion-service",
+                  "commerce-service",
+                  "admin-service",
+                  "intelligence-service",
+              })
           deploy_config_changed = any(
               path.startswith(".github/workflows/")
               or path.startswith("infra/aws-dev/")

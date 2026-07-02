@@ -324,7 +324,7 @@ export interface components {
         ApiErrorResponse: {
             /** @enum {boolean} */
             success: false;
-            data?: unknown;
+            data?: Record<string, never> | null;
             message: string;
             error?: {
                 code: string;

@@ -458,8 +458,9 @@ export function ChatScreen() {
     }
   }
 
-  async function loadThreadPage(reset = false) {
+  async function loadThreadPage(reset = false, statusOverride?: ChatThreadListStatus) {
     if (threadsLoading) return;
+    const status = statusOverride ?? threadStatus;
     setThreadsLoading(true);
     if (reset) {
       setThreads([]);
@@ -470,7 +471,7 @@ export function ChatScreen() {
       const data = await listChatThreads({
         limit: THREAD_PAGE_SIZE,
         cursor: reset ? null : threadCursor,
-        status: threadStatus
+        status
       });
       setThreads((current) => (reset ? data.threads : [...current, ...data.threads]));
       setThreadCursor(data.pagination.nextCursor ?? null);
@@ -601,8 +602,9 @@ export function ChatScreen() {
     try {
       let thread = activeThread;
       if (!thread) {
+        const targetStatus: ChatThreadListStatus = "active";
         if (threadStatus !== "active") {
-          setThreadStatus("active");
+          setThreadStatus(targetStatus);
         }
         thread = await createChatThread({
           title: threadTitleFromQuestion(trimmed),
@@ -650,12 +652,12 @@ export function ChatScreen() {
       );
 
       if (streamError) {
-        await loadThreadPage(true);
+        await loadThreadPage(true, "active");
         return;
       }
 
       await refreshActiveThread(thread.threadId);
-      await loadThreadPage(true);
+      await loadThreadPage(true, "active");
     } catch (error) {
       setMessages((current) => current.map((message) => (
         message.id === assistantId
