@@ -26,6 +26,8 @@ The imported Spring Boot monitor dashboard expects each service to publish an `a
 
 The dashboard also expects Micrometer's extra JVM binders for some of the JVM and process panels. We keep `io.github.mweirauch:micrometer-jvm-extras:0.2.2` on `User-Service`, `Gateway-Service`, and `Workspace-Service` so the panels do not fall back to `N/A` when those meters are queried.
 
+The Grafana dashboard itself is also provisioned from this repository now, so the `spring_boot_21` dashboard UID points directly at the provisioned Prometheus datasource instead of depending on the UI import placeholder `${DS_PROMETHEUS}`. This avoids the `Datasource ${DS_PROMETHEUS} was not found` error and keeps the dashboard stable after redeploys.
+
 `Gateway-Service` must allow `/actuator/prometheus` through its global auth filter, otherwise Prometheus receives `401 Unauthorized` when it scrapes the gateway target.
 
 `Admin-Service` talks to `user-service`, `commerce-service`, `workspace-service`, `ingestion-service`, and `intelligence-service` through Docker DNS names inside the shared compose network. Do not leave those URLs on the container defaults of `localhost`, or the admin screens will fail as soon as they try to read another service's data.
