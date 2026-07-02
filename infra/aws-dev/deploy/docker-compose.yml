@@ -261,6 +261,7 @@ services:
       WORKSPACE_SERVICE_URL: http://workspace-service:8082
       INGESTION_SERVICE_URL: http://ingestion-service:8083
       INTELLIGENCE_SERVICE_URL: http://intelligence-service:8086
+      MCP_SERVICE_URL: http://mcp-service:8087
       SEED_ADMIN_LOGIN_ID: ${SEED_ADMIN_LOGIN_ID:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-BrainX Admin}

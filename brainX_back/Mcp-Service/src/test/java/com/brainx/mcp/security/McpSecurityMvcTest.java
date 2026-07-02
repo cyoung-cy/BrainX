@@ -99,6 +99,18 @@ class McpSecurityMvcTest {
     }
 
     @Test
+    void apiKeyAuthenticationWinsWhenBrowserJwtHeaderIsAlsoPresent() throws Exception {
+        String apiKey = createApiKey();
+
+        mockMvc.perform(get("/api/v1/mcp/whoami")
+                .header("X-BrainX-Api-Key", apiKey)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + JwtTestTokens.accessToken(SECRET, "usr_1")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.userId").value("usr_1"))
+            .andExpect(jsonPath("$.data.clientId", startsWith("mcp_")));
+    }
+
+    @Test
     void mcpEndpointIsProtected() throws Exception {
         mockMvc.perform(post("/mcp")
                 .contentType(MediaType.APPLICATION_JSON)

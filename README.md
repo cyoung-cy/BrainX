@@ -347,6 +347,7 @@ docker compose --profile apps up -d --build admin-service
 `JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`, `MCP_DB_NAME`으로 관리합니다.
 Admin-Service는 관리자 시드용 `SEED_ADMIN_LOGIN_ID`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`도 `../env/admin-service.env`에서 함께 읽습니다.
 Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=postgres`를 자동으로 덮어씁니다. 로컬 Gradle/IDE 실행은 `.env`의 `POSTGRES_HOST=localhost`를 그대로 사용합니다.
+기존 `brainx_postgres_data` 볼륨이 있는 개발 환경에서도 새 논리 DB가 누락되지 않도록 `apps` 프로필은 `postgres-service-databases` one-shot 컨테이너로 DB 생성 스크립트를 매번 idempotent하게 확인한 뒤 앱 컨테이너를 시작합니다.
 
 기본 DB 접속 정보:
 
@@ -522,7 +523,7 @@ Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing rea
 Commerce-Service는 EC2에서 수동으로 넣었던 `commerce_subscriptions.billing_cycle`, `commerce_checkout_sessions.billing_cycle`, `commerce_checkout_sessions_status_check` 보정을 `src/main/resources/db/migration/V20260701_01__repair_billing_cycle_columns.sql`로 추적합니다. Spring SQL init가 이 migration SQL을 JPA schema update보다 먼저 적용해 오래된 운영 DB도 같은 스키마 보정을 따라가게 했습니다.
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
-모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
+모니터링 서비스 체크에는 `Intelligence-Service`와 `Mcp-Service`도 포함해 AI/MCP 응답과 지연을 실제 health probe 기준으로 보여 줍니다.
 모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 오늘 날짜가 아직 `23:59 Asia/Seoul` 이전이면 관리자 화면은 persisted 이력만 보지 않고 live overview와 current-day monitoring overlay를 함께 새로고침해야 합니다.
 서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
 overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
