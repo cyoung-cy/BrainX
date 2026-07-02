@@ -174,7 +174,7 @@ BrainX/
 | User-Service | 채영 | 사용자 신원, 인증, 로그인/회원가입/온보딩, 계정 보안, 동의, 마이페이지, 노트 사용 통계, 로그인 세션 Redis 기록 | 구현 중 (포트 8080) |
 | Admin-Service | 채영 | 관리자 페이지, 사용자 관리, 결제 관리, 환불, 모니터링, 사용자 통계, 문의 답장, 모델별 LLM 토큰 소비량 | API shell 구현 중 (포트 8085) |
 | Intelligence-Service | 영진 | 시맨틱 검색, RAG, LLM 호출, AI 추천, 요약, 토큰 사용량 service 처리 | 구현 중 (포트 8086) |
-| Mcp-Service | 미정 | 외부 agent/MCP client용 API key 발급/검증, MCP Streamable HTTP endpoint, agent tool gateway | 인증 v1 구현 중 (포트 8087) |
+| Mcp-Service | 미정 | 외부 agent/MCP client용 API key 발급/검증, MCP Streamable HTTP endpoint, agent note tool gateway | API key 및 노트 tool v1 구현 중 (포트 8087) |
 | Ingestion-Service | 환유 | 파일 처리, 변환, 가져오기, 내보내기, 외부 연동 | 구현 중 (포트 8083) |
 | Commerce-Service | 환유 | 결제 API, 플랜, 구독/상품 관리 | 구현 중 (포트 8084) — Toss Payments 결제, 플랜 조회/변경/취소 |
 | Workspace-Service | 예진, 진주, 채영 | 노트, 폴더, 링크, 그래프, 지식 워크스페이스 원장 | 구현 중 (포트 8082) — 노트/폴더/링크/그래프/공유 API |
@@ -211,10 +211,25 @@ MCP client용 API key 관리는 `POST|GET /api/v1/mcp/api-clients`, `DELETE /api
 
 MCP v1은 별도 OAuth 없이 사용자 access token으로 scoped API key를 발급한 뒤 agent가 그 key를 사용합니다.
 
-1. 사용자 JWT로 `POST /api/v1/mcp/api-clients`에 `{ "name": "...", "scopes": ["whoami"] }`를 보내 `apiKeyOnce`를 발급합니다.
+1. 사용자 JWT로 `POST /api/v1/mcp/api-clients`에 `{ "name": "...", "scopes": ["whoami", "notes:read", "ai:search", "notes:write"] }`를 보내 `apiKeyOnce`를 발급합니다.
 2. `apiKeyOnce`는 한 번만 표시되므로 안전한 password manager에 저장합니다. DB에는 원문 대신 hash만 저장됩니다.
 3. 검증은 `GET /api/v1/mcp/whoami`에 `Authorization: Bearer bxk_live_...` 또는 `X-BrainX-Api-Key: bxk_live_...`를 보내 확인합니다.
-4. MCP Inspector나 agent client는 `https://<public-domain>/mcp`에 Bearer API key로 연결한 뒤 `brainx_whoami` tool을 호출합니다.
+4. MCP Inspector나 agent client는 `https://<public-domain>/mcp`에 Bearer API key로 연결한 뒤 MCP tool catalog를 통해 도구를 호출합니다. REST `/api/v1/mcp/tools`와 `/api/v1/mcp/tool-calls`는 compatibility 계약으로 남아 있고 Codex v1 연동은 `/mcp` transport를 사용합니다.
+
+MCP v1 tool:
+
+- `brainx_whoami`: API key의 `userId`, `clientId`, `scopes` 확인
+- `brainx_search_notes`: Intelligence semantic search 기반 노트 검색, `notes:read` + `ai:search` 필요
+- `brainx_get_note`: Workspace 노트 단건 조회, `notes:read` 필요
+- `brainx_create_note`: Workspace 새 노트 생성, `notes:write` 필요
+
+Codex Streamable HTTP 설정 예시:
+
+```toml
+[mcp_servers.brainx]
+url = "https://<public-domain>/mcp"
+bearer_token_env_var = "BRAINX_MCP_API_KEY"
+```
 
 공통 응답 기본형:
 

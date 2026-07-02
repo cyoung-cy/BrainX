@@ -217,6 +217,9 @@ services:
       POSTGRES_HOST: postgres
       MCP_DB_NAME: ${MCP_DB_NAME:-brainx_mcp}
       JWT_SECRET: ${JWT_SECRET:-replace_with_at_least_32_byte_secret}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-local-service-token}
+      WORKSPACE_SERVICE_URL: http://workspace-service:8082
+      INTELLIGENCE_SERVICE_URL: http://intelligence-service:8086
     ports:
       - "8087:8087"
     depends_on:
