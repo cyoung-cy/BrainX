@@ -9,12 +9,13 @@
 - Database: one RDS PostgreSQL instance, service-specific logical databases
 - Object storage: private S3 bucket for future user assets, note images, and attachments
 - Container runtime on EC2:
-  - `gateway-service`, `user-service`, `workspace-service`, `ingestion-service`, `commerce-service`, `admin-service`, `intelligence-service`
+  - `gateway-service`, `user-service`, `workspace-service`, `ingestion-service`, `commerce-service`, `admin-service`, `intelligence-service`, `mcp-service`
   - `frontend`, `admin-frontend`
   - `prometheus`, `grafana`, `redis`, `neo4j`, `qdrant`, `kafka`, `caddy`
 - Public entry:
   - user frontend: `https://<public-domain>/`
   - admin frontend: `https://<admin-domain>/`
+  - `/mcp*`, `/api/v1/mcp/*` route directly to Mcp-Service through Caddy.
   - Grafana: `https://<admin-domain>/grafana/`
   - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary`, `/api/v1/users/me/style-profile` route directly to Intelligence-Service through Caddy.
   - other `/api/v1/*` routes go to Gateway-Service.
@@ -167,11 +168,15 @@ Workflow: `.github/workflows/brainx-dev-deploy.yml`
 
 - Push to `main` detects changed paths and builds only affected images.
 - `workflow_dispatch` can deploy all services or a specific service list.
+- Workflow-level concurrency serializes AWS dev deploys with `group: brainx-dev-deploy` and `cancel-in-progress: false`.
 - Image tags:
   - immutable: commit SHA
   - moving: `dev-latest`
+- Docker build cache uses Docker Buildx GitHub Actions cache with one scope per service. The first build for a service can miss, and later builds reuse cache layers across GitHub-hosted runners.
 - Deploy uses SSM `AWS-RunShellScript`; no SSH key or port 22 is required.
-- Remote deploy prints SSM stdout/stderr, `docker compose ps`, and endpoint checks.
+- Remote deploy reads SSM parameters in one batch, skips repeated database bootstrap after the first successful run for the current RDS target, and avoids image pulls for config-only deploys.
+- Remote deploy prints SSM stdout/stderr, `docker compose ps`, and endpoint checks. GitHub endpoint verification is limited to the changed service categories.
+- For deploy overlap or endpoint verification failures, use [`troubleshooting.md`](troubleshooting.md).
 
 Path mapping:
 
@@ -184,9 +189,10 @@ Path mapping:
 | `brainX_back/Commerce-Service/**` | `commerce-service` |
 | `brainX_back/Admin-Service/**` | `admin-service` |
 | `brainX_back/Intelligence-Service/**` | `intelligence-service` |
+| `brainX_back/Mcp-Service/**` | `mcp-service` |
 | `brainx-next/**` | `frontend` |
 | `brainx-admin-next/**` | `admin-frontend` |
-| `contracts-v2/**` | `intelligence-service`, `frontend` |
+| `contracts-v2/**` | `intelligence-service`, `mcp-service`, `frontend` |
 | `infra/aws-dev/**` or workflow file | deploy config refresh |
 
-For first deployment, run the workflow manually with `deploy_all=true` so every ECR image exists before partial deployments start.
+For first deployment after adding Mcp-Service, run Terraform apply first so the `brainx-dev-mcp-service` ECR repository exists, then run the workflow manually with `deploy_all=true` so every ECR image exists before partial deployments start.
