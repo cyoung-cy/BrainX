@@ -33,7 +33,7 @@ import {
   MoveRight,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { MockFolder, MockNote } from "@/lib/notes/noteTypes";
+import { MockFolder, MockNote, type SortOption, type SortDirection, sortNotes, sortFolders } from "@/lib/notes/noteTypes";
 import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
 import { CollapseChevron } from "./CollapseChevron";
 import { HoverInfoCard } from "./HoverInfoCard";
@@ -69,20 +69,23 @@ interface FolderTreeItem {
   children: FolderTreeItem[];
 }
 
-function noteNewestFirst(a: MockNote, b: MockNote) {
-  const at = Math.max(a.createdAt, a.updatedAt);
-  const bt = Math.max(b.createdAt, b.updatedAt);
-  return bt - at;
-}
-
-function buildTree(folders: MockFolder[], notes: MockNote[], parentId: string | null): FolderTreeItem[] {
-  return folders
-    .filter((f) => f.parentFolderId === parentId)
-    .map((folder) => ({
-      folder,
-      notes: notes.filter((n) => n.folderId === folder.id).sort(noteNewestFirst),
-      children: buildTree(folders, notes, folder.id),
-    }));
+/* 폴더트리 정렬 — NotesExplorer 상단의 정렬 드롭다운(sortBy)과 동일한 기준을 공유한다(sortNotes/
+   sortFolders, lib/notes/noteTypes.ts). 형제(같은 depth) 안에서만 정렬하고, 하위 폴더도 재귀적으로
+   같은 기준을 적용한다 — "폴더 먼저, 그 아래 노트" 배치 자체는 건드리지 않는다. */
+function buildTree(
+  folders: MockFolder[],
+  notes: MockNote[],
+  parentId: string | null,
+  sortBy: SortOption,
+  favorites: Set<string>,
+  direction: SortDirection
+): FolderTreeItem[] {
+  const siblingFolders = sortFolders(folders.filter((f) => f.parentFolderId === parentId), sortBy, favorites, direction);
+  return siblingFolders.map((folder) => ({
+    folder,
+    notes: sortNotes(notes.filter((n) => n.folderId === folder.id), sortBy, favorites, direction),
+    children: buildTree(folders, notes, folder.id, sortBy, favorites, direction),
+  }));
 }
 
 /* 드래그 중 표시할 인디케이터 */
@@ -112,6 +115,9 @@ interface FolderTreeProps {
   onChangeFolderColor: (folderId: string, color: string) => void;
   onToggleFolderFavorite: (folderId: string) => void;
   favorites?: Set<string>;
+  /** NotesExplorer 상단 정렬 드롭다운의 현재 값 — 폴더트리도 같은 기준으로 정렬한다. */
+  sortBy?: SortOption;
+  sortDirection?: SortDirection;
   onToggleNoteFavorite?: (noteId: string) => void;
   onRenameNote?: (noteId: string, newTitle: string) => void;
   onDragStart: (noteId: string) => void;
@@ -147,6 +153,8 @@ export default function FolderTree({
   onChangeFolderColor,
   onToggleFolderFavorite,
   favorites = EMPTY_FAVORITES,
+  sortBy = "modified",
+  sortDirection = "desc",
   onToggleNoteFavorite,
   onRenameNote,
   onDragStart,
@@ -160,11 +168,14 @@ export default function FolderTree({
   onRequestDelete,
   onMoveItems,
 }: FolderTreeProps) {
-  const tree = buildTree(folders, notes, null);
+  const tree = useMemo(
+    () => buildTree(folders, notes, null, sortBy, favorites, sortDirection),
+    [folders, notes, sortBy, favorites, sortDirection]
+  );
   const folderIds = useMemo(() => new Set(folders.map((folder) => folder.id)), [folders]);
   const rootNotes = useMemo(
-    () => notes.filter((note) => !note.folderId || !folderIds.has(note.folderId)).sort(noteNewestFirst),
-    [notes, folderIds]
+    () => sortNotes(notes.filter((note) => !note.folderId || !folderIds.has(note.folderId)), sortBy, favorites, sortDirection),
+    [notes, folderIds, sortBy, favorites, sortDirection]
   );
 
   /* DnD */
@@ -236,29 +247,6 @@ export default function FolderTree({
       onDragCancel={handleDragCancel}
     >
       <div className="py-1">
-        {rootNotes.map((note) => (
-          <NoteRow
-            key={note.id}
-            note={note}
-            depth={0}
-            isActive={note.id === activeNoteId}
-            isSelected={selectedIds.has(note.id)}
-            selectedIds={selectedIds}
-            activeDrag={activeDrag}
-            overIndicator={overIndicator}
-            onNoteClick={onNoteClick}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onRequestDelete={onRequestDelete}
-            isFavorite={favorites.has(note.id)}
-            onToggleFavorite={() => onToggleNoteFavorite?.(note.id)}
-            onRenameNote={onRenameNote}
-            onItemClick={onItemClick}
-            folders={folders}
-            onMoveItems={onMoveItems}
-          />
-        ))}
-
         {tree.map((item) => (
           <FolderNode
             key={item.folder.id}
@@ -282,6 +270,29 @@ export default function FolderTree({
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             selectedIds={selectedIds}
+            onItemClick={onItemClick}
+            folders={folders}
+            onMoveItems={onMoveItems}
+          />
+        ))}
+
+        {rootNotes.map((note) => (
+          <NoteRow
+            key={note.id}
+            note={note}
+            depth={0}
+            isActive={note.id === activeNoteId}
+            isSelected={selectedIds.has(note.id)}
+            selectedIds={selectedIds}
+            activeDrag={activeDrag}
+            overIndicator={overIndicator}
+            onNoteClick={onNoteClick}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onRequestDelete={onRequestDelete}
+            isFavorite={favorites.has(note.id)}
+            onToggleFavorite={() => onToggleNoteFavorite?.(note.id)}
+            onRenameNote={onRenameNote}
             onItemClick={onItemClick}
             folders={folders}
             onMoveItems={onMoveItems}
@@ -863,29 +874,6 @@ function FolderNode({
             </div>
           )}
 
-          {item.notes.map((note) => (
-            <NoteRow
-              key={note.id}
-              note={note}
-              depth={depth + 1}
-              isActive={note.id === activeNoteId}
-              isSelected={selectedIds.has(note.id)}
-              selectedIds={selectedIds}
-              activeDrag={activeDrag}
-              overIndicator={overIndicator}
-              onNoteClick={onNoteClick}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onRequestDelete={onRequestDelete}
-              isFavorite={favorites.has(note.id)}
-              onToggleFavorite={() => onToggleNoteFavorite(note.id)}
-              onRenameNote={onRenameNote}
-              onItemClick={onItemClick}
-              folders={folders}
-              onMoveItems={onMoveItems}
-            />
-          ))}
-
           {item.children.map((child) => (
             <FolderNode
               key={child.folder.id}
@@ -909,6 +897,29 @@ function FolderNode({
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               selectedIds={selectedIds}
+              onItemClick={onItemClick}
+              folders={folders}
+              onMoveItems={onMoveItems}
+            />
+          ))}
+
+          {item.notes.map((note) => (
+            <NoteRow
+              key={note.id}
+              note={note}
+              depth={depth + 1}
+              isActive={note.id === activeNoteId}
+              isSelected={selectedIds.has(note.id)}
+              selectedIds={selectedIds}
+              activeDrag={activeDrag}
+              overIndicator={overIndicator}
+              onNoteClick={onNoteClick}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onRequestDelete={onRequestDelete}
+              isFavorite={favorites.has(note.id)}
+              onToggleFavorite={() => onToggleNoteFavorite(note.id)}
+              onRenameNote={onRenameNote}
               onItemClick={onItemClick}
               folders={folders}
               onMoveItems={onMoveItems}

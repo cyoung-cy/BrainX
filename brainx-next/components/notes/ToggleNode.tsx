@@ -1,8 +1,9 @@
 "use client";
 
-import { Node, mergeAttributes, InputRule } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Node, mergeAttributes, InputRule, type Editor } from "@tiptap/core";
+import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import type { ResolvedPos } from "@tiptap/pm/model";
 import { ReactNodeViewRenderer, NodeViewWrapper, NodeViewContent, type NodeViewProps } from "@tiptap/react";
 import React, { useEffect, useRef, useState } from "react";
 
@@ -27,26 +28,112 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
      summary를 넣지 않아도 되게 하기 위함(아래 두 번째 useEffect 참고). */
   const summaryRef = useRef(summary);
   summaryRef.current = summary;
+  /* focusTitleInput()이 요청한 caret 위치 — 아래 useEffect(focusRequest 의존)가 커밋 이후에 실제
+     focus()/setSelectionRange()를 수행할 때 참조한다. */
+  const pendingCaretRef = useRef<"start" | "end">("end");
+  const [focusRequest, setFocusRequest] = useState(0);
 
   const toggleOpen = () => updateAttributes({ open: !isOpen });
 
-  /* 제목 입력창을 열고 실제 브라우저 포커스까지 가져온다 — 커서를 텍스트 끝에 둔다.
-     input의 `autoFocus` prop만으로는 이 NodeView가 setTimeout 등 React 커밋 바깥의 타이밍에
-     마운트/갱신될 때 실제 포커스가 보장되지 않는 경우가 있었다(화면에는 입력창이 보이지만
-     실제로는 포커스가 없어 바로 타이핑이 안 되는 문제) — ref로 직접 focus()/setSelectionRange()를
-     호출해 확실하게 포커스를 가져온다. */
-  const focusTitleInput = (draft: string) => {
+  /* 제목 입력창을 열고 실제 브라우저 포커스까지 가져온다. caret이 "start"면 맨 앞(위/앞에서 내려온
+     경우), "end"(기본값)면 맨 뒤(아래/뒤에서 올라온 경우, 또는 Backspace로 되돌아온 경우)에 둔다.
+     setTimeout으로 포커스를 미루면 React가 실제로 <input>을 커밋하기 전에 실행될 수 있어(레이스,
+     실제 확인됨 — inputRef.current가 null인 채로 실행됨) focus가 씹히는 문제가 있었다. 대신
+     focusRequest를 증가시켜 아래 useEffect가 "이 컴포넌트의 커밋이 끝난 뒤"(React가 보장하는
+     시점)에 focus를 수행하게 한다 — editingSummary가 이미 true였던 경우(예: 이미 편집 중인 제목에
+     다시 caret만 옮기는 경우)에도 focusRequest 값 자체가 매번 바뀌므로 effect가 반드시 재실행된다. */
+  const focusTitleInput = (draft: string, caret: "start" | "end" = "end") => {
     setSummaryDraft(draft);
     setEditingSummary(true);
-    // setTimeout(0)으로 다음 매크로태스크까지 미룬다 — requestAnimationFrame은 이 커밋 직후
-    // 바로 실행되지 않아 포커스가 안 잡히는 경우가 있었다(실제 확인됨).
-    setTimeout(() => {
-      const el = inputRef.current;
-      if (!el) return;
-      el.focus();
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    }, 0);
+    pendingCaretRef.current = caret;
+    setFocusRequest((n) => n + 1);
+  };
+
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    // insertContentAt로 막 삽입된 형제 토글처럼, 같은 트랜잭션에서 다른 상태 변경(예: 이전
+    // 토글의 setEditingSummary(false))과 겹치는 경우 inputRef.current가 이미 DOM에서 떨어져나간
+    // (isConnected === false) 엘리먼트를 가리킬 때가 실제로 있다 — ReactNodeViewRenderer가 이
+    // 토글 삽입 트랜잭션 처리 중 이 NodeView를 한 번 더 재구성하면서, React ref가 방금 떨어져나간
+    // 이전 인스턴스의 <input>을 붙든 채로 effect가 실행되는 경우가 확인됨(실제 재현 — hasEl:true,
+    // isConnected:false인데 같은 클래스의 "연결된" <input>이 DOM에 따로 존재). 그래서 React ref를
+    // 신뢰하는 대신, ProseMirror가 이 노드의 현재 포지션에 대해 실제로 붙들고 있는 DOM을
+    // view.nodeDOM(pos)로 직접 조회해 항상 "지금 화면에 있는" 엘리먼트를 찾는다. requestAnimationFrame은
+    // 백그라운드/비활성 탭에서 아예 멈출 수 있어(재현 확인됨 — 첫 시도 이후 콜백이 전혀 안 옴)
+    // setTimeout으로 짧게 재시도한다. */
+    let attempts = 0;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const tryFocus = () => {
+      const pos = typeof getPos === "function" ? getPos() : undefined;
+      const nodeDom = typeof pos === "number" ? editor.view.nodeDOM(pos) : null;
+      const container = nodeDom instanceof HTMLElement ? nodeDom : null;
+      const el = container?.querySelector<HTMLInputElement>(".brainx-toggle__summary-input") ?? null;
+      if (el && el.isConnected) {
+        el.focus();
+        const p = pendingCaretRef.current === "start" ? 0 : el.value.length;
+        el.setSelectionRange(p, p);
+        return;
+      }
+      attempts += 1;
+      if (attempts >= 10) return;
+      timerId = setTimeout(tryFocus, 16);
+    };
+    tryFocus();
+    return () => {
+      if (timerId !== null) clearTimeout(timerId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest]);
+
+  /* 화살표 키로 제목 ↔ 이웃 블록을 이동한다(Notion처럼 토글도 일반 블록처럼 화살표로 지나갈 수
+     있어야 함). 제목은 문서 content가 아닌 별도 <input>이라 ProseMirror의 커서 이동이 알지 못하므로,
+     여기서 "이 토글의 앞/뒤에 뭐가 있는지"를 직접 계산해서 옮겨준다. */
+  const moveToPreviousBlock = () => {
+    const pos = typeof getPos === "function" ? getPos() : undefined;
+    if (typeof pos !== "number") return;
+    const $pos = editor.state.doc.resolve(pos);
+    const parent = $pos.parent;
+    const indexInParent = $pos.index();
+    if (indexInParent === 0) return; // 이 레벨에 이전 형제가 없음 — 문서 시작 등, 그대로 둔다
+    const prevSibling = parent.child(indexInParent - 1);
+    const prevPos = pos - prevSibling.nodeSize;
+    if (prevSibling.type.name === "toggleNode") {
+      if (prevSibling.attrs.open) {
+        // 펼쳐진 토글이면 본문 마지막 줄 끝으로 — 접힌 토글일 때만 제목으로 간다
+        const doc = editor.state.doc;
+        const $near = doc.resolve(Math.max(0, pos - 1));
+        const sel = Selection.near($near, -1);
+        editor.view.dispatch(editor.state.tr.setSelection(sel).scrollIntoView());
+        editor.view.focus();
+        return;
+      }
+      editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: prevPos, caret: "end" } }));
+      return;
+    }
+    // 일반 블록 → 그 블록의 끝(텍스트 마지막)으로 커서를 옮긴다
+    const $end = editor.state.doc.resolve(prevPos + prevSibling.nodeSize - 1);
+    editor.chain().focus().setTextSelection($end.pos).run();
+  };
+
+  const moveToNextBlockOrBody = () => {
+    const pos = typeof getPos === "function" ? getPos() : undefined;
+    if (typeof pos !== "number") return;
+    if (isOpen) {
+      // 펼쳐진 상태면 본문 첫 줄 맨 앞으로 이동
+      editor.chain().focus().setTextSelection(pos + 2).run();
+      return;
+    }
+    const currentNode = editor.state.doc.nodeAt(pos);
+    if (!currentNode) return;
+    const afterPos = currentNode ? pos + currentNode.nodeSize : pos;
+    const $after = editor.state.doc.resolve(Math.min(afterPos, editor.state.doc.content.size));
+    const nextNode = $after.nodeAfter;
+    if (!nextNode) return; // 문서 끝
+    if (nextNode.type.name === "toggleNode") {
+      editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: afterPos, caret: "start" } }));
+      return;
+    }
+    editor.chain().focus().setTextSelection(afterPos + 1).run();
   };
 
   /* 방금 Enter로 생성된 형제 토글이면 마운트 직후 곧바로 제목 편집 모드로 연다(Notion처럼 다음 줄에
@@ -72,11 +159,11 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
   useEffect(() => {
     const target = editor.view.dom;
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ pos: number }>).detail;
+      const detail = (e as CustomEvent<{ pos: number; caret?: "start" | "end" }>).detail;
       const pos = typeof getPos === "function" ? getPos() : undefined;
       if (typeof pos !== "number" || detail.pos !== pos) return;
       setTimeout(() => {
-        focusTitleInput(summaryRef.current);
+        focusTitleInput(summaryRef.current, detail.caret ?? "end");
       }, 0);
     };
     target.addEventListener(FOCUS_TITLE_EVENT, handler);
@@ -146,7 +233,10 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
     setSummaryDraft(trimmed);
   };
 
-  /* 제목이 비어있는 상태에서 Backspace → 토글을 일반 문단으로 되돌린다 */
+  /* 제목이 비어있는 상태에서 Backspace → 토글을 일반 문단으로 되돌린다.
+     화살표 키: 제목은 항상 한 줄이라 Up/Down은 무조건 이웃 블록으로 이동, Left/Right는 커서가
+     텍스트 맨 앞/끝에 있을 때만(선택 없이) 이웃 블록으로 넘어간다 — 그 외에는 입력창 안에서의
+     기본 커서 이동을 그대로 쓴다. */
   const handleSummaryKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -158,6 +248,26 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
     } else if (e.key === "Backspace" && summaryDraft === "") {
       e.preventDefault();
       convertToParagraph();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveToPreviousBlock();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveToNextBlockOrBody();
+    } else if (
+      e.key === "ArrowLeft" &&
+      e.currentTarget.selectionStart === 0 &&
+      e.currentTarget.selectionEnd === 0
+    ) {
+      e.preventDefault();
+      moveToPreviousBlock();
+    } else if (
+      e.key === "ArrowRight" &&
+      e.currentTarget.selectionStart === e.currentTarget.value.length &&
+      e.currentTarget.selectionEnd === e.currentTarget.value.length
+    ) {
+      e.preventDefault();
+      moveToNextBlockOrBody();
     }
   };
 
@@ -178,7 +288,9 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
         {editingSummary && editor.isEditable ? (
           <input
             ref={inputRef}
-            autoFocus
+            // autoFocus를 쓰지 않는다 — 이 컴포넌트는 focusTitleInput()에서 직접 caret 위치를
+            // 지정해 focus()/setSelectionRange()를 호출하는데, autoFocus의 브라우저 기본 포커스
+            // 시점이 그 직후에 겹쳐서 caret이 "start"로 지정해도 다시 끝으로 밀리는 문제가 있었다.
             className="brainx-toggle__summary-input"
             value={summaryDraft}
             placeholder={TOGGLE_SUMMARY_PLACEHOLDER}
@@ -207,6 +319,77 @@ function ToggleNodeView({ node, updateAttributes, editor, getPos }: NodeViewProp
       )}
     </NodeViewWrapper>
   );
+}
+
+/* ── 화살표 키로 토글 경계를 넘나들기 위한 헬퍼 ──────────────
+   커서가 현재 textblock 경계(줄바꿈 중간이 아니라 진짜 블록 끝/시작)에 있을 때만 호출된다.
+   "토글이 직접 관련될 때만" true를 반환해 리스트/표 등 다른 중첩 구조의 화살표 이동은 건드리지
+   않는다 — 안전 범위를 좁게 유지하기 위해 조상을 한 단계(문단의 바로 위 부모)만 살펴본다. */
+function exitForward(editor: Editor, $from: ResolvedPos, toggleName: string): boolean {
+  const depth = $from.depth;
+  const parentDepth = depth - 1;
+  if (parentDepth < 0) return false;
+  const parent = $from.node(parentDepth);
+  const indexInParent = $from.index(parentDepth);
+
+  if (indexInParent < parent.childCount - 1) {
+    // 같은 부모 안에 바로 다음 형제가 있다 — 그게 토글이면 그 제목으로, 아니면 기본 동작에 맡긴다
+    const nextSibling = parent.child(indexInParent + 1);
+    if (nextSibling.type.name !== toggleName) return false;
+    const afterPos = $from.after(depth);
+    editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: afterPos, caret: "start" } }));
+    return true;
+  }
+
+  // 내가 이 부모의 마지막 자식 — 부모 자체를 벗어나야 다음 블록이 나온다. 부모가 toggleNode일
+  // 때(=토글 본문 마지막 줄에서 나가는 경우)만 처리하고, 그 외(최상위 마지막 블록 등)는 그대로 둔다.
+  if (parent.type.name !== toggleName) return false;
+  const afterPos = $from.before(parentDepth) + parent.nodeSize;
+  const doc = editor.state.doc;
+  const $after = doc.resolve(Math.min(afterPos, doc.content.size));
+  const nextNode = $after.nodeAfter;
+  if (!nextNode) return false;
+
+  if (nextNode.type.name === toggleName) {
+    editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: afterPos, caret: "start" } }));
+    return true;
+  }
+  editor.chain().focus().setTextSelection(afterPos + 1).run();
+  return true;
+}
+
+function exitBackward(editor: Editor, $from: ResolvedPos, toggleName: string): boolean {
+  const depth = $from.depth;
+  const parentDepth = depth - 1;
+  if (parentDepth < 0) return false;
+  const parent = $from.node(parentDepth);
+  const indexInParent = $from.index(parentDepth);
+
+  if (indexInParent > 0) {
+    // 같은 부모 안에 바로 이전 형제가 있다 — 그게 토글이면, 펼쳐진 상태면 본문 마지막 줄 끝으로,
+    // 접힌 상태면 제목(끝)으로 이동한다. 아니면 기본 동작에 맡긴다.
+    const prevSibling = parent.child(indexInParent - 1);
+    if (prevSibling.type.name !== toggleName) return false;
+    const beforePos = $from.before(depth);
+    if (prevSibling.attrs.open) {
+      const doc = editor.state.doc;
+      const $near = doc.resolve(Math.max(0, beforePos - 1));
+      const sel = Selection.near($near, -1);
+      editor.view.dispatch(editor.state.tr.setSelection(sel).scrollIntoView());
+      editor.view.focus();
+      return true;
+    }
+    const prevPos = beforePos - prevSibling.nodeSize;
+    editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: prevPos, caret: "end" } }));
+    return true;
+  }
+
+  // 내가 이 부모의 첫 번째 자식 — 부모가 toggleNode일 때(=본문 첫 줄에서 나가는 경우)만 제목으로
+  // 돌아가고, 그 외(최상위 첫 블록 등)는 그대로 둔다.
+  if (parent.type.name !== toggleName) return false;
+  const togglePos = $from.before(parentDepth);
+  editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: togglePos, caret: "end" } }));
+  return true;
 }
 
 /* ── TipTap Node 정의 ─────────────────────────────────── */
@@ -303,7 +486,8 @@ export const ToggleNode = Node.create({
         if ($from.parentOffset !== 0) return false;
 
         const currentParagraph = $from.parent;
-        if (currentParagraph.type.name !== "paragraph" || currentParagraph.content.size > 0) return false;
+        if (currentParagraph.type.name !== "paragraph") return false;
+        const isEmpty = currentParagraph.content.size === 0;
 
         const paragraphDepth = $from.depth;
         const parentDepth = paragraphDepth - 1;
@@ -312,8 +496,10 @@ export const ToggleNode = Node.create({
         const parent = $from.node(parentDepth);
         const indexInParent = $from.index(parentDepth);
 
-        /* Case A: 이 빈 문단이 toggleNode의 자식(본문 내부)인 경우 */
+        /* Case A: 이 문단이 toggleNode의 자식(본문 내부)인 경우 — 첫 줄이 비어있을 때만
+           제목으로 병합한다(텍스트가 있으면 기본 동작에 맡긴다, 기존 동작 유지). */
         if (parent.type.name === this.name) {
+          if (!isEmpty) return false;
           const toggleNode = parent;
           const togglePos = $from.before(parentDepth);
 
@@ -341,7 +527,13 @@ export const ToggleNode = Node.create({
             .run();
         }
 
-        /* Case B: 이 빈 문단의 바로 앞 형제가 toggleNode인 경우(빈 토글이 막 지워지고 남은 문단) */
+        /* Case B: 이 문단의 바로 앞 형제가 toggleNode인 경우 — 문단이 비어있으면(토글 뒤
+           텍스트를 Backspace로 다 지운 상태) 문단을 지우고 병합하고, 텍스트가 남아있으면
+           (문단 맨 앞에서 처음 누른 Backspace) 아무것도 지우지 않고 커서만 토글 쪽으로 옮긴다
+           — isolating 경계 때문에 기본 동작이 이 상황에서 토글 전체를 NodeSelection으로
+           선택해버려 버블 툴바가 "선택됨" 모드로 뜨는 버그가 있었다(텍스트 selection이 아닌데도
+           표시됨). 앞 토글이 펼쳐져 있으면 제목이 아니라 본문 마지막 줄 끝으로 이동한다
+           (exitBackward/moveToPreviousBlock과 같은 규칙 — 접혀 있을 때만 제목으로 간다). */
         if (indexInParent === 0) return false;
         const prevSibling = parent.child(indexInParent - 1);
         if (prevSibling.type.name !== this.name) return false;
@@ -349,6 +541,27 @@ export const ToggleNode = Node.create({
         const paraStart = $from.before(paragraphDepth);
         const paraEnd = $from.after(paragraphDepth);
         const prevTogglePos = paraStart - prevSibling.nodeSize;
+        const prevSiblingOpen = prevSibling.attrs.open;
+
+        if (prevSiblingOpen) {
+          const applied = this.editor
+            .chain()
+            .command(({ tr }) => {
+              if (isEmpty) tr.delete(paraStart, paraEnd);
+              const $near = tr.doc.resolve(Math.max(0, paraStart - 1));
+              const sel = Selection.near($near, -1);
+              tr.setSelection(sel);
+              return true;
+            })
+            .run();
+          if (applied) this.editor.view.focus();
+          return applied;
+        }
+
+        if (!isEmpty) {
+          this.editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: prevTogglePos } }));
+          return true;
+        }
 
         const deleted = this.editor
           .chain()
@@ -361,6 +574,40 @@ export const ToggleNode = Node.create({
           this.editor.view.dom.dispatchEvent(new CustomEvent(FOCUS_TITLE_EVENT, { detail: { pos: prevTogglePos } }));
         }
         return deleted;
+      },
+
+      /* 화살표 키로 토글을 일반 블록처럼 지나갈 수 있게 한다. view.endOfTextblock()으로 "줄바꿈
+         중간이 아니라 진짜 블록 경계"인지 먼저 확인해, 여러 줄짜리 문단 안에서의 평범한 화살표
+         이동은 절대 건드리지 않는다. 그 다음 "지금 빠져나가려는 지점 바로 옆에 토글이 있는지"만
+         확인해서, 토글과 무관한 이동(리스트/표 등 다른 중첩 구조)에는 개입하지 않고 기본 동작에
+         맡긴다(exitForward/exitBackward 참고 — 토글이 직접 관련될 때만 true를 반환). */
+      ArrowDown: () => {
+        const { state, view } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        if (!view.endOfTextblock("down")) return false;
+        return exitForward(this.editor, $from, this.name);
+      },
+      ArrowRight: () => {
+        const { state } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        if ($from.parentOffset !== $from.parent.content.size) return false;
+        return exitForward(this.editor, $from, this.name);
+      },
+      ArrowUp: () => {
+        const { state, view } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        if (!view.endOfTextblock("up")) return false;
+        return exitBackward(this.editor, $from, this.name);
+      },
+      ArrowLeft: () => {
+        const { state } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty) return false;
+        if ($from.parentOffset !== 0) return false;
+        return exitBackward(this.editor, $from, this.name);
       },
     };
   },

@@ -1,11 +1,20 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback, type DragEvent } from "react";
-import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus, MoreHorizontal, Upload, Trash2, MoveRight } from "lucide-react";
+import { Search, Star, ChevronDown, FileText, Folder, Check, Clock, Plus, MoreHorizontal, Upload, Trash2, MoveRight, ArrowUp, ArrowDown } from "lucide-react";
 import { CollapseChevron } from "./CollapseChevron";
 import { HoverInfoCard } from "./HoverInfoCard";
 import { cx } from "@/lib/utils";
-import { MockFolder, MockNote, SortOption } from "@/lib/notes/noteTypes";
+import {
+  MockFolder,
+  MockNote,
+  SortOption,
+  SortDirection,
+  SORT_OPTION_ENABLED,
+  DEFAULT_SORT_DIRECTION,
+  SORT_DIRECTION_APPLICABLE,
+  sortNotes,
+} from "@/lib/notes/noteTypes";
 import { formatAbsoluteDateTime, formatRelativeTime } from "@/lib/notes/formatDate";
 import FolderTree, { NoteMenu, FolderMenu, type SelectableItem } from "./FolderTree";
 import { Btn } from "@/components/brainx-ui";
@@ -403,34 +412,45 @@ function FavFolderRow({
 }
 
 /* ── 정렬 ──────────────────────────────────────────── */
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+/* "최근 열람순"은 옵션 목록에서 아예 제외했다 — 노트 모델에 열람 기록이 실제로 연결돼 있지
+   않아서다(lib/notes/noteTypes.ts 상단 주석 참고). "최근 수정순"은 대신 실제로 신뢰할 수 있게
+   고쳤다(NoteEditor.tsx의 setContent emitUpdate:false — 열기만 해도 갱신되던 버그 수정).
+   "AI 추천순"은 추천 데이터가 없어 옵션은 남기되 disabled로 표시한다. */
+const SORT_OPTIONS: { value: SortOption; label: string; disabledReason?: string }[] = [
   { value: "modified",  label: "최근 수정순" },
-  { value: "viewed",    label: "최근 열람순" },
   { value: "created",   label: "생성일순" },
   { value: "title",     label: "제목순" },
   { value: "favorites", label: "즐겨찾기 우선" },
-  { value: "ai",        label: "AI 추천순" },
+  { value: "ai",        label: "AI 추천순 (Beta 준비 중)", disabledReason: "추천 근거 데이터 연동 전이라 비활성화됨" },
 ];
 
-function sortNotes(notes: MockNote[], sortBy: SortOption, favorites: Set<string>): MockNote[] {
-  const arr = [...notes];
-  switch (sortBy) {
-    case "modified":
-    case "viewed":
-      return arr.sort((a, b) => b.updatedAt - a.updatedAt);
-    case "created":
-      return arr.sort((a, b) => b.createdAt - a.createdAt);
-    case "title":
-      return arr.sort((a, b) => a.title.localeCompare(b.title, "ko"));
-    case "favorites":
-      return arr.sort((a, b) => {
-        const fa = favorites.has(a.id) ? 1 : 0;
-        const fb = favorites.has(b.id) ? 1 : 0;
-        return fb - fa || a.title.localeCompare(b.title, "ko");
-      });
-    case "ai":
-      return arr;
-  }
+function SortDirectionToggle({
+  sortBy,
+  direction,
+  onChange,
+}: {
+  sortBy: SortOption;
+  direction: SortDirection;
+  onChange: (d: SortDirection) => void;
+}) {
+  const applicable = SORT_DIRECTION_APPLICABLE[sortBy];
+  const label = direction === "asc" ? "오름차순" : "내림차순";
+  return (
+    <button
+      type="button"
+      disabled={!applicable}
+      title={applicable ? `${label} — 클릭하면 반대로 정렬` : "이 정렬 기준에는 방향을 적용하지 않습니다"}
+      onClick={() => onChange(direction === "asc" ? "desc" : "asc")}
+      className={cx(
+        "flex items-center justify-center rounded-md border p-1 transition-colors",
+        !applicable
+          ? "cursor-not-allowed border-line/30 text-txt3/40"
+          : "border-line/50 bg-surface2/40 text-txt2 hover:border-line/80 hover:bg-surface2/70"
+      )}
+    >
+      {direction === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+    </button>
+  );
 }
 
 function SortDropdown({ value, onChange }: { value: SortOption; onChange: (v: SortOption) => void }) {
@@ -468,24 +488,35 @@ function SortDropdown({ value, onChange }: { value: SortOption; onChange: (v: So
           className="absolute left-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-lg border border-line/60 bg-surface py-1"
           style={{ boxShadow: "0 8px 24px -4px rgba(2,6,23,0.45), 0 0 0 1px rgb(var(--border)/0.25)" }}
         >
-          {SORT_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-              className={cx(
-                "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors",
-                o.value === value
-                  ? "bg-primary/8 text-primary"
-                  : "text-txt2 hover:bg-surface2/60 hover:text-txt"
-              )}
-            >
-              <Check
-                size={10}
-                className={cx("shrink-0 transition-opacity", o.value === value ? "opacity-100 text-primary" : "opacity-0")}
-              />
-              {o.label}
-            </button>
-          ))}
+          {SORT_OPTIONS.map((o) => {
+            const enabled = SORT_OPTION_ENABLED[o.value];
+            return (
+              <button
+                key={o.value}
+                disabled={!enabled}
+                title={enabled ? undefined : o.disabledReason}
+                onClick={() => {
+                  if (!enabled) return;
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={cx(
+                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] transition-colors",
+                  !enabled
+                    ? "cursor-not-allowed text-txt3/50"
+                    : o.value === value
+                      ? "bg-primary/8 text-primary"
+                      : "text-txt2 hover:bg-surface2/60 hover:text-txt"
+                )}
+              >
+                <Check
+                  size={10}
+                  className={cx("shrink-0 transition-opacity", o.value === value ? "opacity-100 text-primary" : "opacity-0")}
+                />
+                {o.label}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -550,7 +581,14 @@ export default function NotesExplorer({
   const [fileDragOver, setFileDragOver] = useState(false);
   const fileDragDepthRef = useRef(0);
   const isFileDrag = (e: DragEvent) => Array.from(e.dataTransfer.types).includes("Files");
-  const [sortBy, setSortBy] = useState<SortOption>("modified");
+  const [sortBy, setSortByRaw] = useState<SortOption>("modified");
+  const [sortDirection, setSortDirection] = useState<SortDirection>(DEFAULT_SORT_DIRECTION.modified);
+  /* 정렬 "옵션"을 바꾸면 방향은 그 옵션의 자연스러운 기본값으로 리셋한다(예: 수정일순 desc →
+     제목순으로 바꾸면 asc) — 같은 옵션에서 방향만 토글하는 것과는 별개 동작이다. */
+  const setSortBy = (next: SortOption) => {
+    setSortByRaw(next);
+    setSortDirection(DEFAULT_SORT_DIRECTION[next]);
+  };
   const [favorites, setFavorites] = useState<Set<string>>(
     () => new Set(["spring", "brainx-arch", "rag-flow"])
   );
@@ -788,13 +826,13 @@ export default function NotesExplorer({
   };
 
   const favNotes = useMemo(
-    () => sortNotes(filtered.filter((n) => favorites.has(n.id)), sortBy, favorites),
-    [filtered, sortBy, favorites]
+    () => sortNotes(filtered.filter((n) => favorites.has(n.id)), sortBy, favorites, sortDirection),
+    [filtered, sortBy, favorites, sortDirection]
   );
 
   const searchResults = useMemo(
-    () => sortNotes(filtered, sortBy, favorites),
-    [filtered, sortBy, favorites]
+    () => sortNotes(filtered, sortBy, favorites, sortDirection),
+    [filtered, sortBy, favorites, sortDirection]
   );
 
   /* 선택된 항목 중 노트/폴더 구분 */
@@ -899,6 +937,7 @@ export default function NotesExplorer({
         <div className="flex items-center gap-2 px-0.5">
           <span className="text-[10px] font-medium text-txt3">정렬</span>
           <SortDropdown value={sortBy} onChange={setSortBy} />
+          <SortDirectionToggle sortBy={sortBy} direction={sortDirection} onChange={setSortDirection} />
         </div>
       </div>
 
@@ -1066,6 +1105,8 @@ export default function NotesExplorer({
               onChangeFolderColor={onChangeFolderColor}
               onToggleFolderFavorite={onToggleFolderFavorite}
               favorites={favorites}
+              sortBy={sortBy}
+              sortDirection={sortDirection}
               onToggleNoteFavorite={toggleFavorite}
               onRenameNote={onRenameNote}
               onDragStart={onDragStart}

@@ -33,7 +33,7 @@ import { PdfBlock } from "./PdfBlockNode";
 import { HtmlBlock } from "./HtmlBlockNode";
 import { blockWidthPercent, type BlockWidthMode } from "./BlockControls";
 import { FontSize, FontFamily, FONT_SIZE_PRESETS, FONT_FAMILY_PRESETS } from "./fontExtensions";
-import { WikiLink } from "./WikiLinkNode";
+import { WikiLink, WikiLinkLiveEdit } from "./WikiLinkNode";
 import { DragHandle } from "./DragHandleExtension";
 import { WikiLinkSuggestion } from "./WikiLinkSuggestion";
 import { WikiLinkAutocomplete } from "./WikiLinkAutocomplete";
@@ -2377,6 +2377,7 @@ const NOTE_EDITOR_EXTENSIONS = [
   BrainXTableHeader,
   BrainXTableCell,
   WikiLink,
+  WikiLinkLiveEdit,
   WikiLinkSuggestion,
   TagNode,
   TagSuggestion,
@@ -3282,7 +3283,11 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(function NoteEd
       }
       const nextContent = resolveEditorHtml(content);
       if (editor.getHTML() !== nextContent) {
-        editor.commands.setContent(nextContent);
+        // emitUpdate: false — 안 그러면 tiptap의 setContent가 onUpdate를 그대로 발생시켜(기본값
+        // emitUpdate=true), 노트를 열기만 해도(탭 전환/복귀 등 프로그램적 로드) onContentChange가
+        // 호출되어 실제로는 아무것도 안 고쳤는데 updatedAt이 갱신되는 버그가 있었다("최근 수정순"이
+        // "최근 열람순"처럼 동작해버림). 실제 사용자 입력에 의한 변경만 onUpdate를 타야 한다.
+        editor.commands.setContent(nextContent, { emitUpdate: false });
       }
       syncedNoteIdRef.current = noteId;
       setIsEmpty(content.trim() === "");
