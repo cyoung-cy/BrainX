@@ -19,15 +19,19 @@
   - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary`, `/api/v1/users/me/style-profile` route directly to Intelligence-Service through Caddy.
   - other `/api/v1/*` routes go to Gateway-Service.
 
-Prometheus stays on the internal Docker network and scrapes `user-service`, `gateway-service`, and `workspace-service` from their `/actuator/prometheus` endpoints. Grafana is auto-provisioned with that Prometheus datasource, so you do not need to add it manually in the UI.
+Prometheus stays on the internal Docker network and scrapes `user-service`, `gateway-service`, `workspace-service`, `admin-service`, `commerce-service`, `ingestion-service`, and `intelligence-service` from their `/actuator/prometheus` endpoints. Grafana is auto-provisioned with that Prometheus datasource, so you do not need to add it manually in the UI.
 
 The imported Spring Boot monitor dashboard expects each service to publish an `application` metric tag. We set that tag to `spring.application.name` in the service `management.metrics.tags.application` config so the dashboard variables and panels can resolve per-service data.
 
-The dashboard also expects Micrometer's extra JVM binders for some of the JVM and process panels. We keep `io.github.mweirauch:micrometer-jvm-extras:0.2.2` on `User-Service`, `Gateway-Service`, and `Workspace-Service` so the panels do not fall back to `N/A` when those meters are queried.
+The dashboard also expects Micrometer's extra JVM binders for some of the JVM and process panels. We keep `io.github.mweirauch:micrometer-jvm-extras:0.2.2` on the monitored services so the panels do not fall back to `N/A` when those meters are queried.
 
 The Grafana dashboard itself is also provisioned from this repository now, so the `spring_boot_21` dashboard UID points directly at the provisioned Prometheus datasource instead of depending on the UI import placeholder `${DS_PROMETHEUS}`. This avoids the `Datasource ${DS_PROMETHEUS} was not found` error and keeps the dashboard stable after redeploys.
 
+The rightmost "Open Files" panels query `process_files_open_files`, which matches the Micrometer/Spring Boot file-descriptor metric naming better than the old `process_open_fds` placeholder. If those panels still show `No data`, it usually means the service image has not been rebuilt with the latest monitoring changes yet.
+
 `Gateway-Service` must allow `/actuator/prometheus` through its global auth filter, otherwise Prometheus receives `401 Unauthorized` when it scrapes the gateway target.
+
+`Commerce-Service` and `Ingestion-Service` now explicitly allow `/actuator/prometheus` through their security chains, and `Admin-Service` already permits all actuator endpoints. `Intelligence-Service` exposes `/actuator/prometheus` through its management endpoint config and leaves the path reachable outside `/api/v1/**`.
 
 `Admin-Service` talks to `user-service`, `commerce-service`, `workspace-service`, `ingestion-service`, and `intelligence-service` through Docker DNS names inside the shared compose network. Do not leave those URLs on the container defaults of `localhost`, or the admin screens will fail as soon as they try to read another service's data.
 
