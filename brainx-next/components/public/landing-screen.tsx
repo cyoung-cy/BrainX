@@ -10,6 +10,7 @@ import { clearAuthSession, logout, readAuthSession, type AuthSession } from "@/l
 import { cx } from "@/lib/utils";
 
 import { Badge, Btn, Card, Icon, ThemeToggle } from "@/components/brainx-ui";
+import { BrandLogo } from "@/components/brand-logo";
 
 export function HeroConstellation() {
   const ref = useRef<SVGSVGElement | null>(null);
@@ -193,12 +194,7 @@ export function LandingScreen() {
   return (
     <div data-route className="relative overflow-y-auto scroll">
       <header className="sticky top-0 z-40 flex h-16 items-center border-b border-line/40 bg-bg/60 px-6 backdrop-blur-xl md:px-10">
-        <div className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-accent to-cyan shadow-glow">
-            <Icon name="brain" size={20} className="text-white" />
-          </div>
-          <span className="text-[22px] font-bold tracking-tight font-display">BrainX</span>
-        </div>
+        <BrandLogo size={36} showWordmark />
         <nav className="ml-10 hidden items-center gap-1 text-[16px] text-txt2 md:flex">
           {["기능", "마인드맵", "요금제"].map((item) => (
             <a key={item} href="#" className="flex h-9 items-center rounded-lg px-3 hover:bg-surface2/50 hover:text-txt">
@@ -391,12 +387,9 @@ export function LandingScreen() {
 
       <footer className="mx-auto max-w-[1180px] border-t border-line/40 px-6 py-10 md:px-10">
         <div className="flex flex-col items-center justify-between gap-4 text-[16px] text-txt3 md:flex-row">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-accent">
-              <Icon name="brain" size={16} className="text-white" />
-            </div>
-            <span className="font-display font-bold text-txt">BrainX</span>
-            <span className="ml-2">© 2026 BrainX 개발팀</span>
+          <div className="flex items-center gap-4">
+            <BrandLogo size={28} showWordmark />
+            <span className="text-[14px]">© 2026 BrainX 개발팀</span>
           </div>
           <div className="flex items-center gap-5">
             {["이용약관", "개인정보", "문의하기"].map((item) => (
