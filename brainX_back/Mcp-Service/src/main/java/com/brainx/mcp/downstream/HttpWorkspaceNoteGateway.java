@@ -80,9 +80,10 @@ public class HttpWorkspaceNoteGateway implements WorkspaceNoteGateway {
                 throw new DownstreamServiceException("Workspace note creation response did not include created note data.");
             }
             InternalCreatedNote created = response.data().createdNotes().getFirst();
+            NoteDetail stored = getNote(userId, created.noteId());
             return new CreatedNote(
                 created.noteId(),
-                command.title(),
+                stored.title(),
                 command.folderId(),
                 created.version(),
                 null

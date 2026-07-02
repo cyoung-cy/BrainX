@@ -336,7 +336,7 @@ cd C:\Edu\Final\BrainX\brainX_back
 docker compose --profile apps up -d --build
 ```
 
-`apps` 프로필은 `Gateway-Service`(8088), `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084), `Admin-Service`(8085), `Mcp-Service`(8087)를 모두 실행합니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
+`apps` 프로필은 `Gateway-Service`(8088), `User-Service`(8080), `Workspace-Service`(8082), `Ingestion-Service`(8083), `Commerce-Service`(8084), `Admin-Service`(8085), `Intelligence-Service`(8086), `Mcp-Service`(8087)를 모두 실행합니다. MCP semantic search가 Intelligence-Service를 호출하므로 같은 프로필에서 Qdrant도 함께 실행됩니다. 이 방식으로 앱을 띄우면 각 서비스를 로컬 Gradle/IDE에서 따로 실행할 필요는 없습니다. 프론트엔드는 계속 `brainx-next`에서 실행하면 됩니다.
 
 Admin-Service만 Docker로 실행하려면 아래 명령을 사용합니다.
 
@@ -357,9 +357,10 @@ docker compose --profile apps up -d --build admin-service
 | Workspace-Service | Docker 실행 시 `env/workspace-service.env`; 로컬 IDE 실행 시 동일한 값을 Run Configuration에 지정 |
 | Ingestion-Service | `../.env`, `../env/ingestion-service.env` |
 | Commerce-Service | `../.env`, `../env/commerce-service.env` |
+| Intelligence-Service | Docker 실행 시 `docker-compose.yml` environment, 로컬 IDE 실행 시 `.env` 값을 Run Configuration에 지정 |
 | Mcp-Service | `../.env`, `../env/mcp-service.env` |
 
-`JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`, `MCP_DB_NAME`으로 관리합니다.
+`JWT_SECRET`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `DB_DRIVER`, `JPA_DDL_AUTO`처럼 모든 서비스가 공유하는 값은 `.env`에 둡니다. 서비스별 논리 DB 이름도 `.env`의 `USER_DB_NAME`, `WORKSPACE_DB_NAME`, `INGESTION_DB_NAME`, `COMMERCE_DB_NAME`, `INTELLIGENCE_DB_NAME`, `MCP_DB_NAME`으로 관리합니다.
 Admin-Service는 관리자 시드용 `SEED_ADMIN_LOGIN_ID`, `SEED_ADMIN_PASSWORD`, `SEED_ADMIN_NAME`도 `../env/admin-service.env`에서 함께 읽습니다.
 Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=postgres`를 자동으로 덮어씁니다. 로컬 Gradle/IDE 실행은 `.env`의 `POSTGRES_HOST=localhost`를 그대로 사용합니다.
 기존 `brainx_postgres_data` 볼륨이 있는 개발 환경에서도 새 논리 DB가 누락되지 않도록 `apps` 프로필은 `postgres-service-databases` one-shot 컨테이너로 DB 생성 스크립트를 매번 idempotent하게 확인한 뒤 앱 컨테이너를 시작합니다.
