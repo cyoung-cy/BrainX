@@ -56,7 +56,7 @@ BrainX/
 │  ├─ Workspace-Service/  # 노트/폴더/그래프 원장 서비스 (포트 8082) — 구현 중
 │  └─ Commerce-Service/   # 결제/구독/플랜 서비스 (포트 8084) — 구현 중, Toss Payments 연동
 ├─ contracts-v2/          # OpenAPI/AsyncAPI SSOT 계약 문서
-├─ infra/aws-dev/         # AWS 개발환경 Terraform + GitHub Actions 배포 구성
+├─ infra/aws-dev/         # AWS 개발환경 Terraform + GitHub Actions + Prometheus/Grafana 배포 구성
 └─ BrainX-Design/         # Next.js + iframe 기반 디자인 프로토타입 (포트 3000)
                           # Notion 가져오기 UI 구현됨 (BrainX-Design 전용, brainx-next와 별도)
 ```
@@ -188,6 +188,7 @@ BrainX/
 - 현재 Ingestion-Service의 publish helper는 구현 기준으로 `/v1/publish-jobs`를 사용합니다. 이 엔드포인트는 `noteContent`를 받아 즉시 clipboard-ready content를 반환하는 동기 API입니다.
 - Service-to-service 동기 호출은 `/internal/v1/**` 하위로 분리합니다.
 - 서비스 간 상태 전파는 가능하면 이벤트 기반으로 처리합니다.
+- Gateway는 public edge로만 쓰고, 서비스 상태 점검과 운영 조회는 가능한 한 소유 서비스의 직접 URL을 사용합니다. Gateway 라우트는 서비스별 circuit breaker와 짧은 timeout으로 감싸서 한 서비스 장애가 다른 서비스 요청까지 끌고 가지 않게 합니다.
 - Workspace-Service는 노트 원장의 authoritative source입니다.
 - 홈(`/home`)과 사용자 설정의 노트 통계 메뉴는 `Workspace-Service`의 `GET /api/v1/workspace/me/stats`와 노트/그래프 조회 응답을 조합해 실제 사용자 데이터만 보여줍니다.
 - AI, import, extension, MCP 등에서 노트를 변경할 때도 Workspace command API를 통해 처리합니다.
@@ -280,6 +281,7 @@ API와 이벤트 계약의 기준은 `contracts-v2`입니다.
 - 외부 공개 API는 `/api/v1`, 내부 동기 API는 `/internal/v1`로 분리합니다.
 - 이벤트는 공통 envelope와 idempotency를 고려합니다.
 - 충돌 가능성이 있는 노트 저장은 version 기반 충돌 처리를 고려합니다.
+- 운영 DB에 이미 행이 있는 테이블에 `NOT NULL` 컬럼을 추가할 때는 Hibernate `ddl-auto:update`만 믿지 말고, `NULL 허용 -> 백필 -> 기본값 설정 -> NOT NULL` 순서의 SQL 보정 마이그레이션을 먼저 넣습니다.
 - 인증/인가, 토큰, 동의, 마이페이지는 User-Service 책임입니다.
 - 노트 본문, 링크, 폴더, 그래프 원장은 Workspace-Service 책임입니다.
 
@@ -351,7 +353,7 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
 
 기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
-Workspace-Service의 Neo4j projection은 노트 본문 `[[...]]` 위키링크, 수동 `NoteLink`, 태그, 제목/본문 유사도를 다시 계산해 `LINKED` 관계를 MERGE 방식으로 갱신합니다. 노트가 수정되면 전체 그래프를 다시 만들지 않고, 변경된 노트와 그 노트를 직접 참조하는 관련 노트만 증분 갱신합니다.
+Workspace-Service는 노트 저장 시 본문 `[[...]]` 위키링크와 TipTap `data-wiki-link` span을 authoritative `workspace_note_links` 원장으로 정규화하고, Neo4j는 그 원장을 projection/read model로 반영합니다. `workspace_note_links.link_type`는 MANUAL/WIKI를 구분하는 필수 컬럼이며, 레거시 운영 DB는 `Workspace-Service/src/main/resources/db/migration/V20260702_01__repair_workspace_note_links_link_type.sql`가 기존 행을 백필한 뒤 Hibernate `NOT NULL` 스키마 업데이트가 지나가도록 맞췄습니다. 타깃 노트가 나중에 생성되거나 제목이 바뀌는 경우에도 기존 노트들을 다시 스캔해 wiki-link 관계를 재물질화합니다. `/api/v1/graph/sync`는 기존 노트 전체를 다시 스캔해 위키링크 원장을 백필한 뒤 Neo4j `LINKED` 관계를 재구성합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
@@ -492,6 +494,7 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | POST | `/api/v1/subscriptions/cancel` | 구독 취소 |
 
 자세한 결제 흐름과 DB 스키마는 `brainX_back/Commerce-Service/README.md`를 참고하세요.
+결제 팝업은 프런트의 월간/연간 토글 값을 `billingCycle`으로 체크아웃 세션 생성 API에 함께 전달해야 하며, 이 값이 빠지면 Toss SDK를 띄우기 전에 계약 검증 단계에서 실패합니다.
 
 ### Backend: Admin-Service API Contract
 
@@ -502,15 +505,18 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
 관리자 로그인 세션은 브라우저 `localStorage`와 same-site 쿠키에 함께 저장해 `admin.brainx.p-e.kr -> admin-frontend -> admin-service` 프록시 체인에서도 후속 `/api/v1/admin/**` 요청이 안정적으로 같은 액세스 토큰을 전달하도록 유지합니다.
-Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
-Commerce-Service는 운영 DB가 오래된 스키마로 남아 있어도 기동 시 `commerce_subscriptions.billing_cycle` 컬럼을 `MONTHLY` 기본값으로 보정하도록 self-healing repair를 둡니다. 그래도 운영 환경에서는 애플리케이션 재배포와 별개로 실제 PostgreSQL 원장 스키마를 정식 반영해 두는 것을 기준으로 삼습니다.
+Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle`, `commerce_checkout_sessions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
+Commerce-Service는 EC2에서 수동으로 넣었던 `commerce_subscriptions.billing_cycle`, `commerce_checkout_sessions.billing_cycle`, `commerce_checkout_sessions_status_check` 보정을 `src/main/resources/db/migration/V20260701_01__repair_billing_cycle_columns.sql`로 추적합니다. Spring SQL init가 이 migration SQL을 JPA schema update보다 먼저 적용해 오래된 운영 DB도 같은 스키마 보정을 따라가게 했습니다.
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
-모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. 이 persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 대시보드 조회 자체는 더 이상 새 스냅샷을 쓰지 않습니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 오늘 날짜가 아직 `23:59 Asia/Seoul` 이전이면 관리자 화면은 persisted 이력만 보지 않고 live overview와 current-day monitoring overlay를 함께 새로고침해야 합니다.
 서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
 overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
 overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.
+`/api/v1/admin/monitoring/snapshots`는 과거 날짜에 대해서는 persisted row만 내려주고, 오늘 날짜의 persisted row가 아직 없으면 live KPI/active user/Kafka lag를 합성한 `persisted=false` current-day overlay row를 맨 앞에 함께 내려줍니다. `brainx-admin-next` 모니터링 화면은 이 목록과 overview를 주기적으로 다시 읽고, `새로고침` 버튼도 실제 API reload를 수행해야 합니다.
+운영 로그 기반으로 MSA 개선률을 비교할 때는 [`brainX_back/scripts/calc_msa_efficiency.py`](brainX_back/scripts/calc_msa_efficiency.py)를 사용합니다. baseline/current 폴더에 `Admin-Service`의 `GET /api/v1/admin/monitoring/health` JSON과 Gateway access log를 넣고 `--json` 또는 일반 출력으로 실행하면 `latency reduction`, `fallback interference reduction`, `availability change`를 함께 계산합니다.
+Gateway health proxy(`/internal/v1/health/*`)는 downstream actuator가 직접 `503`을 돌려줘도 circuit breaker fallback으로 흡수하도록 `statusCodes: 503`을 명시합니다. 또한 Gateway outbound DNS resolver는 `brainx.gateway.httpclient.dns.*` 설정으로 query timeout, negative TTL, resolve query count를 짧게 제한해 이름 해석 단계 블로킹을 줄입니다.
 관리자 모니터링 화면은 상단 선형 차트를 활성 사용자 추이로, 하단 막대 차트를 매출 분석으로 분리해 overview의 `activeUserTrend`와 `revenueTrend`를 각각 실데이터 그대로 사용합니다.
 overview summary는 결제/사용자 지표 외에 `Workspace-Service`의 `/internal/v1/workspace/monitoring/summary`를 통해 전체 노트 수, 총 저장량, 오늘 생성된 노트 수를 함께 내려줍니다. 관리자 모니터링의 Workspace 원장 카드와 일부 실시간 로그는 이 내부 API의 최근 활동 목록을 사용합니다.
 
@@ -586,6 +592,11 @@ npx --yes http-server . -p 18081 -a 127.0.0.1
 ```
 
 ## Current Notes
+
+- **(2026-07-02 UX 정리) 마이페이지 로그아웃, 위키 자동완성 키 충돌, 그래프 hover 대비 조정**:
+  - 마이페이지 프로필 메뉴에 로그아웃 버튼을 회원탈퇴 영역 위로 옮기고, 로그아웃 후에는 `/`(landing)으로 돌아가도록 정리했다.
+  - `WikiLinkAutocomplete`는 동일한 제목의 노트가 여러 개 있어도 `note.id` 기반 key를 써서 React 경고가 나지 않도록 보정했다.
+  - 그래프 hover 상태에서 비활성 노드/엣지의 투명도를 조금 올려, 흐려지긴 하지만 지나치게 안 보이진 않도록 조정했다.
 
 - **(2026-06-29 SSOT 계약 변경) 폴더 cascade 삭제 / draft folderId / 이어쓰기 floating UI**:
   - 분석 대상: `contracts-v2/brainx-openapi.ssot.yaml`, `brainX_back/Workspace-Service`(`WorkspaceController`/`WorkspaceService`/`NoteDraftService`/`Note`/`Folder`/`NoteRepository`), `brainx-next`(`workspace-api.ts`/`NotesWorkspace.tsx`/`NoteEditor.tsx`).

@@ -15,18 +15,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.brainx.intelligence.chat.application.port.inbound.CreateChatThreadUseCase.CreateChatThreadCommand;
+import com.brainx.intelligence.chat.application.port.inbound.GetChatThreadUseCase.GetChatThreadQuery;
 import com.brainx.intelligence.chat.application.port.inbound.ListChatThreadsUseCase.ListChatThreadsQuery;
 import com.brainx.intelligence.chat.application.port.inbound.SendChatMessageUseCase.SendChatMessageCommand;
+import com.brainx.intelligence.chat.application.port.inbound.UpdateChatThreadUseCase.DeleteChatThreadCommand;
+import com.brainx.intelligence.chat.application.port.inbound.UpdateChatThreadUseCase.UpdateChatThreadCommand;
 import com.brainx.intelligence.chat.application.port.outbound.ChatEventPort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatPersistencePort;
 import com.brainx.intelligence.chat.application.port.outbound.ChatPersistencePort.ChatThreadSummaryCursor;
+import com.brainx.intelligence.chat.domain.ChatConflictException;
 import com.brainx.intelligence.chat.domain.ChatDomainException;
 import com.brainx.intelligence.chat.domain.ChatMessage;
+import com.brainx.intelligence.chat.domain.ChatNotFoundException;
 import com.brainx.intelligence.chat.domain.ChatRole;
 import com.brainx.intelligence.chat.domain.ChatRoute;
 import com.brainx.intelligence.chat.domain.ChatRouteDecision;
 import com.brainx.intelligence.chat.domain.ChatThread;
 import com.brainx.intelligence.chat.domain.ChatThreadSummary;
+import com.brainx.intelligence.chat.domain.ChatThreadStatus;
 import com.brainx.intelligence.exploration.application.port.outbound.NoteChunkRetrievalPort;
 import com.brainx.intelligence.exploration.domain.NoteChunkSearchResult;
 import com.brainx.intelligence.exploration.domain.SearchScope;
@@ -40,6 +46,7 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiCha
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
+import com.brainx.intelligence.shared.application.service.AiUsageRecorder;
 
 import reactor.core.publisher.Flux;
 
@@ -57,6 +64,8 @@ class ChatServiceTest {
     private final FakeAiChatPort aiChatPort = new FakeAiChatPort();
     private final FakeTokenUsagePort tokenUsagePort = new FakeTokenUsagePort();
     private final FakeAiModelCatalogPort catalogPort = new FakeAiModelCatalogPort();
+    private final AiTokenUsageCostEstimator usageCostEstimator = new AiTokenUsageCostEstimator(catalogPort);
+    private final AiUsageRecorder aiUsageRecorder = new AiUsageRecorder(tokenUsagePort, usageCostEstimator);
     private final FakeChatEventPort chatEventPort = new FakeChatEventPort();
     private final ChatService service = new ChatService(
         properties,
@@ -65,7 +74,8 @@ class ChatServiceTest {
         retrievalPort,
         entitlementPort,
         aiChatPort,
-        new AiTokenUsageCostEstimator(catalogPort),
+        usageCostEstimator,
+        aiUsageRecorder,
         chatEventPort
     );
 
@@ -187,6 +197,78 @@ class ChatServiceTest {
     }
 
     @Test
+    void listChatThreadsFiltersActiveAndArchived() {
+        ChatThread active = persistencePort.saveThread(new ChatThread(
+            "thread-active",
+            "user-1",
+            "default",
+            "활성 대화",
+            "gpt-test",
+            Instant.parse("2026-06-23T00:00:00Z")
+        ));
+        ChatThread archived = persistencePort.saveThread(new ChatThread(
+            "thread-archived",
+            "user-1",
+            "default",
+            "보관 대화",
+            "gpt-test",
+            Instant.parse("2026-06-23T00:01:00Z")
+        ));
+        persistencePort.archiveThread(archived.userId(), archived.threadId(), Instant.parse("2026-06-23T00:02:00Z"));
+
+        var activePage = service.listChatThreads(new ListChatThreadsQuery("user-1", 10, null, ChatThreadStatus.ACTIVE));
+        var archivedPage = service.listChatThreads(new ListChatThreadsQuery("user-1", 10, null, ChatThreadStatus.ARCHIVED));
+
+        assertThat(activePage.threads()).extracting("threadId").containsExactly(active.threadId());
+        assertThat(activePage.threads().getFirst().archivedAt()).isNull();
+        assertThat(archivedPage.threads()).extracting("threadId").containsExactly(archived.threadId());
+        assertThat(archivedPage.threads().getFirst().archivedAt()).isNotNull();
+    }
+
+    @Test
+    void archiveUnarchiveAndDeleteChatThread() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+
+        var archived = service.updateChatThread(new UpdateChatThreadCommand("user-1", thread.threadId(), true));
+
+        assertThat(archived.threadId()).isEqualTo(thread.threadId());
+        assertThat(archived.archivedAt()).isNotNull();
+        assertThat(service.listChatThreads(new ListChatThreadsQuery("user-1", 10, null)).threads()).isEmpty();
+        assertThat(service.listChatThreads(new ListChatThreadsQuery("user-1", 10, null, ChatThreadStatus.ARCHIVED)).threads())
+            .extracting("threadId")
+            .containsExactly(thread.threadId());
+
+        var unarchived = service.updateChatThread(new UpdateChatThreadCommand("user-1", thread.threadId(), false));
+
+        assertThat(unarchived.archivedAt()).isNull();
+        var deleted = service.deleteChatThread(new DeleteChatThreadCommand("user-1", thread.threadId()));
+
+        assertThat(deleted.threadId()).isEqualTo(thread.threadId());
+        assertThat(deleted.deletedAt()).isNotNull();
+        assertThatThrownBy(() -> service.getChatThread(new GetChatThreadQuery("user-1", thread.threadId())))
+            .isInstanceOf(ChatNotFoundException.class);
+    }
+
+    @Test
+    void archivedThreadRejectsNewMessages() {
+        ChatThread thread = existingThread();
+        persistencePort.saveThread(thread);
+        service.updateChatThread(new UpdateChatThreadCommand("user-1", thread.threadId(), true));
+
+        assertThatThrownBy(() -> service.sendChatMessage(new SendChatMessageCommand(
+            "user-1",
+            thread.threadId(),
+            "RAG란?",
+            Map.of("documentGroupId", "group-1"),
+            Map.of(),
+            "gpt-test"
+        )).collectList().block())
+            .isInstanceOf(ChatConflictException.class);
+        assertThat(persistencePort.messages).isEmpty();
+    }
+
+    @Test
     void sendMessageStreamsDeltasAndPersistsAssistantWithUsageAndCitations() {
         ChatThread thread = existingThread();
         persistencePort.saveThread(thread);
@@ -244,7 +326,13 @@ class ChatServiceTest {
 
         assertThat(chatEventPort.messageEvents).hasSize(1);
         assertThat(chatEventPort.messageEvents.getFirst().citationNoteIds()).containsExactly("note-1");
-        assertThat(tokenUsagePort.records).isEmpty();
+        assertThat(tokenUsagePort.records).hasSize(1);
+        TokenUsagePort.TokenUsageRecord usage = tokenUsagePort.records.getFirst();
+        assertThat(usage.featureId()).isEqualTo("rag-chat");
+        assertThat(usage.modelId()).isEqualTo("gpt-test");
+        assertThat(usage.causationId()).isEqualTo(assistantMessage.messageId());
+        assertThat(usage.inputTokens()).isEqualTo(assistantMessage.tokenUsage().inputTokens());
+        assertThat(usage.outputTokens()).isEqualTo(assistantMessage.tokenUsage().outputTokens());
     }
 
     @Test
@@ -649,18 +737,22 @@ class ChatServiceTest {
         @Override
         public Optional<ChatThread> findThreadByUserIdAndThreadId(String userId, String threadId) {
             return threads.stream()
-                .filter(thread -> thread.userId().equals(userId) && thread.threadId().equals(threadId))
+                .filter(thread -> thread.userId().equals(userId)
+                    && thread.threadId().equals(threadId)
+                    && !thread.deleted())
                 .findFirst();
         }
 
         @Override
         public List<ChatThreadSummary> findThreadSummariesByUserId(
             String userId,
+            ChatThreadStatus status,
             ChatThreadSummaryCursor cursor,
             int limit
         ) {
             return threads.stream()
-                .filter(thread -> thread.userId().equals(userId))
+                .filter(thread -> thread.userId().equals(userId) && !thread.deleted())
+                .filter(thread -> status == ChatThreadStatus.ARCHIVED ? thread.archived() : !thread.archived())
                 .map(thread -> toSummary(thread, messages.stream()
                     .filter(message -> message.userId().equals(userId) && message.threadId().equals(thread.threadId()))
                     .sorted(Comparator.comparing(ChatMessage::createdAt))
@@ -674,6 +766,48 @@ class ChatServiceTest {
                         && summary.threadId().compareTo(cursor.threadId()) < 0))
                 .limit(limit)
                 .toList();
+        }
+
+        @Override
+        public Optional<ChatThread> archiveThread(String userId, String threadId, Instant archivedAt) {
+            return replaceThread(userId, threadId, thread -> new ChatThread(
+                thread.threadId(),
+                thread.userId(),
+                thread.documentGroupId(),
+                thread.title(),
+                thread.modelId(),
+                thread.createdAt(),
+                archivedAt,
+                thread.deletedAt()
+            ));
+        }
+
+        @Override
+        public Optional<ChatThread> unarchiveThread(String userId, String threadId) {
+            return replaceThread(userId, threadId, thread -> new ChatThread(
+                thread.threadId(),
+                thread.userId(),
+                thread.documentGroupId(),
+                thread.title(),
+                thread.modelId(),
+                thread.createdAt(),
+                null,
+                thread.deletedAt()
+            ));
+        }
+
+        @Override
+        public Optional<ChatThread> deleteThread(String userId, String threadId, Instant deletedAt) {
+            return replaceThread(userId, threadId, thread -> new ChatThread(
+                thread.threadId(),
+                thread.userId(),
+                thread.documentGroupId(),
+                thread.title(),
+                thread.modelId(),
+                thread.createdAt(),
+                thread.archivedAt(),
+                deletedAt
+            ));
         }
 
         @Override
@@ -700,10 +834,28 @@ class ChatServiceTest {
                 thread.title(),
                 thread.modelId(),
                 threadCreatedAt,
+                thread.archivedAt(),
+                thread.deletedAt(),
                 lastMessage == null ? threadCreatedAt : lastMessage.createdAt(),
                 lastMessage == null ? null : lastMessage.content(),
                 threadMessages.size()
             );
+        }
+
+        private Optional<ChatThread> replaceThread(
+            String userId,
+            String threadId,
+            java.util.function.Function<ChatThread, ChatThread> mapper
+        ) {
+            for (int index = 0; index < threads.size(); index++) {
+                ChatThread thread = threads.get(index);
+                if (thread.userId().equals(userId) && thread.threadId().equals(threadId) && !thread.deleted()) {
+                    ChatThread next = mapper.apply(thread);
+                    threads.set(index, next);
+                    return Optional.of(next);
+                }
+            }
+            return Optional.empty();
         }
     }
 

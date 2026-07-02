@@ -110,9 +110,12 @@ class WorkspaceServiceCrudTests {
         assertThat(tags.tags()).containsExactly("backend", "ssot");
 
         NoteLinkData link = workspaceService.createLink(USER_ID, first.noteId(),
-                new NoteLinkCreateRequest(second.noteId(), "Second note", false));
+                new NoteLinkCreateRequest(second.noteId(), "Second note", false, "Second alias", "overview"));
         assertThat(link.sourceNoteId()).isEqualTo(first.noteId());
         assertThat(link.targetNoteId()).isEqualTo(second.noteId());
+        assertThat(link.linkType()).isEqualTo("MANUAL");
+        assertThat(link.anchorText()).isEqualTo("Second alias");
+        assertThat(link.headingAnchor()).isEqualTo("overview");
 
         // Neo4j Verification Query
         if (neo4jDriver != null) {
@@ -133,10 +136,12 @@ class WorkspaceServiceCrudTests {
         BacklinksData backlinks = workspaceService.backlinks(USER_ID, second.noteId());
         assertThat(backlinks.backlinks()).hasSize(1);
         assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(first.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("Second alias");
 
         GraphData graph = workspaceService.graph(USER_ID, folder.folderId(), null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
         assertThat(graph.nodes()).hasSize(2);
         assertThat(graph.edges()).hasSize(1);
+        assertThat(graph.edges().getFirst()).containsEntry("type", "MANUAL");
 
         FavoriteData favorite = workspaceService.putFavorite(USER_ID, "NOTE", first.noteId(), new FavoritePutRequest(true));
         assertThat(favorite.enabled()).isTrue();
@@ -212,7 +217,7 @@ class WorkspaceServiceCrudTests {
         NoteCreatedData note2 = workspaceService.createNote(USER_ID,
                 new NoteCreateRequest("Sync Note 2", "sync target 2", folder.folderId(), List.of("sync")));
         workspaceService.createLink(USER_ID, note1.noteId(),
-                new NoteLinkCreateRequest(note2.noteId(), "Sync Note 2", false));
+                new NoteLinkCreateRequest(note2.noteId(), "Sync Note 2", false, null, null));
 
         // When
         Map<String, Object> result = workspaceService.syncGraph();
@@ -233,5 +238,67 @@ class WorkspaceServiceCrudTests {
                 assertThat(linkCount).isGreaterThanOrEqualTo(1L);
             }
         }
+    }
+
+    @Test
+    void savingWikiLinkContentCreatesLedgerLinksAndBackfillKeepsGraphInSync() {
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Target note", "target", null, List.of("graph")));
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Source note", "<p><span data-wiki-link=\"true\" data-title=\"Target note\" data-alias=\"Target alias\" data-heading=\"deep-dive\">[[Target alias]]</span></p>", null, List.of("wiki")));
+
+        GraphData graph = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(graph.edges()).hasSize(1);
+        assertThat(graph.edges().getFirst()).containsEntry("type", "WIKI");
+
+        BacklinksData backlinks = workspaceService.backlinks(USER_ID, target.noteId());
+        assertThat(backlinks.backlinks()).hasSize(1);
+        assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(source.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("Target alias");
+
+        Map<String, Object> syncResult = workspaceService.syncGraph();
+        assertThat(syncResult).containsEntry("status", "SUCCESS");
+        assertThat(syncResult).containsKey("wikiLinksBackfilled");
+    }
+
+    @Test
+    void creatingTargetNoteAfterSourceSaveReconcilesExistingWikiLinks() {
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Kafka", "<p>message [[envelope]] flow</p>", null, List.of("stream")));
+
+        GraphData beforeTargetExists = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(beforeTargetExists.nodes()).hasSize(1);
+        assertThat(beforeTargetExists.edges()).isEmpty();
+
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("envelope", "", null, List.of("stream")));
+
+        BacklinksData backlinks = workspaceService.backlinks(USER_ID, target.noteId());
+        assertThat(backlinks.backlinks()).hasSize(1);
+        assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(source.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("envelope");
+
+        GraphData afterTargetExists = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(afterTargetExists.nodes()).hasSize(2);
+        assertThat(afterTargetExists.edges()).hasSize(1);
+        assertThat(afterTargetExists.edges().getFirst()).containsEntry("type", "WIKI");
+    }
+
+    @Test
+    void renamingNoteReconcilesExistingWikiLinksForOldAndNewTitles() {
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Kafka", "<p>[[envelope]] payload</p>", null, List.of("stream")));
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("envelope", "", null, List.of("stream")));
+
+        GraphData initialGraph = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(initialGraph.edges()).hasSize(1);
+
+        workspaceService.patchMetadata(USER_ID, target.noteId(),
+                new NoteMetadataPatchRequest("Envelope V2", null, List.of("stream"), false, null, null));
+
+        GraphData afterRename = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(afterRename.nodes()).hasSize(2);
+        assertThat(afterRename.edges()).isEmpty();
     }
 }

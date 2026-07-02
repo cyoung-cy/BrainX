@@ -517,6 +517,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -880,7 +881,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
-      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and the service startup may repair older environments by backfilling `MONTHLY` before serving reads.
+      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so older environments are repaired before serving reads.
       responses:
         '200':
           description: 성공
@@ -1047,6 +1048,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -1462,6 +1464,74 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
+    delete:
+      operationId: cancelMyDeletion
+      summary: 회원 탈퇴 요청 취소
+      tags:
+      - Identity & Access
+      x-producer-service: identity-access
+      x-visibility: public
+      x-consumers:
+      - id: web.settings
+        type: frontend
+        description: 계정, 프로필, 보안 및 AI 설정 화면
+      x-produces-events:
+      - UserDeletionCancelled
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      type: object
+                      nullable: true
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/users/me/notifications:
     get:
       operationId: listMyNotifications
@@ -1528,73 +1598,6 @@ paths:
                   properties:
                     data:
                       $ref: '#/components/schemas/UserNotificationData'
-      security:
-      - bearerAuth: []
-    delete:
-      operationId: cancelMyDeletion
-      summary: 회원 탈퇴 요청 취소
-      tags:
-      - Identity & Access
-      x-producer-service: identity-access
-      x-visibility: public
-      x-consumers:
-      - id: web.settings
-        type: frontend
-        description: 계정, 프로필, 보안 및 AI 설정 화면
-      x-produces-events:
-      - UserDeletionCancelled
-      x-internal-sync-calls: []
-      x-async-boundary: false
-      responses:
-        '200':
-          description: 성공
-          content:
-            application/json:
-              schema:
-                allOf:
-                - $ref: '#/components/schemas/ApiSuccessBase'
-                - type: object
-                  required:
-                  - data
-                  properties:
-                    data:
-                      nullable: true
-        '400':
-          description: 잘못된 요청
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '401':
-          description: 인증 필요
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '403':
-          description: 권한 없음
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '404':
-          description: 찾을 수 없음
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '409':
-          description: 충돌
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
-        '500':
-          description: 서버 내부 오류
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - bearerAuth: []
   /api/v1/support/tickets:
@@ -1970,6 +1973,7 @@ paths:
       - NoteCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Creating a note must also reconcile existing `[[...]]` wiki links from other notes that already reference the new title, so the authoritative note-link ledger and Neo4j projection gain the relationship even when the target note is created later.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -2316,6 +2320,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 채팅 스레드를 찾을 수 없거나 삭제됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 보관된 채팅 스레드에는 새 메시지를 전송할 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: 서버 내부 오류
           content:
@@ -2476,6 +2492,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
                       allOf:
                       - $ref: '#/components/schemas/NoteDraftData'
@@ -2599,6 +2616,7 @@ paths:
       - NoteMetadataChanged
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: If the title changes, Workspace-Service must rescan existing wiki-link references for both the old and new titles so stale edges are removed and newly satisfiable edges are created in the authoritative note-link ledger and graph projection.
       parameters:
       - name: noteId
         in: path
@@ -2863,6 +2881,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -3559,6 +3578,7 @@ paths:
       - NoteLinkCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Workspace-Service persists `workspace_note_links.link_type` as a required ledger column. Legacy databases must run the tracked SQL init migration under `Workspace-Service/src/main/resources/db/migration` so existing rows are backfilled before Hibernate schema update enforces NOT NULL.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: noteId
@@ -3665,6 +3685,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -5999,6 +6020,16 @@ paths:
         schema:
           type: string
           description: 이전 응답의 nextCursor. 값은 opaque cursor로 취급한다.
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - active
+          - archived
+          default: active
+          description: active는 보관/삭제되지 않은 스레드, archived는 보관되었지만 삭제되지 않은 스레드를 조회한다.
       responses:
         '200':
           description: 성공
@@ -6268,6 +6299,151 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+    patch:
+      operationId: updateChatThread
+      summary: 채팅 스레드 상태 수정
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG 챗봇 UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatThreadUpdateRequest'
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+    delete:
+      operationId: deleteChatThread
+      summary: 채팅 스레드 삭제
+      description: v1 삭제는 메시지와 스레드 row를 물리 삭제하지 않고 사용자 목록/조회에서 숨기는 soft-delete로 처리한다.
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.chat
+        type: frontend
+        description: RAG 챗봇 UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: threadId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ChatThreadDeleteData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: 찾을 수 없음
           content:
             application/json:
               schema:
@@ -6732,6 +6908,62 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
+  /api/v1/ai/clusters/latest:
+    get:
+      operationId: getLatestAiClusterJob
+      summary: 최신 AI 클러스터링 상태 조회
+      tags:
+      - Knowledge Intelligence
+      x-producer-service: knowledge-intelligence
+      x-visibility: public
+      x-consumers:
+      - id: web.graph
+        type: frontend
+        description: 2D/3D 그래프 및 마인드맵 UI
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      parameters:
+      - name: documentGroupId
+        in: query
+        required: false
+        schema:
+          type: string
+          default: default
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ClusterJobLatestData'
+        '400':
+          description: 잘못된 요청
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: 인증 필요
           content:
             application/json:
               schema:
@@ -7351,6 +7583,7 @@ paths:
       - CheckoutSessionCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: The checkout popup must forward the user-selected `billingCycle` (`MONTHLY` or `YEARLY`) together with `planId`, `successUrl`, and `cancelUrl`. Frontend monthly/yearly toggle state is part of the request contract and must not be dropped before the Toss SDK is launched.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -7696,6 +7929,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -8042,6 +8276,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -8201,6 +8436,7 @@ paths:
                   - data
                   properties:
                     data:
+                      type: object
                       nullable: true
         '400':
           description: 잘못된 요청
@@ -9025,7 +9261,7 @@ paths:
         reason: signup and active user summary
       x-produces-events: []
       x-async-boundary: false
-      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. The dashboard read itself is non-persistent; a Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
+      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. A Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. Before that cutoff, the admin web app must keep overview data refreshed from live reads instead of relying on the persisted snapshot list. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
       responses:
         '200':
           description: Success
@@ -9046,7 +9282,7 @@ paths:
   /api/v1/admin/monitoring/snapshots:
     get:
       operationId: listAdminMonitoringSnapshots
-      summary: List daily persisted dashboard monitoring snapshots
+      summary: List dashboard monitoring history with current-day live overlay
       tags:
       - Admin
       x-producer-service: admin-service
@@ -9058,7 +9294,7 @@ paths:
       x-internal-sync-calls: []
       x-produces-events: []
       x-async-boundary: false
-      description: admin-service가 매일 23:59 스케줄러로 적재하는 매출/구독/활성 사용자 일별 스냅샷 이력.
+      description: 과거 날짜는 admin-service가 매일 23:59 Asia/Seoul 스케줄러로 적재한 persisted 스냅샷 이력을 반환하고, 오늘 날짜는 아직 persisted row가 없으면 현재 live 집계를 맨 앞에 overlay해서 반환한다.
       responses:
         '200':
           description: Success
@@ -9472,6 +9708,7 @@ paths:
         reason: Commerce owns payment ledger
       x-produces-events: []
       x-async-boundary: false
+      x-implementation-note: Payment history relies on the Commerce checkout-session ledger, including the persisted `billingCycle` field on `commerce_checkout_sessions`. Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so admin payment tables do not silently fall back to empty data after schema drift.
       parameters:
       - name: status
         in: query
@@ -11713,6 +11950,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Gateway proxy health routes must fail fast and only reflect the target service's own actuator health. Admin-Service should query the owning service directly for monitoring, while the Gateway keeps route-level circuit breakers and does not gate unrelated services on one backend's outage.
       description: Gateway-Service가 User-Service의 /actuator/health로 RewritePath하여 응답하는 프록시 경로.
       responses:
         '200':
@@ -11822,6 +12060,38 @@ paths:
                 $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - serviceTokenAuth: []
+  /internal/v1/health/intelligence:
+    get:
+      operationId: getIntelligenceServiceHealthInternal
+      summary: '[Internal] Intelligence-Service health proxy'
+      tags:
+      - Internal Service APIs
+      x-producer-service: api-gateway
+      x-visibility: internal
+      x-consumers:
+      - id: internal.admin-operations
+        type: internal-service
+        description: Admin-Service dashboard service-check fetch
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      x-implementation-note: Gateway proxy health routes must fail fast and only reflect the target service's own actuator health. Admin-Service should query the owning service directly for monitoring, while the Gateway keeps route-level circuit breakers and does not gate unrelated services on one backend's outage.
+      description: Gateway-Service가 Intelligence-Service의 /actuator/health로 RewritePath하여 응답하는 프록시 경로.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalHealthCheckData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - serviceTokenAuth: []
 components:
   securitySchemes:
     bearerAuth:
@@ -11901,6 +12171,7 @@ components:
           enum:
           - false
         data:
+          type: object
           nullable: true
         message:
           type: string
@@ -12105,6 +12376,27 @@ components:
       - verificationCode
       - password
       - passwordConfirm
+      - consents
+      additionalProperties: false
+    OnboardingCompleteRequest:
+      type: object
+      properties:
+        onboardingToken:
+          type: string
+        nickname:
+          type: string
+        profileImageUrl:
+          type: string
+          nullable: true
+        interests:
+          type: array
+          items:
+            type: string
+        consents:
+          $ref: '#/components/schemas/ConsentFlags'
+      required:
+      - onboardingToken
+      - nickname
       - consents
       additionalProperties: false
     AuthTokenData:
@@ -13306,6 +13598,12 @@ components:
           type: string
         targetTitle:
           type: string
+        linkType:
+          type: string
+          enum:
+          - MANUAL
+          - WIKI
+          - AI_SUGGESTED
         anchorText:
           type: string
           nullable: true
@@ -13319,6 +13617,7 @@ components:
       - sourceNoteId
       - targetNoteId
       - targetTitle
+      - linkType
       additionalProperties: false
     BacklinksData:
       type: object
@@ -13367,6 +13666,19 @@ components:
       required:
       - nodes
       - edges
+      additionalProperties: false
+    GraphNodePosition:
+      type: object
+      properties:
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+      required:
+      - x
+      - y
       additionalProperties: false
     GraphNodeData:
       type: object
@@ -13437,6 +13749,9 @@ components:
         type:
           type: string
           enum:
+          - MANUAL
+          - WIKI
+          - AI_SUGGESTED
           - RELATED
           - PARENT
           - CHILD
@@ -14220,6 +14535,14 @@ components:
       - title
       - modelId
       additionalProperties: false
+    ChatThreadUpdateRequest:
+      type: object
+      properties:
+        archived:
+          type: boolean
+      required:
+      - archived
+      additionalProperties: false
     ChatThreadData:
       type: object
       properties:
@@ -14234,12 +14557,34 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
       - threadId
       - documentGroupId
       - title
       - modelId
       - createdAt
+      - archivedAt
+      - deletedAt
+      additionalProperties: false
+    ChatThreadDeleteData:
+      type: object
+      properties:
+        threadId:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+      required:
+      - threadId
+      - deletedAt
       additionalProperties: false
     ChatThreadListItemData:
       type: object
@@ -14255,6 +14600,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
         lastMessageAt:
           type: string
           format: date-time
@@ -14270,6 +14623,8 @@ components:
       - title
       - modelId
       - createdAt
+      - archivedAt
+      - deletedAt
       - lastMessageAt
       - messageCount
       additionalProperties: false
@@ -14550,6 +14905,8 @@ components:
       properties:
         clusterJobId:
           type: string
+        documentGroupId:
+          type: string
         status:
           $ref: '#/components/schemas/JobStatus'
         clusters:
@@ -14557,9 +14914,54 @@ components:
           items:
             type: object
             additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureMessage:
+          type: string
+          nullable: true
       required:
       - clusterJobId
+      - documentGroupId
       - status
+      - createdAt
+      additionalProperties: false
+    ClusterJobLatestState:
+      type: string
+      enum:
+      - NO_SOURCE_NOTES
+      - NOT_ANALYZED
+      - FRESH
+      - STALE
+      - FAILED
+    ClusterJobLatestData:
+      type: object
+      properties:
+        documentGroupId:
+          type: string
+        searchableNoteCount:
+          type: integer
+          format: int32
+          minimum: 0
+        latestNoteUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        state:
+          $ref: '#/components/schemas/ClusterJobLatestState'
+        job:
+          type: object
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/ClusterJobData'
+      required:
+      - documentGroupId
+      - searchableNoteCount
+      - state
       additionalProperties: false
     BridgeConceptsRequest:
       type: object
@@ -15660,6 +16062,9 @@ components:
         capturedAt:
           type: string
           format: date-time
+        persisted:
+          type: boolean
+          description: false면 오늘 23:59 전 live overlay row이고, true면 DB에 저장된 persisted snapshot이다.
       required:
       - snapshotId
       - monthlyRevenue
@@ -15672,6 +16077,7 @@ components:
       - kafkaLagState
       - kafkaLagDetail
       - capturedAt
+      - persisted
       additionalProperties: false
     AdminKafkaLagData:
       type: object

@@ -1,0 +1,256 @@
+name: BrainX PR Validate
+
+on:
+  pull_request:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brainx-pr-validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: ci / detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      contracts_changed: ${{ steps.split.outputs.contracts_changed }}
+      deploy_config_changed: ${{ steps.split.outputs.deploy_config_changed }}
+      frontend_changed: ${{ steps.split.outputs.frontend_changed }}
+      admin_frontend_changed: ${{ steps.split.outputs.admin_frontend_changed }}
+      base_ref: ${{ steps.refs.outputs.base_ref }}
+      head_ref: ${{ steps.refs.outputs.head_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: refs
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base_ref="$BASE_SHA"
+          head_ref="$HEAD_SHA"
+
+          if [ -z "$base_ref" ] || [ "$base_ref" = "0000000000000000000000000000000000000000" ]; then
+            git fetch origin main --depth=1
+            base_ref="origin/main"
+          fi
+
+          echo "base_ref=$base_ref" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+
+      - id: split
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python infra/aws-dev/scripts/detect_changed_services.py \
+            --base "${{ steps.refs.outputs.base_ref }}" \
+            --head "${{ steps.refs.outputs.head_ref }}" > detection.json
+          cat detection.json
+
+          python - <<'PY'
+          import json
+          import os
+
+          with open("detection.json", "r", encoding="utf-8") as fp:
+              detection = json.load(fp)
+
+          services = detection.get("services", [])
+          changed_files = detection.get("changedFiles", [])
+
+          contracts_changed = any(path.startswith("contracts-v2/") for path in changed_files)
+          deploy_config_changed = any(
+              path.startswith(".github/workflows/")
+              or path.startswith("infra/aws-dev/")
+              or path == "brainX_back/docker-compose.yml"
+              for path in changed_files
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fp:
+              fp.write(f"contracts_changed={str(contracts_changed).lower()}\n")
+              fp.write(f"deploy_config_changed={str(deploy_config_changed).lower()}\n")
+              fp.write(f"frontend_changed={str('frontend' in services).lower()}\n")
+              fp.write(f"admin_frontend_changed={str('admin-frontend' in services).lower()}\n")
+          PY
+
+  repo-policy:
+    name: ci / repository policy
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whitespace and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "${{ needs.detect.outputs.base_ref }}...${{ needs.detect.outputs.head_ref }}"
+
+          if git grep -n -E '^(<<<<<<< .+|>>>>>>> .+)' -- .; then
+            echo "Merge conflict marker found." >&2
+            exit 1
+          fi
+
+  contracts:
+    name: ci / contracts
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: needs.detect.outputs.contracts_changed == 'true'
+        with:
+          node-version: 22
+
+      - name: Validate SSOT contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.detect.outputs.contracts_changed }}" != "true" ]; then
+            echo "No contract changes detected."
+            exit 0
+          fi
+
+          npx --yes @redocly/cli lint contracts-v2/brainx-openapi.ssot.yaml
+          npx --yes @asyncapi/cli validate contracts-v2/brainx-asyncapi.ssot.yaml
+
+  frontend:
+    name: ci / frontend
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: needs.detect.outputs.frontend_changed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: brainx-next/package-lock.json
+
+      - name: Run frontend checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.detect.outputs.frontend_changed }}" != "true" ]; then
+            echo "No frontend changes detected."
+            exit 0
+          fi
+
+          cd brainx-next
+          npm ci
+          npm run typecheck
+          npm run build
+
+  admin-frontend:
+    name: ci / admin frontend
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        if: needs.detect.outputs.admin_frontend_changed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: brainx-admin-next/package-lock.json
+
+      - name: Run admin frontend checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.detect.outputs.admin_frontend_changed }}" != "true" ]; then
+            echo "No admin frontend changes detected."
+            exit 0
+          fi
+
+          cd brainx-admin-next
+          npm ci
+          npm run typecheck
+          npm run build
+
+  deploy-config:
+    name: ci / deploy config
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker compose config
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.detect.outputs.deploy_config_changed }}" != "true" ]; then
+            echo "No deploy config changes detected."
+            exit 0
+          fi
+
+          cat > ci-compose.env <<'EOF'
+          ECR_REGISTRY=example.invalid/brainx
+          RDS_HOST=postgres.example.invalid
+          RDS_PORT=5432
+          POSTGRES_USER=brainx
+          POSTGRES_PASSWORD=brainx_password
+          JWT_SECRET=brainx_ci_secret_at_least_32_bytes
+          SERVICE_TOKEN=brainx-ci-service-token
+          PUBLIC_BASE_URL=https://brainx.example.invalid
+          PUBLIC_SITE_ADDRESS=brainx.example.invalid
+          ADMIN_SITE_ADDRESS=admin.brainx.example.invalid
+          NEO4J_PASSWORD=brainx_neo4j_password
+          SEED_ADMIN_PASSWORD=brainx_admin_password
+          NOTION_REDIRECT_URI=https://brainx.example.invalid/notion-callback
+          CDN_BASE_URL=https://cdn.brainx.example.invalid
+          ASSET_STORAGE_DIR=/app/asset-storage
+          EOF
+
+          docker compose --env-file ci-compose.env -f infra/aws-dev/deploy/docker-compose.yml config --quiet
+
+  required:
+    name: ci / required
+    runs-on: ubuntu-latest
+    needs:
+      - detect
+      - repo-policy
+      - contracts
+      - frontend
+      - admin-frontend
+      - deploy-config
+    if: always()
+    steps:
+      - name: Summarize required checks
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failed = []
+          for job, data in needs.items():
+              result = data.get("result")
+              print(f"{job}: {result}")
+              if result in {"failure", "cancelled"}:
+                  failed.append(job)
+
+          if failed:
+              print("Required validation failed: " + ", ".join(failed), file=sys.stderr)
+              sys.exit(1)
+          PY

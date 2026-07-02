@@ -1804,6 +1804,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
       setState((prev) => ({ ...prev, root: replaceNoteIdInNode(prev.root, note.id, savedId) }));
       setPaneTabs((prev) => replaceNoteIdInTabs(prev, note.id, savedId));
       prevActiveNoteIdRef.current = savedId;
+      window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: savedId } }));
       onActiveNoteChange?.(savedId);
       return;
     }
@@ -1817,6 +1818,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
           : item
       )
     );
+    window.dispatchEvent(new CustomEvent("brainx:notes-refresh", { detail: { noteId: note.id } }));
   }, [onActiveNoteChange]);
 
   const handleManualSave = useCallback(() => {

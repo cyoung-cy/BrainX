@@ -12,7 +12,9 @@ export type InlineAssistRequest = Schemas["InlineAssistRequest"];
 export type AiSuggestionDecisionRequest = Schemas["AiSuggestionDecisionRequest"];
 export type AiSuggestionDecisionData = Schemas["AiSuggestionDecisionData"];
 export type ChatThreadCreateRequest = Schemas["ChatThreadCreateRequest"];
+export type ChatThreadUpdateRequest = Schemas["ChatThreadUpdateRequest"];
 export type ChatThreadData = Schemas["ChatThreadData"];
+export type ChatThreadDeleteData = Schemas["ChatThreadDeleteData"];
 export type ChatThreadListData = Schemas["ChatThreadListData"];
 export type ChatMessageCreateRequest = Schemas["ChatMessageCreateRequest"];
 export type ChatThreadDetailData = Schemas["ChatThreadDetailData"];
@@ -20,6 +22,9 @@ export type LinkSuggestionsRequest = Schemas["LinkSuggestionsRequest"];
 export type LinkSuggestionsData = Schemas["LinkSuggestionsData"];
 export type BridgeConceptsRequest = Schemas["BridgeConceptsRequest"];
 export type BridgeConceptsData = Schemas["BridgeConceptsData"];
+export type ClusterJobCreateRequest = Schemas["ClusterJobCreateRequest"];
+export type ClusterJobData = Schemas["ClusterJobData"];
+export type ClusterJobLatestData = Schemas["ClusterJobLatestData"];
 export type AiModelsData = Schemas["AiModelsData"];
 export type AiModelSettingsPutRequest = Schemas["AiModelSettingsPutRequest"];
 export type AiModelSettingsData = Schemas["AiModelSettingsData"];
@@ -36,6 +41,8 @@ export type InlineAssistDoneEvent = {
 export type ChatMessageDoneEvent = {
   messageId: string;
 };
+
+export type ChatThreadListStatus = "active" | "archived";
 
 export type IntelligenceRequestOptions = {
   idempotencyKey?: string;
@@ -195,7 +202,7 @@ function buildHeaders(headers?: HeadersInit, options?: IntelligenceRequestOption
 
 export function semanticSearch(payload: SemanticSearchRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<SemanticSearchData>(
-    "/api/intelligence/intelligence/semantic-search",
+    "/api/v1/intelligence/semantic-search",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -208,7 +215,7 @@ export function createInlineAssistStream(
   payload: InlineAssistRequest,
   handlers?: IntelligenceStreamHandlers<InlineAssistDoneEvent>
 ) {
-  return streamRequest<InlineAssistDoneEvent>("/api/intelligence/ai/inline-assists", payload, handlers);
+  return streamRequest<InlineAssistDoneEvent>("/api/v1/ai/inline-assists", payload, handlers);
 }
 
 export function decideAiSuggestion(
@@ -217,7 +224,7 @@ export function decideAiSuggestion(
   options?: IntelligenceRequestOptions
 ) {
   return authedRequest<AiSuggestionDecisionData>(
-    `/api/intelligence/ai/suggestions/${encodeURIComponent(suggestionId)}/decision`,
+    `/api/v1/ai/suggestions/${encodeURIComponent(suggestionId)}/decision`,
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -228,7 +235,7 @@ export function decideAiSuggestion(
 
 export function createChatThread(payload: ChatThreadCreateRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<ChatThreadData>(
-    "/api/intelligence/ai/chat-threads",
+    "/api/v1/ai/chat-threads",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -238,7 +245,7 @@ export function createChatThread(payload: ChatThreadCreateRequest, options?: Int
 }
 
 export function listChatThreads(
-  params: { limit?: number; cursor?: string | null } = {},
+  params: { limit?: number; cursor?: string | null; status?: ChatThreadListStatus } = {},
   options?: IntelligenceRequestOptions
 ) {
   const searchParams = new URLSearchParams();
@@ -248,9 +255,12 @@ export function listChatThreads(
   if (params.cursor) {
     searchParams.set("cursor", params.cursor);
   }
+  if (params.status) {
+    searchParams.set("status", params.status);
+  }
   const query = searchParams.toString();
   return authedRequest<ChatThreadListData>(
-    `/api/intelligence/ai/chat-threads${query ? `?${query}` : ""}`,
+    `/api/v1/ai/chat-threads${query ? `?${query}` : ""}`,
     undefined,
     options
   );
@@ -262,7 +272,7 @@ export function sendChatMessageStream(
   handlers?: IntelligenceStreamHandlers<ChatMessageDoneEvent>
 ) {
   return streamRequest<ChatMessageDoneEvent>(
-    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}/messages`,
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}/messages`,
     payload,
     handlers
   );
@@ -270,15 +280,40 @@ export function sendChatMessageStream(
 
 export function getChatThread(threadId: string, options?: IntelligenceRequestOptions) {
   return authedRequest<ChatThreadDetailData>(
-    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
     undefined,
+    options
+  );
+}
+
+export function updateChatThread(
+  threadId: string,
+  payload: ChatThreadUpdateRequest,
+  options?: IntelligenceRequestOptions
+) {
+  return authedRequest<ChatThreadData>(
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function deleteChatThread(threadId: string, options?: IntelligenceRequestOptions) {
+  return authedRequest<ChatThreadDeleteData>(
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    {
+      method: "DELETE",
+    },
     options
   );
 }
 
 export function createBridgeConcepts(payload: BridgeConceptsRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<BridgeConceptsData>(
-    "/api/intelligence/ai/bridge-concepts",
+    "/api/v1/ai/bridge-concepts",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -289,7 +324,7 @@ export function createBridgeConcepts(payload: BridgeConceptsRequest, options?: I
 
 export function createLinkSuggestions(payload: LinkSuggestionsRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<LinkSuggestionsData>(
-    "/api/intelligence/ai/link-suggestions",
+    "/api/v1/ai/link-suggestions",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -298,13 +333,40 @@ export function createLinkSuggestions(payload: LinkSuggestionsRequest, options?:
   );
 }
 
+export function requestClusterJob(payload: ClusterJobCreateRequest, options?: IntelligenceRequestOptions) {
+  return authedRequest<ClusterJobData>(
+    "/api/v1/ai/clusters",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    options
+  );
+}
+
+export function getLatestClusterJob(
+  params: { documentGroupId?: string } = {},
+  options?: IntelligenceRequestOptions
+) {
+  const searchParams = new URLSearchParams();
+  if (params.documentGroupId) {
+    searchParams.set("documentGroupId", params.documentGroupId);
+  }
+  const query = searchParams.toString();
+  return authedRequest<ClusterJobLatestData>(
+    `/api/v1/ai/clusters/latest${query ? `?${query}` : ""}`,
+    undefined,
+    options
+  );
+}
+
 export function listAiModels(options?: IntelligenceRequestOptions) {
-  return authedRequest<AiModelsData>("/api/intelligence/ai/models", undefined, options);
+  return authedRequest<AiModelsData>("/api/v1/ai/models", undefined, options);
 }
 
 export function putAiModelSettings(payload: AiModelSettingsPutRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<AiModelSettingsData>(
-    "/api/intelligence/ai/model-settings",
+    "/api/v1/ai/model-settings",
     {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -315,19 +377,19 @@ export function putAiModelSettings(payload: AiModelSettingsPutRequest, options?:
 
 export function getNoteSummary(noteId: string, options?: IntelligenceRequestOptions) {
   return authedRequest<NoteSummaryData>(
-    `/api/intelligence/notes/${encodeURIComponent(noteId)}/summary`,
+    `/api/v1/notes/${encodeURIComponent(noteId)}/summary`,
     undefined,
     options
   );
 }
 
 export function getStyleProfile(options?: IntelligenceRequestOptions) {
-  return authedRequest<StyleProfileData>("/api/intelligence/users/me/style-profile", undefined, options);
+  return authedRequest<StyleProfileData>("/api/v1/users/me/style-profile", undefined, options);
 }
 
 export function putStyleProfile(payload: StyleProfilePutRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<StyleProfileData>(
-    "/api/intelligence/users/me/style-profile",
+    "/api/v1/users/me/style-profile",
     {
       method: "PUT",
       body: JSON.stringify(payload),
