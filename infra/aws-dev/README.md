@@ -9,14 +9,30 @@
 - Database: one RDS PostgreSQL instance, service-specific logical databases
 - Object storage: private S3 bucket for future user assets, note images, and attachments
 - Container runtime on EC2:
-  - `gateway-service`, `user-service`, `workspace-service`, `ingestion-service`, `commerce-service`, `admin-service`, `intelligence-service`
+  - `gateway-service`, `user-service`, `workspace-service`, `ingestion-service`, `commerce-service`, `admin-service`, `intelligence-service`, `mcp-service`
   - `frontend`, `admin-frontend`
-  - `redis`, `neo4j`, `qdrant`, `kafka`, `caddy`
+  - `prometheus`, `grafana`, `redis`, `neo4j`, `qdrant`, `kafka`, `caddy`
 - Public entry:
   - user frontend: `https://<public-domain>/`
   - admin frontend: `https://<admin-domain>/`
+  - `/mcp*`, `/api/v1/mcp/*` route directly to Mcp-Service through Caddy.
+  - Grafana: `https://<admin-domain>/grafana/`
   - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary`, `/api/v1/users/me/style-profile` route directly to Intelligence-Service through Caddy.
   - other `/api/v1/*` routes go to Gateway-Service.
+
+Prometheus stays on the internal Docker network and scrapes `user-service`, `gateway-service`, and `workspace-service` from their `/actuator/prometheus` endpoints. Grafana is auto-provisioned with that Prometheus datasource, so you do not need to add it manually in the UI.
+
+The imported Spring Boot monitor dashboard expects each service to publish an `application` metric tag. We set that tag to `spring.application.name` in the service `management.metrics.tags.application` config so the dashboard variables and panels can resolve per-service data.
+
+The dashboard also expects Micrometer's extra JVM binders for some of the JVM and process panels. We keep `io.github.mweirauch:micrometer-jvm-extras:0.2.2` on `User-Service`, `Gateway-Service`, and `Workspace-Service` so the panels do not fall back to `N/A` when those meters are queried.
+
+The Grafana dashboard itself is also provisioned from this repository now, so the `spring_boot_21` dashboard UID points directly at the provisioned Prometheus datasource instead of depending on the UI import placeholder `${DS_PROMETHEUS}`. This avoids the `Datasource ${DS_PROMETHEUS} was not found` error and keeps the dashboard stable after redeploys.
+
+`Gateway-Service` must allow `/actuator/prometheus` through its global auth filter, otherwise Prometheus receives `401 Unauthorized` when it scrapes the gateway target.
+
+`Admin-Service` talks to `user-service`, `commerce-service`, `workspace-service`, `ingestion-service`, and `intelligence-service` through Docker DNS names inside the shared compose network. Do not leave those URLs on the container defaults of `localhost`, or the admin screens will fail as soon as they try to read another service's data.
+
+Grafana is mounted behind Caddy on the admin site path so we do not need to expose a new public port. It reuses the existing runtime admin password (`SEED_ADMIN_PASSWORD`) for the initial Grafana login.
 
 ## Terraform
 
@@ -142,11 +158,15 @@ Workflow: `.github/workflows/brainx-dev-deploy.yml`
 
 - Push to `main` detects changed paths and builds only affected images.
 - `workflow_dispatch` can deploy all services or a specific service list.
+- Workflow-level concurrency serializes AWS dev deploys with `group: brainx-dev-deploy` and `cancel-in-progress: false`.
 - Image tags:
   - immutable: commit SHA
   - moving: `dev-latest`
+- Docker build cache uses Docker Buildx GitHub Actions cache with one scope per service. The first build for a service can miss, and later builds reuse cache layers across GitHub-hosted runners.
 - Deploy uses SSM `AWS-RunShellScript`; no SSH key or port 22 is required.
-- Remote deploy prints SSM stdout/stderr, `docker compose ps`, and endpoint checks.
+- Remote deploy reads SSM parameters in one batch, skips repeated database bootstrap after the first successful run for the current RDS target, and avoids image pulls for config-only deploys.
+- Remote deploy prints SSM stdout/stderr, `docker compose ps`, and endpoint checks. GitHub endpoint verification is limited to the changed service categories.
+- For deploy overlap or endpoint verification failures, use [`troubleshooting.md`](troubleshooting.md).
 
 Path mapping:
 
@@ -159,9 +179,10 @@ Path mapping:
 | `brainX_back/Commerce-Service/**` | `commerce-service` |
 | `brainX_back/Admin-Service/**` | `admin-service` |
 | `brainX_back/Intelligence-Service/**` | `intelligence-service` |
+| `brainX_back/Mcp-Service/**` | `mcp-service` |
 | `brainx-next/**` | `frontend` |
 | `brainx-admin-next/**` | `admin-frontend` |
-| `contracts-v2/**` | `intelligence-service`, `frontend` |
+| `contracts-v2/**` | `intelligence-service`, `mcp-service`, `frontend` |
 | `infra/aws-dev/**` or workflow file | deploy config refresh |
 
-For first deployment, run the workflow manually with `deploy_all=true` so every ECR image exists before partial deployments start.
+For first deployment after adding Mcp-Service, run Terraform apply first so the `brainx-dev-mcp-service` ECR repository exists, then run the workflow manually with `deploy_all=true` so every ECR image exists before partial deployments start.

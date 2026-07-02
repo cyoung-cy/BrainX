@@ -226,6 +226,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/clusters/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 최신 AI 클러스터링 상태 조회 */
+        get: operations["getLatestAiClusterJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/clusters/{clusterJobId}": {
         parameters: {
             query?: never;
@@ -397,7 +414,10 @@ export interface components {
         ChatThreadCreateRequest: {
             /** @description 이 채팅 스레드의 논리적 문서 그룹 경계. 생략하면 Knowledge Intelligence는 default로 처리한다. */
             documentGroupId?: string;
+            /** @description 스레드 생성 fallback 제목. initialMessage가 있으면 서버는 AI 제목 생성을 먼저 시도하고, 실패 시 이 값을 사용한다. */
             title: string;
+            /** @description AI 스레드 제목 생성을 위한 첫 사용자 메시지. 제목 생성 입력 전용이며 chat message로 저장되지 않는다. */
+            initialMessage?: string;
             modelId: string;
         };
         ChatThreadUpdateRequest: {
@@ -551,10 +571,27 @@ export interface components {
         };
         ClusterJobData: {
             clusterJobId: string;
+            documentGroupId: string;
             status: components["schemas"]["JobStatus"];
             clusters?: {
                 [key: string]: unknown;
             }[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+            failureMessage?: string | null;
+        };
+        /** @enum {string} */
+        ClusterJobLatestState: "NO_SOURCE_NOTES" | "NOT_ANALYZED" | "FRESH" | "STALE" | "FAILED";
+        ClusterJobLatestData: {
+            documentGroupId: string;
+            /** Format: int32 */
+            searchableNoteCount: number;
+            /** Format: date-time */
+            latestNoteUpdatedAt?: string | null;
+            state: components["schemas"]["ClusterJobLatestState"];
+            job?: components["schemas"]["ClusterJobData"] | null;
         };
         BridgeConceptsRequest: {
             noteIds: string[];
@@ -1733,6 +1770,57 @@ export interface operations {
             };
             /** @description 충돌 */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponse"];
+                };
+            };
+            /** @description 서버 내부 오류 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponse"];
+                };
+            };
+        };
+    };
+    getLatestAiClusterJob: {
+        parameters: {
+            query?: {
+                documentGroupId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 성공 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiSuccessBase"] & {
+                        data: components["schemas"]["ClusterJobLatestData"];
+                    };
+                };
+            };
+            /** @description 잘못된 요청 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponse"];
+                };
+            };
+            /** @description 인증 필요 */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
