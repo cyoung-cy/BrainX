@@ -966,6 +966,18 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     setPaneTabs((prev) => {
       const current = prev[paneId];
       const newTab: Tab = { id: newTabId, kind: "note", noteId: newNote.id };
+      // 현재 활성 탭이 없거나(진짜 Welcome), 있어도 그 노트를 찾을 수 없는 "제목 없음" 상태
+      // (삭제된 노트를 가리키는 등)라면 새 탭을 옆에 추가하지 않고 그 자리를 실제 노트로
+      // 교체한다 — Welcome Board/깨진 탭에서 새 노트를 만들면 새 탭이 따로 생기고 깨진 탭은
+      // 그대로 남던 문제가 있었다.
+      const activeTab = current?.tabs.find((t) => t.id === current.activeTabId);
+      const activeIsEmptyOrBroken =
+        !activeTab || (activeTab.kind === "note" && !notes.some((n) => n.id === activeTab.noteId));
+      if (current && activeIsEmptyOrBroken) {
+        const replacedTabs = current.tabs.map((t) => (t.id === current.activeTabId ? newTab : t));
+        const newTabs = activeTab ? replacedTabs : [...current.tabs, newTab];
+        return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTab.id } };
+      }
       const newTabs = current ? [...current.tabs, newTab] : [newTab];
       return { ...prev, [paneId]: { tabs: newTabs, activeTabId: newTabId } };
     });
@@ -1655,6 +1667,35 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab.kind === "note" ? initialTab.noteId : "start"]);
 
+  /* noteId가 있지만 실제로 notes 배열에 없는(삭제됐거나 애초에 존재한 적 없는 — 예: 유효하지
+     않은 URL로 직접 진입, 초기화 직후 세션 복원 등) "제목 없음" 탭을 정리한다. 그런 탭은
+     EditorPanel이 Welcome Board와 동일한 화면을 보여주게 만드는데(EditorPanel.tsx의 `!note`
+     분기), 애초에 탭 목록에 남아있으면 안 된다 — Welcome Board는 탭이 아니라 진짜 empty
+     state여야 한다. 초기 로드/세션 복원이 끝나기 전에는 건드리지 않는다(그 사이 아직 notes가
+     덜 채워졌을 뿐인 정상 탭까지 지워버리는 걸 막기 위해). */
+  useEffect(() => {
+    if (isInitialWorkspaceLoading || !hydratedRef.current) return;
+    const noteIds = new Set(notes.map((n) => n.id));
+    setPaneTabs((prev) => {
+      let changed = false;
+      const next: typeof prev = {};
+      for (const [paneId, tabState] of Object.entries(prev)) {
+        const validTabs = tabState.tabs.filter((t) => t.kind !== "note" || noteIds.has(t.noteId));
+        if (validTabs.length === tabState.tabs.length) {
+          next[paneId] = tabState;
+          continue;
+        }
+        changed = true;
+        const activeStillValid = validTabs.some((t) => t.id === tabState.activeTabId);
+        next[paneId] = {
+          tabs: validTabs,
+          activeTabId: activeStillValid ? tabState.activeTabId : (validTabs[validTabs.length - 1]?.id ?? ""),
+        };
+      }
+      return changed ? next : prev;
+    });
+  }, [notes, isInitialWorkspaceLoading]);
+
   // 변경 사항을 디바운스 저장 (백그라운드 자동저장 — 실패해도 조용히 무시, 수동 저장이 실패 상태를 노출).
   // 다만 "모든 탭을 닫아 Welcome으로 돌아간" 전환만은 디바운스 없이 즉시 기록한다 — 350ms 안에
   // 새로고침하면 그 직전(탭이 남아있던) 세션이 그대로 복원되어 닫은 탭/분할이 되살아나는
@@ -1876,10 +1917,18 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
 
   // 위키링크([[노트]]) 기능에 필요한 컨텍스트 — 노트 목록 조회/존재 확인/이동/생성을 에디터
   // 깊숙이(NoteEditor → CodeBlockView 같은 중첩 단계 없이도) 어디서든 쓸 수 있게 한다.
-  const wikiLinkNoteRefs = useMemo(() => notes.map((n) => ({ id: n.id, title: n.title })), [notes]);
+  const wikiLinkNoteRefs = useMemo(
+    () => notes.map((n) => ({ id: n.id, title: n.title, folderId: n.folderId ?? null })),
+    [notes]
+  );
+  const wikiLinkFolderRefs = useMemo(
+    () => folders.map((f) => ({ id: f.id, name: f.name, parentFolderId: f.parentFolderId })),
+    [folders]
+  );
   const wikiLinkValue = useMemo<WikiLinkContextValue>(
     () => ({
       notes: wikiLinkNoteRefs,
+      folders: wikiLinkFolderRefs,
       resolveTitle: (title) => resolveWikiLinkTitle(wikiLinkNoteRefs, title),
       onNavigate: (title) => {
         const found = resolveWikiLinkTitle(wikiLinkNoteRefs, title);
@@ -1889,7 +1938,7 @@ export default function NotesWorkspace({ initialTab, persistKey, onActiveNoteCha
         createNote(undefined, primaryPaneId, title);
       },
     }),
-    [wikiLinkNoteRefs, handleNoteClick, createNote, primaryPaneId]
+    [wikiLinkNoteRefs, wikiLinkFolderRefs, handleNoteClick, createNote, primaryPaneId]
   );
 
   // 노트/탭/패널 데이터 초기화가 끝나기 전에는 워크스페이스 전체를 로딩 상태로 대체한다 —

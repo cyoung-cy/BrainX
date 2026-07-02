@@ -16,7 +16,7 @@ export const DEFAULT_SORT_DIRECTION: Record<SortOption, SortDirection> = {
   modified: "desc",
   created: "desc",
   title: "asc",
-  favorites: "asc",
+  favorites: "desc",
   ai: "asc",
 };
 
@@ -31,13 +31,14 @@ export const SORT_OPTION_ENABLED: Record<SortOption, boolean> = {
   ai: false,
 };
 
-/** 즐겨찾기 우선은 방향을 적용하기 애매하다(즐겨찾기를 "나중에" 보여주는 건 옵션 이름의 의미와
-    반대) — 그래서 방향 토글을 비활성화하고 항상 즐겨찾기 먼저 + 제목 오름차순으로 고정한다. */
+/** 즐겨찾기 우선은 "즐겨찾기가 먼저 온다"는 그룹 순서 자체는 방향과 무관하게 항상 고정하고,
+    방향은 각 그룹(즐겨찾기/비즐겨찾기) 내부의 최근 수정순 정렬에만 적용한다 — 즐겨찾기를
+    "나중에" 보여주는 것까지 방향으로 뒤집으면 옵션 이름과 모순되기 때문. */
 export const SORT_DIRECTION_APPLICABLE: Record<SortOption, boolean> = {
   modified: true,
   created: true,
   title: true,
-  favorites: false,
+  favorites: true,
   ai: false,
 };
 
@@ -94,12 +95,12 @@ export function sortNotes<T extends { title: string; createdAt: number; updatedA
     case "title":
       return arr.sort((a, b) => naturalTitleCompare(a.title, b.title) * sign);
     case "favorites":
-      // 방향을 적용하지 않는다(SORT_DIRECTION_APPLICABLE.favorites === false) — 항상 즐겨찾기
-      // 먼저 + 제목 자연 오름차순으로 고정.
+      // 즐겨찾기가 먼저 오는 것 자체는 방향과 무관하게 고정하고, 각 그룹(즐겨찾기/비즐겨찾기)
+      // 내부는 최근 수정순으로 정렬한다 — 방향은 그 내부 정렬에만 적용된다(기본 desc=최신 먼저).
       return arr.sort((a, b) => {
         const fa = favorites.has(a.id) ? 1 : 0;
         const fb = favorites.has(b.id) ? 1 : 0;
-        return fb - fa || naturalTitleCompare(a.title, b.title);
+        return fb - fa || (a.updatedAt - b.updatedAt) * sign;
       });
     case "ai":
       // 실제 데이터가 없다 — SORT_OPTION_ENABLED에서 UI 선택 자체를 막고, 여기서도
@@ -122,6 +123,8 @@ export function sortFolders<T extends { name: string; id: string; favorite?: boo
     case "title":
       return arr.sort((a, b) => naturalTitleCompare(a.name, b.name) * sign);
     case "favorites":
+      // 폴더에는 updatedAt이 없어(MockFolder 참고) 노트처럼 최근 수정순으로 그룹 내부를 정렬할
+      // 수 없다 — 즐겨찾기 그룹은 먼저 오도록 고정하고, 내부는 제목 자연 정렬로 대체한다.
       return arr.sort((a, b) => {
         const fa = favorites.has(a.id) || a.favorite ? 1 : 0;
         const fb = favorites.has(b.id) || b.favorite ? 1 : 0;
