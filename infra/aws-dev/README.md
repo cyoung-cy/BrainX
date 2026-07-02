@@ -40,6 +40,8 @@ The rightmost "Open Files" panels query `process_files_open_files` first and fal
 
 `Commerce-Service` and `Ingestion-Service` now explicitly allow `/actuator/prometheus` through their security chains, and `Admin-Service` already permits all actuator endpoints. `Intelligence-Service` exposes `/actuator/prometheus` through its management endpoint config and leaves the path reachable outside `/api/v1/**`.
 
+`Ingestion-Service` also needs `spring-boot-starter-actuator` in its Gradle dependencies so the `/actuator/prometheus` endpoint exists at runtime; without that starter, Prometheus has nothing to scrape and Grafana panels stay on `No data`.
+
 `Admin-Service` talks to `user-service`, `commerce-service`, `workspace-service`, `ingestion-service`, and `intelligence-service` through Docker DNS names inside the shared compose network. Do not leave those URLs on the container defaults of `localhost`, or the admin screens will fail as soon as they try to read another service's data.
 
 Grafana is mounted behind Caddy on the admin site path so we do not need to expose a new public port. It reuses the existing runtime admin password (`SEED_ADMIN_PASSWORD`) for the initial Grafana login.
