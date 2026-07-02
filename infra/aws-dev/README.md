@@ -15,7 +15,7 @@
 - Public entry:
   - user frontend: `https://<public-domain>/`
   - admin frontend: `https://<admin-domain>/`
-  - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary` route directly to Intelligence-Service through Caddy.
+  - `/api/v1/ai/*`, `/api/v1/intelligence/*`, `/api/v1/notes/*/summary`, `/api/v1/users/me/style-profile` route directly to Intelligence-Service through Caddy.
   - other `/api/v1/*` routes go to Gateway-Service.
 
 ## Terraform

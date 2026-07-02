@@ -6,17 +6,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.brainx.intelligence.infrastructure.web.ApiErrorResponse;
@@ -36,7 +38,25 @@ public class SecurityConfig {
     private static final String DEV_USER_ID_HEADER = "X-User-Id";
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper, Environment environment) throws Exception {
+    JwtTokenVerifier jwtTokenVerifier(
+        ObjectMapper objectMapper,
+        @Value("${brainx.jwt.secret}") String jwtSecret
+    ) {
+        return new JwtTokenVerifier(objectMapper, jwtSecret);
+    }
+
+    @Bean
+    JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenVerifier jwtTokenVerifier) {
+        return new JwtAuthenticationFilter(jwtTokenVerifier);
+    }
+
+    @Bean
+    SecurityFilterChain securityFilterChain(
+        HttpSecurity http,
+        ObjectMapper objectMapper,
+        Environment environment,
+        JwtAuthenticationFilter jwtAuthenticationFilter
+    ) throws Exception {
         boolean localApiPermitAll = environment.acceptsProfiles(Profiles.of("local"))
             || environment.getProperty("brainx.security.dev-auth.enabled", Boolean.class, false);
         boolean devUi = environment.acceptsProfiles(Profiles.of("dev-ui"));
@@ -44,13 +64,16 @@ public class SecurityConfig {
 
         http
             .formLogin(AbstractHttpConfigurer::disable)
-            .httpBasic(Customizer.withDefaults())
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(exceptionHandling -> exceptionHandling
                 .authenticationEntryPoint((request, response, exception) ->
                     writeError(response, objectMapper, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required."))
                 .accessDeniedHandler((request, response, exception) ->
                     writeError(response, objectMapper, HttpStatus.FORBIDDEN, "FORBIDDEN", "Forbidden."))
             );
+
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         if (devUi) {
             http.csrf(AbstractHttpConfigurer::disable);

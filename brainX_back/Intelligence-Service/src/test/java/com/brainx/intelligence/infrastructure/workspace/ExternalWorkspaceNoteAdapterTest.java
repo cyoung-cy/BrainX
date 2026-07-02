@@ -10,7 +10,6 @@ import java.net.URI;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -18,13 +17,13 @@ import org.springframework.web.client.RestClient;
 class ExternalWorkspaceNoteAdapterTest {
 
     @Test
-    void getNoteSnapshotCallsInternalApiWithBearerToken() {
+    void getNoteSnapshotCallsInternalApiWithServiceTokenHeader() {
         WorkspaceClientProperties properties = properties("service-token");
         RestClient.Builder builder = RestClient.builder().baseUrl("https://workspace.test");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         ExternalWorkspaceNoteAdapter adapter = new ExternalWorkspaceNoteAdapter(builder.build(), properties);
         server.expect(requestTo("https://workspace.test/internal/v1/workspace/notes/note-1/snapshot"))
-            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer service-token"))
+            .andExpect(header("X-Service-Token", "service-token"))
             .andRespond(withSuccess("""
                 {
                   "success": true,

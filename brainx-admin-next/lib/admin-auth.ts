@@ -8,6 +8,19 @@ export type AdminSession = {
 };
 
 const STORAGE_KEY = "brainx_admin_session_v1";
+const TOKEN_COOKIE_KEY = "brainx_admin_access_token";
+
+function writeTokenCookie(token: string) {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${TOKEN_COOKIE_KEY}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure}`;
+}
+
+function clearTokenCookie() {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${TOKEN_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+}
 
 export function getSession(): AdminSession | null {
   if (typeof window === "undefined") return null;
@@ -23,6 +36,7 @@ export function getSession(): AdminSession | null {
 export function setSession(session: AdminSession) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  writeTokenCookie(session.accessToken);
 }
 
 export function updateSessionAdmin(admin: AdminProfile) {
@@ -34,6 +48,7 @@ export function updateSessionAdmin(admin: AdminProfile) {
 export function clearSession() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+  clearTokenCookie();
 }
 
 export function getToken(): string | null {

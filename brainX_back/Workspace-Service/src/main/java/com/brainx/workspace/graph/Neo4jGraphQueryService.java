@@ -79,12 +79,14 @@ public class Neo4jGraphQueryService {
                     MATCH (source:Note {userId: $userId})-[r:LINKED]->(target:Note {userId: $userId})
                     WHERE source.noteId IN $noteIds
                       AND target.noteId IN $noteIds
-                    RETURN r.linkId AS linkId,
+                    RETURN coalesce(r.linkId, source.noteId + '::' + target.noteId) AS linkId,
                            source.noteId AS sourceNoteId,
                            target.noteId AS targetNoteId,
-                           coalesce(r.type, 'MANUAL') AS type,
+                           coalesce(r.linkType, r.type, 'MANUAL') AS type,
                            r.weight AS weight,
-                           r.reason AS reason
+                           r.reason AS reason,
+                           r.anchorText AS anchorText,
+                           r.headingAnchor AS headingAnchor
                     """, edgeParams).list(record -> mapOf(
                     "id", record.get("linkId").asString(),
                     "linkId", record.get("linkId").asString(),
@@ -92,7 +94,11 @@ public class Neo4jGraphQueryService {
                     "target", record.get("targetNoteId").asString(),
                     "type", record.get("type").asString(),
                     "weight", record.get("weight").isNull() ? null : record.get("weight").asDouble(),
-                    "reason", record.get("reason").isNull() ? null : record.get("reason").asString()
+                    "reason", record.get("reason").isNull() ? null : record.get("reason").asString(),
+                    "metadata", mapOf(
+                            "anchorText", record.get("anchorText").isNull() ? null : record.get("anchorText").asString(),
+                            "headingAnchor", record.get("headingAnchor").isNull() ? null : record.get("headingAnchor").asString()
+                    )
             )));
 
             return Optional.of(new GraphData(

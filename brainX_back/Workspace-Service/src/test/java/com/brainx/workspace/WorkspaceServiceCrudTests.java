@@ -10,6 +10,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 
+import org.neo4j.driver.Driver;
+import org.neo4j.driver.SessionConfig;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -21,6 +24,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class WorkspaceServiceCrudTests {
     private static final String USER_ID = "usr_test";
+
+    @Autowired(required = false)
+    Driver neo4jDriver;
 
     @Autowired
     WorkspaceService workspaceService;
@@ -54,6 +60,13 @@ class WorkspaceServiceCrudTests {
         eventOutboxRepository.deleteAll();
         folderRepository.deleteAll();
         noteRepository.deleteAll();
+        if (neo4jDriver != null) {
+            try (var session = neo4jDriver.session()) {
+                session.executeWrite(tx -> tx.run("MATCH (n) DETACH DELETE n").consume());
+            } catch (Exception e) {
+                System.err.println("Failed to clean Neo4j database: " + e.getMessage());
+            }
+        }
     }
 
     @Test
@@ -97,17 +110,38 @@ class WorkspaceServiceCrudTests {
         assertThat(tags.tags()).containsExactly("backend", "ssot");
 
         NoteLinkData link = workspaceService.createLink(USER_ID, first.noteId(),
-                new NoteLinkCreateRequest(second.noteId(), "Second note", false));
+                new NoteLinkCreateRequest(second.noteId(), "Second note", false, "Second alias", "overview"));
         assertThat(link.sourceNoteId()).isEqualTo(first.noteId());
         assertThat(link.targetNoteId()).isEqualTo(second.noteId());
+        assertThat(link.linkType()).isEqualTo("MANUAL");
+        assertThat(link.anchorText()).isEqualTo("Second alias");
+        assertThat(link.headingAnchor()).isEqualTo("overview");
+
+        // Neo4j Verification Query
+        if (neo4jDriver != null) {
+            try (var session = neo4jDriver.session()) {
+                var result = session.run("MATCH (n:Note)-[r:LINKED]->(m:Note) RETURN n.noteId, r.linkId, m.noteId");
+                System.out.println("====== NEO4J LINKED RELATIONSHIP VERIFICATION ======");
+                boolean found = false;
+                while (result.hasNext()) {
+                    found = true;
+                    var record = result.next();
+                    System.out.println("Relationship found: " + record.get("n.noteId").asString() + " -[:LINKED {" + record.get("r.linkId").asString() + "}]-> " + record.get("m.noteId").asString());
+                }
+                System.out.println("====================================================");
+                assertThat(found).isTrue();
+            }
+        }
 
         BacklinksData backlinks = workspaceService.backlinks(USER_ID, second.noteId());
         assertThat(backlinks.backlinks()).hasSize(1);
         assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(first.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("Second alias");
 
         GraphData graph = workspaceService.graph(USER_ID, folder.folderId(), null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
         assertThat(graph.nodes()).hasSize(2);
         assertThat(graph.edges()).hasSize(1);
+        assertThat(graph.edges().getFirst()).containsEntry("type", "MANUAL");
 
         FavoriteData favorite = workspaceService.putFavorite(USER_ID, "NOTE", first.noteId(), new FavoritePutRequest(true));
         assertThat(favorite.enabled()).isTrue();
@@ -172,5 +206,99 @@ class WorkspaceServiceCrudTests {
         // 다른 폴더에서는 같은 제목을 허용한다.
         NoteCreatedData noteInOtherFolder = workspaceService.createNote(USER_ID, new NoteCreateRequest("노트", "", second.folderId(), List.of()));
         assertThat(noteInOtherFolder.title()).isEqualTo("노트");
+    }
+
+    @Test
+    void syncGraphAllRecreatesNeo4jNodesAndEdgesFromPostgreSqlSSOT() {
+        // Given
+        FolderData folder = workspaceService.createFolder(USER_ID, new FolderCreateRequest("Sync Test Folder", null));
+        NoteCreatedData note1 = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Sync Note 1", "sync target", folder.folderId(), List.of("sync")));
+        NoteCreatedData note2 = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Sync Note 2", "sync target 2", folder.folderId(), List.of("sync")));
+        workspaceService.createLink(USER_ID, note1.noteId(),
+                new NoteLinkCreateRequest(note2.noteId(), "Sync Note 2", false, null, null));
+
+        // When
+        Map<String, Object> result = workspaceService.syncGraph();
+
+        // Then
+        assertThat(result.get("status")).isEqualTo("SUCCESS");
+        assertThat((Integer) result.get("notes")).isGreaterThanOrEqualTo(2);
+        assertThat((Integer) result.get("relationships")).isGreaterThanOrEqualTo(1);
+
+        if (neo4jDriver != null) {
+            try (var session = neo4jDriver.session()) {
+                var notesResult = session.run("MATCH (n:Note) RETURN count(n) as cnt");
+                long noteCount = notesResult.hasNext() ? notesResult.next().get("cnt").asLong() : 0L;
+                assertThat(noteCount).isGreaterThanOrEqualTo(2L);
+
+                var linksResult = session.run("MATCH ()-[r:LINKED]->() RETURN count(r) as cnt");
+                long linkCount = linksResult.hasNext() ? linksResult.next().get("cnt").asLong() : 0L;
+                assertThat(linkCount).isGreaterThanOrEqualTo(1L);
+            }
+        }
+    }
+
+    @Test
+    void savingWikiLinkContentCreatesLedgerLinksAndBackfillKeepsGraphInSync() {
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Target note", "target", null, List.of("graph")));
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Source note", "<p><span data-wiki-link=\"true\" data-title=\"Target note\" data-alias=\"Target alias\" data-heading=\"deep-dive\">[[Target alias]]</span></p>", null, List.of("wiki")));
+
+        GraphData graph = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(graph.edges()).hasSize(1);
+        assertThat(graph.edges().getFirst()).containsEntry("type", "WIKI");
+
+        BacklinksData backlinks = workspaceService.backlinks(USER_ID, target.noteId());
+        assertThat(backlinks.backlinks()).hasSize(1);
+        assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(source.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("Target alias");
+
+        Map<String, Object> syncResult = workspaceService.syncGraph();
+        assertThat(syncResult).containsEntry("status", "SUCCESS");
+        assertThat(syncResult).containsKey("wikiLinksBackfilled");
+    }
+
+    @Test
+    void creatingTargetNoteAfterSourceSaveReconcilesExistingWikiLinks() {
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Kafka", "<p>message [[envelope]] flow</p>", null, List.of("stream")));
+
+        GraphData beforeTargetExists = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(beforeTargetExists.nodes()).hasSize(1);
+        assertThat(beforeTargetExists.edges()).isEmpty();
+
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("envelope", "", null, List.of("stream")));
+
+        BacklinksData backlinks = workspaceService.backlinks(USER_ID, target.noteId());
+        assertThat(backlinks.backlinks()).hasSize(1);
+        assertThat(backlinks.backlinks().getFirst().sourceNoteId()).isEqualTo(source.noteId());
+        assertThat(backlinks.backlinks().getFirst().linkedText()).isEqualTo("envelope");
+
+        GraphData afterTargetExists = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(afterTargetExists.nodes()).hasSize(2);
+        assertThat(afterTargetExists.edges()).hasSize(1);
+        assertThat(afterTargetExists.edges().getFirst()).containsEntry("type", "WIKI");
+    }
+
+    @Test
+    void renamingNoteReconcilesExistingWikiLinksForOldAndNewTitles() {
+        NoteCreatedData source = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("Kafka", "<p>[[envelope]] payload</p>", null, List.of("stream")));
+        NoteCreatedData target = workspaceService.createNote(USER_ID,
+                new NoteCreateRequest("envelope", "", null, List.of("stream")));
+
+        GraphData initialGraph = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(initialGraph.edges()).hasSize(1);
+
+        workspaceService.patchMetadata(USER_ID, target.noteId(),
+                new NoteMetadataPatchRequest("Envelope V2", null, List.of("stream"), false, null, null));
+
+        GraphData afterRename = workspaceService.graph(USER_ID, null, null, LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
+        assertThat(afterRename.nodes()).hasSize(2);
+        assertThat(afterRename.edges()).isEmpty();
     }
 }

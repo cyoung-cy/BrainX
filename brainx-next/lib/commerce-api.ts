@@ -35,6 +35,8 @@ export type CheckoutSession = {
   currency: string | null;
 };
 
+export type BillingCycle = "MONTHLY" | "YEARLY";
+
 export type CheckoutConfirmResult = {
   checkoutSessionId: string;
   paymentId: string;
@@ -82,10 +84,10 @@ export async function getMySubscription() {
   return authedRequest<Subscription>("/api/v1/users/me/subscription");
 }
 
-export async function createCheckoutSession(planId: string, successUrl: string, cancelUrl: string) {
+export async function createCheckoutSession(planId: string, billingCycle: BillingCycle, successUrl: string, cancelUrl: string) {
   return authedRequest<CheckoutSession>("/api/v1/subscriptions/checkout-sessions", {
     method: "POST",
-    body: JSON.stringify({ planId, successUrl, cancelUrl })
+    body: JSON.stringify({ planId, billingCycle, successUrl, cancelUrl })
   });
 }
 

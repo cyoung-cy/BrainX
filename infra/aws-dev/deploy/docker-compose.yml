@@ -29,6 +29,7 @@ services:
       PORT: "3000"
       HOSTNAME: 0.0.0.0
       API_SERVER_URL: http://gateway-service:8088
+      INTELLIGENCE_API_BASE_URL: http://intelligence-service:8086
       NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_BASE_URL}
       NEXT_PUBLIC_WORKSPACE_API_BASE_URL: ${PUBLIC_BASE_URL}
       NEXT_PUBLIC_COMMERCE_API_BASE_URL: ${PUBLIC_BASE_URL}
@@ -242,6 +243,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: "8086"
+      SPRING_APPLICATION_NAME: intelligence-service
       JAVA_TOOL_OPTIONS: -Xms256m -Xmx2048m -XX:+ExitOnOutOfMemoryError
       SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/brainx_intelligence
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
@@ -269,6 +271,7 @@ services:
       BRAINX_WORKSPACE_BASE_URL: http://workspace-service:8082
       BRAINX_WORKSPACE_SERVICE_TOKEN: ${SERVICE_TOKEN}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       BRAINX_EVENTS_CONSUMER_ENABLED: "true"
       BRAINX_EVENTS_PRODUCER_ENABLED: "true"
     expose:

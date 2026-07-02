@@ -880,6 +880,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Subscription reads require the persisted `billingCycle` field defined by `SubscriptionData`. Commerce-Service must keep `commerce_subscriptions.billing_cycle` present in every deployed database, and Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so older environments are repaired before serving reads.
       responses:
         '200':
           description: 성공
@@ -1893,6 +1894,53 @@ paths:
       security:
       - bearerAuth: []
       - guestSessionAuth: []
+  /api/v1/workspace/me/stats:
+    get:
+      operationId: getMyWorkspaceStats
+      summary: 내 노트 통계 조회
+      tags:
+      - Knowledge Workspace
+      x-producer-service: knowledge-workspace
+      x-visibility: public
+      x-consumers:
+      - id: web.home
+        type: frontend
+        description: 홈 대시보드의 노트 통계 KPI와 인사이트
+      - id: web.settings
+        type: frontend
+        description: 사용자 설정의 노트 통계 메뉴
+      x-produces-events: []
+      x-internal-sync-calls: []
+      x-async-boundary: false
+      description: 인증된 사용자 본인의 노트 개수, 저장 용량, 최근 활동을 조회한다.
+      responses:
+        '200':
+          description: 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ApiSuccessBase'
+                - type: object
+                  required:
+                  - data
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/WorkspaceUserStatsData'
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: 권한 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+      security:
+      - bearerAuth: []
   /api/v1/notes:
     x-implementation-note: Authenticated note requests must use the bearer-auth user context as the source of truth. Any dev-only `X-User-Id` override is allowed only for unauthenticated local development and must not replace a real logged-in user's identity.
     post:
@@ -1922,6 +1970,7 @@ paths:
       - NoteCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Creating a note must also reconcile existing `[[...]]` wiki links from other notes that already reference the new title, so the authoritative note-link ledger and Neo4j projection gain the relationship even when the target note is created later.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -2551,6 +2600,7 @@ paths:
       - NoteMetadataChanged
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: If the title changes, Workspace-Service must rescan existing wiki-link references for both the old and new titles so stale edges are removed and newly satisfiable edges are created in the authoritative note-link ledger and graph projection.
       parameters:
       - name: noteId
         in: path
@@ -3511,6 +3561,7 @@ paths:
       - NoteLinkCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: Workspace-Service persists `workspace_note_links.link_type` as a required ledger column. Legacy databases must run the tracked SQL init migration under `Workspace-Service/src/main/resources/db/migration` so existing rows are backfilled before Hibernate schema update enforces NOT NULL.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       - name: noteId
@@ -3751,7 +3802,10 @@ paths:
         표준 Workspace 노트 식별자이며, Workspace PostgreSQL 레코드, Neo4j 같은
         그래프 projection, Knowledge Intelligence read model/vector index, RAG citation,
         프론트엔드 그래프 상태에서 사용하는 식별자와 일치해야 한다. 그래프 projection은
-        read model이며 노트와 링크의 권위 원장은 Workspace가 유지한다.
+        read model이며 노트와 링크의 권위 원장은 Workspace가 유지한다. Neo4j projection은
+        노트 본문 `[[...]]` 위키링크, 수동 링크, 태그, 제목/본문 유사도를 다시 계산해
+        `LINKED` 관계를 최신 상태로 유지하며, 전체 그래프 재생성 대신 변경된 노트와
+        직접 관련된 노트만 증분 갱신한다.
       parameters:
       - name: folderId
         in: query
@@ -7300,6 +7354,7 @@ paths:
       - CheckoutSessionCreated
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: The checkout popup must forward the user-selected `billingCycle` (`MONTHLY` or `YEARLY`) together with `planId`, `successUrl`, and `cancelUrl`. Frontend monthly/yearly toggle state is part of the request contract and must not be dropped before the Toss SDK is launched.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -8267,7 +8322,7 @@ paths:
       - id: web.admin.users
         type: frontend
         description: BrainX-Admin user management list, filters and bulk actions
-      x-implementation-note: User rows must show the same current plan as the detail drawer. Do not infer the list plan from payment history; use the current subscription snapshot returned by Commerce-Service through Admin-Service.
+      x-implementation-note: User rows must show the same current plan as the detail drawer. Do not infer the list plan from payment history; use the current subscription snapshot returned by Commerce-Service through Admin-Service. If Commerce-Service billing reads fail, Admin-Service may return the list with `free` fallback plans instead of failing the whole screen.
       x-internal-sync-calls:
       - operationId: getUserAccountSnapshotInternal
         targetService: User-Service
@@ -8348,6 +8403,7 @@ paths:
       x-produces-events: []
       x-internal-sync-calls: []
       x-async-boundary: false
+      x-implementation-note: The admin web app is served behind `admin.brainx.p-e.kr -> admin-frontend -> admin-service`. The issued access token must remain usable for same-origin follow-up requests even when the Next.js proxy route reconstructs the upstream call, so the frontend may persist the token in a same-site cookie in addition to browser local storage.
       description: loginId/password 검증 후 JWT 액세스 토큰을 발급한다. 임시 비밀번호로 로그인한 경우 admin.mustChangePassword가 true로 내려간다.
       requestBody:
         required: true
@@ -8973,7 +9029,7 @@ paths:
         reason: signup and active user summary
       x-produces-events: []
       x-async-boundary: false
-      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. The dashboard read itself is non-persistent; a Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul.
+      x-implementation-note: KPI cards are rendered from Admin-Service authoritative aggregates. KPI deltas compare the latest live values with the most recent persisted daily monitoring snapshot, and service uptime is derived from recent persisted health snapshots instead of a frontend placeholder. A Spring scheduler captures the daily snapshot at 23:59 Asia/Seoul. Before that cutoff, the admin web app must keep overview data refreshed from live reads instead of relying on the persisted snapshot list. If Commerce-Service billing reads fail, Admin-Service may respond with zeroed billing aggregates so the admin shell can still render.
       responses:
         '200':
           description: Success
@@ -8994,7 +9050,7 @@ paths:
   /api/v1/admin/monitoring/snapshots:
     get:
       operationId: listAdminMonitoringSnapshots
-      summary: List daily persisted dashboard monitoring snapshots
+      summary: List dashboard monitoring history with current-day live overlay
       tags:
       - Admin
       x-producer-service: admin-service
@@ -9006,7 +9062,7 @@ paths:
       x-internal-sync-calls: []
       x-produces-events: []
       x-async-boundary: false
-      description: admin-service가 매일 23:59 스케줄러로 적재하는 매출/구독/활성 사용자 일별 스냅샷 이력.
+      description: 과거 날짜는 admin-service가 매일 23:59 Asia/Seoul 스케줄러로 적재한 persisted 스냅샷 이력을 반환하고, 오늘 날짜는 아직 persisted row가 없으면 현재 live 집계를 맨 앞에 overlay해서 반환한다.
       responses:
         '200':
           description: Success
@@ -9420,6 +9476,7 @@ paths:
         reason: Commerce owns payment ledger
       x-produces-events: []
       x-async-boundary: false
+      x-implementation-note: Payment history relies on the Commerce checkout-session ledger, including the persisted `billingCycle` field on `commerce_checkout_sessions`. Spring SQL init applies the tracked SQL migration under `Commerce-Service/src/main/resources/db/migration` before JPA schema update so admin payment tables do not silently fall back to empty data after schema drift.
       parameters:
       - name: status
         in: query
@@ -13254,6 +13311,12 @@ components:
           type: string
         targetTitle:
           type: string
+        linkType:
+          type: string
+          enum:
+          - MANUAL
+          - WIKI
+          - AI_SUGGESTED
         anchorText:
           type: string
           nullable: true
@@ -13267,6 +13330,7 @@ components:
       - sourceNoteId
       - targetNoteId
       - targetTitle
+      - linkType
       additionalProperties: false
     BacklinksData:
       type: object
@@ -13368,8 +13432,8 @@ components:
     GraphEdgeData:
       type: object
       description: >
-        승인된 Workspace 노트 링크를 나타내는 그래프 엣지. 추천 링크는 사용자가 수락해
-        Workspace 링크 command로 변환되기 전까지 AI 제안 상태로 유지되어야 한다.
+        Workspace 노트 간의 의미 관계를 나타내는 그래프 엣지. `type`은 관계의 의미를,
+        `weight`는 연결 강도를, `reason`은 AI/규칙 추론 근거를 나타낸다.
       properties:
         id:
           type: string
@@ -13386,7 +13450,18 @@ components:
           type: string
           enum:
           - MANUAL
+          - WIKI
           - AI_SUGGESTED
+          - RELATED
+          - PARENT
+          - CHILD
+          - CAUSE
+          - RESULT
+          - WORKFLOW
+          - REFERENCE
+          - PROJECT
+          - TAG
+          - SIMILAR
         weight:
           type: number
           nullable: true
@@ -15600,6 +15675,9 @@ components:
         capturedAt:
           type: string
           format: date-time
+        persisted:
+          type: boolean
+          description: false면 오늘 23:59 전 live overlay row이고, true면 DB에 저장된 persisted snapshot이다.
       required:
       - snapshotId
       - monthlyRevenue
@@ -15612,6 +15690,7 @@ components:
       - kafkaLagState
       - kafkaLagDetail
       - capturedAt
+      - persisted
       additionalProperties: false
     AdminKafkaLagData:
       type: object
@@ -16145,6 +16224,24 @@ components:
       additionalProperties: false
     InternalUserWorkspaceStatsData:
       type: object
+      properties:
+        noteCount:
+          type: integer
+        storageBytes:
+          type: integer
+          format: int64
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/InternalUserActivityDto'
+      required:
+      - noteCount
+      - storageBytes
+      - activities
+      additionalProperties: false
+    WorkspaceUserStatsData:
+      type: object
+      description: Authenticated user workspace statistics returned by `/api/v1/workspace/me/stats`.
       properties:
         noteCount:
           type: integer

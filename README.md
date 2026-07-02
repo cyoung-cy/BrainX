@@ -122,8 +122,10 @@ BrainX/
 - `BrainXNote`: 노트 도메인 타입
 - `CLUSTERS`: 지식 클러스터 정의
 - `seedNotes()`: 초기 노트 데이터
-- `deriveGraphEdges()`: 노트 링크 기반 그래프 edge 생성
+- `deriveGraphEdges()`: 노트 본문, 태그, 위키링크, 제목 유사도를 함께 분석해 의미 관계 그래프 edge 생성
 - `createNoteSeed()`, `updateNoteDerived()`: 노트 생성/수정 파생값 관리
+
+`deriveGraphEdges()`는 단순 링크만 보지 않고 `REFERENCE`, `RELATED`, `PARENT`/`CHILD`, `CAUSE`/`RESULT`, `WORKFLOW`, `PROJECT`, `TAG`, `SIMILAR` 관계를 weight와 reason과 함께 산출한다. 그래프 UI와 SSOT의 `/api/v1/graph` 계약은 이 의미 관계를 전제로 한다.
 
 ### Frontend API Boundary
 
@@ -135,7 +137,7 @@ BrainX/
 - `lib/support-api.ts`: 문의 목록/생성/상세 조회
 - `lib/user-api.ts`: 사용자 계정/마이페이지 계열 API, 관리자 공지 알림함 조회/읽음 처리
 - `lib/ingestion-api.ts`: Notion OAuth 연결/콜백, 페이지 목록 조회, 가져오기 작업 생성/상태 조회
-- `lib/workspace-api.ts`: 노트 단건 조회 (Notion 가져오기 결과를 노트 데모에 반영하는 용도)
+- `lib/workspace-api.ts`: 노트 단건 조회, 사용자 워크스페이스 통계 조회(`/api/v1/workspace/me/stats`)
 - `lib/commerce-api.ts`: 플랜 목록/내 구독 조회, 결제 체크아웃 세션 생성, Toss 결제 승인 confirm, 구독 변경/취소
 
 새 프론트 API 코드는 화면 컴포넌트에 직접 fetch를 흩뿌리지 말고 `lib/*-api.ts` 계층에 먼저 둡니다.
@@ -185,6 +187,7 @@ BrainX/
 - Service-to-service 동기 호출은 `/internal/v1/**` 하위로 분리합니다.
 - 서비스 간 상태 전파는 가능하면 이벤트 기반으로 처리합니다.
 - Workspace-Service는 노트 원장의 authoritative source입니다.
+- 홈(`/home`)과 사용자 설정의 노트 통계 메뉴는 `Workspace-Service`의 `GET /api/v1/workspace/me/stats`와 노트/그래프 조회 응답을 조합해 실제 사용자 데이터만 보여줍니다.
 - AI, import, extension, MCP 등에서 노트를 변경할 때도 Workspace command API를 통해 처리합니다.
 - 토큰 사용량은 public command API로 직접 노출하지 않고 event 기반으로 집계합니다.
 - 서비스 책임이 겹치면 DB를 공유하지 말고 API/이벤트 계약을 먼저 정의합니다.
@@ -346,6 +349,7 @@ Docker Compose로 앱을 실행할 때는 앱 컨테이너에만 `POSTGRES_HOST=
 | Neo4j Bolt | 백엔드 서비스 접속 URI | `bolt://localhost:7687` |
 
 기본 로컬 계정은 `.env`의 `NEO4J_USERNAME`, `NEO4J_PASSWORD`로 관리합니다. Docker Compose 내부에서 Workspace-Service는 `bolt://neo4j:7687`로 접속하고, 로컬 IDE 실행 시에는 `bolt://localhost:7687`을 사용합니다.
+Workspace-Service는 노트 저장 시 본문 `[[...]]` 위키링크와 TipTap `data-wiki-link` span을 authoritative `workspace_note_links` 원장으로 정규화하고, Neo4j는 그 원장을 projection/read model로 반영합니다. `workspace_note_links.link_type`는 MANUAL/WIKI를 구분하는 필수 컬럼이며, 레거시 운영 DB는 `Workspace-Service/src/main/resources/db/migration/V20260702_01__repair_workspace_note_links_link_type.sql`가 기존 행을 백필한 뒤 Hibernate `NOT NULL` 스키마 업데이트가 지나가도록 맞췄습니다. 타깃 노트가 나중에 생성되거나 제목이 바뀌는 경우에도 기존 노트들을 다시 스캔해 wiki-link 관계를 재물질화합니다. `/api/v1/graph/sync`는 기존 노트 전체를 다시 스캔해 위키링크 원장을 백필한 뒤 Neo4j `LINKED` 관계를 재구성합니다.
 
 DB 접속 계정과 비밀번호는 루트 `.env`의 `POSTGRES_USER`, `POSTGRES_PASSWORD`를 모든 서비스가 공통으로 사용합니다. 각 서비스는 자기 `application.yml`에서 `.env`의 DB host/port와 서비스별 DB name을 조합해 JDBC URL을 만듭니다.
 
@@ -486,6 +490,7 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 | POST | `/api/v1/subscriptions/cancel` | 구독 취소 |
 
 자세한 결제 흐름과 DB 스키마는 `brainX_back/Commerce-Service/README.md`를 참고하세요.
+결제 팝업은 프런트의 월간/연간 토글 값을 `billingCycle`으로 체크아웃 세션 생성 API에 함께 전달해야 하며, 이 값이 빠지면 Toss SDK를 띄우기 전에 계약 검증 단계에서 실패합니다.
 
 ### Backend: Admin-Service API Contract
 
@@ -495,13 +500,17 @@ cd C:\Edu\Final\brainX_back\Commerce-Service
 관리자 프런트는 `/favicon.ico`를 자체 route로 제공하며, 사용자 상세 활동 내역은 같은 문구와 같은 시각이 겹쳐도 React key 충돌이 나지 않도록 렌더링 키를 보강했습니다.
 현재 로그인한 관리자의 이름/역할/이메일이 변경되면 관리자 관리 화면, 모니터링 레일의 관리자 목록, 왼쪽 사이드바 프로필, 로컬 세션 값이 함께 갱신되도록 맞췄습니다.
 관리자 프로필 사진은 로컬 저장소 값을 공통 상태로 올려, 오른쪽 프로필 레일에서 바꾸면 왼쪽 사이드바와 모니터링 레일 관리자 목록의 현재 로그인 관리자 아바타도 즉시 같이 바뀝니다.
+관리자 로그인 세션은 브라우저 `localStorage`와 same-site 쿠키에 함께 저장해 `admin.brainx.p-e.kr -> admin-frontend -> admin-service` 프록시 체인에서도 후속 `/api/v1/admin/**` 요청이 안정적으로 같은 액세스 토큰을 전달하도록 유지합니다.
+Admin-Service의 관리자 첫 화면 read model은 Commerce-Service billing read 실패를 그대로 화면 500으로 전파하지 않도록 완화했습니다. 구독/결제 내부 API가 일시적으로 깨지면 사용자 목록은 `free` fallback plan과 빈 결제/구독 목록, 0원 KPI로라도 렌더링해 운영자가 먼저 진입하고 장애를 확인할 수 있게 유지합니다. 다만 근본 원인은 Commerce-Service 운영 DB `commerce_subscriptions.billing_cycle`, `commerce_checkout_sessions.billing_cycle` 같은 원장 스키마를 엔티티와 맞추는 것입니다.
+Commerce-Service는 EC2에서 수동으로 넣었던 `commerce_subscriptions.billing_cycle`, `commerce_checkout_sessions.billing_cycle`, `commerce_checkout_sessions_status_check` 보정을 `src/main/resources/db/migration/V20260701_01__repair_billing_cycle_columns.sql`로 추적합니다. Spring SQL init가 이 migration SQL을 JPA schema update보다 먼저 적용해 오래된 운영 DB도 같은 스키마 보정을 따라가게 했습니다.
 모니터링 대시보드의 Kafka 큐 대기 Lag는 추정값이 아니라 Kafka consumer group의 현재 lag를 읽어오며, 일별 스냅샷에도 함께 저장해서 목록과 상세가 같은 상태를 보게 했습니다.
 Kafka lag 카드의 live 값은 별도 `/api/v1/admin/monitoring/kafka-lag`로 읽어 UI를 가볍게 유지하고, 브로커 연결 실패는 `연결 실패`, committed offset이 없으면 `미집계`, 실제 lag가 0일 때만 `정상`으로 보여 줍니다. 운영 알람 기준은 `1,000 msgs` 이상 경고, `5,000 msgs` 이상 심각으로 두었습니다.
 모니터링 서비스 체크에는 `Intelligence-Service`도 포함해 AI 응답/지연을 실제 health probe 기준으로 보여 줍니다.
-모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. 이 persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 대시보드 조회 자체는 더 이상 새 스냅샷을 쓰지 않습니다.
+모니터링 overview의 KPI delta는 직전 persisted snapshot 대비 증감률로 계산하고, 서비스 uptime은 최근 health snapshot 표본(최대 20건)에서 `DOWN`이 아닌 상태(`UP`, `DEGRADED`) 비율로 계산합니다. 프런트는 overview 응답의 KPI를 다시 mock으로 조립하지 않고 Admin-Service가 내려준 값을 그대로 사용합니다. persisted snapshot은 Admin-Service가 매일 `23:59`에 스케줄러로 저장하며, 오늘 날짜가 아직 `23:59 Asia/Seoul` 이전이면 관리자 화면은 persisted 이력만 보지 않고 live overview와 current-day monitoring overlay를 함께 새로고침해야 합니다.
 서비스 체크 상태는 `UP`(정상 응답 + 허용 지연), `DEGRADED`(비정상 응답 또는 지연 임계치 초과), `DOWN`(호출 실패) 3단계로 통일합니다.
 overview의 차트 응답은 숫자 배열만 내려주지 않고 `periodLabel`/`timezone`/`source`를 함께 내려, 프런트가 `최근 14일` 같은 고정 문구를 하드코딩하지 않고 Admin-Service overview 메타데이터를 그대로 사용합니다.
 overview의 실데이터 차트는 `Commerce-Service`의 `/internal/v1/billing/revenue-trend`와 `User-Service`의 `/internal/v1/users/growth-summary`를 source of truth로 사용합니다. 활성 사용자 추이는 User-Service의 Redis 로그인 세션 이력에서 최근 N일 일별 활성 사용자를 집계하고, 내부 시계열 API가 실패할 때만 Admin persisted snapshot 값으로 fallback합니다.
+`/api/v1/admin/monitoring/snapshots`는 과거 날짜에 대해서는 persisted row만 내려주고, 오늘 날짜의 persisted row가 아직 없으면 live KPI/active user/Kafka lag를 합성한 `persisted=false` current-day overlay row를 맨 앞에 함께 내려줍니다. `brainx-admin-next` 모니터링 화면은 이 목록과 overview를 주기적으로 다시 읽고, `새로고침` 버튼도 실제 API reload를 수행해야 합니다.
 관리자 모니터링 화면은 상단 선형 차트를 활성 사용자 추이로, 하단 막대 차트를 매출 분석으로 분리해 overview의 `activeUserTrend`와 `revenueTrend`를 각각 실데이터 그대로 사용합니다.
 overview summary는 결제/사용자 지표 외에 `Workspace-Service`의 `/internal/v1/workspace/monitoring/summary`를 통해 전체 노트 수, 총 저장량, 오늘 생성된 노트 수를 함께 내려줍니다. 관리자 모니터링의 Workspace 원장 카드와 일부 실시간 로그는 이 내부 API의 최근 활동 목록을 사용합니다.
 

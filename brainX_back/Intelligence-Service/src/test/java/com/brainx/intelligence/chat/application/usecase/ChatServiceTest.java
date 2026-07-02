@@ -40,6 +40,7 @@ import com.brainx.intelligence.shared.application.port.outbound.AiChatPort.AiCha
 import com.brainx.intelligence.shared.application.port.outbound.EntitlementPort;
 import com.brainx.intelligence.shared.application.port.outbound.TokenUsagePort;
 import com.brainx.intelligence.shared.application.service.AiTokenUsageCostEstimator;
+import com.brainx.intelligence.shared.application.service.AiUsageRecorder;
 
 import reactor.core.publisher.Flux;
 
@@ -57,6 +58,8 @@ class ChatServiceTest {
     private final FakeAiChatPort aiChatPort = new FakeAiChatPort();
     private final FakeTokenUsagePort tokenUsagePort = new FakeTokenUsagePort();
     private final FakeAiModelCatalogPort catalogPort = new FakeAiModelCatalogPort();
+    private final AiTokenUsageCostEstimator usageCostEstimator = new AiTokenUsageCostEstimator(catalogPort);
+    private final AiUsageRecorder aiUsageRecorder = new AiUsageRecorder(tokenUsagePort, usageCostEstimator);
     private final FakeChatEventPort chatEventPort = new FakeChatEventPort();
     private final ChatService service = new ChatService(
         properties,
@@ -65,8 +68,8 @@ class ChatServiceTest {
         retrievalPort,
         entitlementPort,
         aiChatPort,
-        tokenUsagePort,
-        new AiTokenUsageCostEstimator(catalogPort),
+        usageCostEstimator,
+        aiUsageRecorder,
         chatEventPort
     );
 
@@ -246,9 +249,12 @@ class ChatServiceTest {
         assertThat(chatEventPort.messageEvents).hasSize(1);
         assertThat(chatEventPort.messageEvents.getFirst().citationNoteIds()).containsExactly("note-1");
         assertThat(tokenUsagePort.records).hasSize(1);
-        assertThat(tokenUsagePort.records.getFirst().featureId()).isEqualTo("rag-chat");
-        assertThat(tokenUsagePort.records.getFirst().modelId()).isEqualTo("gpt-test");
-        assertThat(tokenUsagePort.records.getFirst().estimatedCost()).isNotNull();
+        TokenUsagePort.TokenUsageRecord usage = tokenUsagePort.records.getFirst();
+        assertThat(usage.featureId()).isEqualTo("rag-chat");
+        assertThat(usage.modelId()).isEqualTo("gpt-test");
+        assertThat(usage.causationId()).isEqualTo(assistantMessage.messageId());
+        assertThat(usage.inputTokens()).isEqualTo(assistantMessage.tokenUsage().inputTokens());
+        assertThat(usage.outputTokens()).isEqualTo(assistantMessage.tokenUsage().outputTokens());
     }
 
     @Test
@@ -535,7 +541,7 @@ class ChatServiceTest {
         assertThat(persistencePort.messages).hasSize(2);
         assertThat(persistencePort.messages.get(1).role()).isEqualTo(ChatRole.ASSISTANT);
         assertThat(chatEventPort.messageEvents).hasSize(1);
-        assertThat(tokenUsagePort.records).hasSize(1);
+        assertThat(tokenUsagePort.records).isEmpty();
     }
 
     @Test

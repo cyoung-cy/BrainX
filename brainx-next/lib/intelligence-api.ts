@@ -195,7 +195,7 @@ function buildHeaders(headers?: HeadersInit, options?: IntelligenceRequestOption
 
 export function semanticSearch(payload: SemanticSearchRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<SemanticSearchData>(
-    "/api/intelligence/intelligence/semantic-search",
+    "/api/v1/intelligence/semantic-search",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -208,7 +208,7 @@ export function createInlineAssistStream(
   payload: InlineAssistRequest,
   handlers?: IntelligenceStreamHandlers<InlineAssistDoneEvent>
 ) {
-  return streamRequest<InlineAssistDoneEvent>("/api/intelligence/ai/inline-assists", payload, handlers);
+  return streamRequest<InlineAssistDoneEvent>("/api/v1/ai/inline-assists", payload, handlers);
 }
 
 export function decideAiSuggestion(
@@ -217,7 +217,7 @@ export function decideAiSuggestion(
   options?: IntelligenceRequestOptions
 ) {
   return authedRequest<AiSuggestionDecisionData>(
-    `/api/intelligence/ai/suggestions/${encodeURIComponent(suggestionId)}/decision`,
+    `/api/v1/ai/suggestions/${encodeURIComponent(suggestionId)}/decision`,
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -228,7 +228,7 @@ export function decideAiSuggestion(
 
 export function createChatThread(payload: ChatThreadCreateRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<ChatThreadData>(
-    "/api/intelligence/ai/chat-threads",
+    "/api/v1/ai/chat-threads",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -250,7 +250,7 @@ export function listChatThreads(
   }
   const query = searchParams.toString();
   return authedRequest<ChatThreadListData>(
-    `/api/intelligence/ai/chat-threads${query ? `?${query}` : ""}`,
+    `/api/v1/ai/chat-threads${query ? `?${query}` : ""}`,
     undefined,
     options
   );
@@ -262,7 +262,7 @@ export function sendChatMessageStream(
   handlers?: IntelligenceStreamHandlers<ChatMessageDoneEvent>
 ) {
   return streamRequest<ChatMessageDoneEvent>(
-    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}/messages`,
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}/messages`,
     payload,
     handlers
   );
@@ -270,7 +270,7 @@ export function sendChatMessageStream(
 
 export function getChatThread(threadId: string, options?: IntelligenceRequestOptions) {
   return authedRequest<ChatThreadDetailData>(
-    `/api/intelligence/ai/chat-threads/${encodeURIComponent(threadId)}`,
+    `/api/v1/ai/chat-threads/${encodeURIComponent(threadId)}`,
     undefined,
     options
   );
@@ -278,7 +278,7 @@ export function getChatThread(threadId: string, options?: IntelligenceRequestOpt
 
 export function createBridgeConcepts(payload: BridgeConceptsRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<BridgeConceptsData>(
-    "/api/intelligence/ai/bridge-concepts",
+    "/api/v1/ai/bridge-concepts",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -289,7 +289,7 @@ export function createBridgeConcepts(payload: BridgeConceptsRequest, options?: I
 
 export function createLinkSuggestions(payload: LinkSuggestionsRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<LinkSuggestionsData>(
-    "/api/intelligence/ai/link-suggestions",
+    "/api/v1/ai/link-suggestions",
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -299,12 +299,12 @@ export function createLinkSuggestions(payload: LinkSuggestionsRequest, options?:
 }
 
 export function listAiModels(options?: IntelligenceRequestOptions) {
-  return authedRequest<AiModelsData>("/api/intelligence/ai/models", undefined, options);
+  return authedRequest<AiModelsData>("/api/v1/ai/models", undefined, options);
 }
 
 export function putAiModelSettings(payload: AiModelSettingsPutRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<AiModelSettingsData>(
-    "/api/intelligence/ai/model-settings",
+    "/api/v1/ai/model-settings",
     {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -315,19 +315,19 @@ export function putAiModelSettings(payload: AiModelSettingsPutRequest, options?:
 
 export function getNoteSummary(noteId: string, options?: IntelligenceRequestOptions) {
   return authedRequest<NoteSummaryData>(
-    `/api/intelligence/notes/${encodeURIComponent(noteId)}/summary`,
+    `/api/v1/notes/${encodeURIComponent(noteId)}/summary`,
     undefined,
     options
   );
 }
 
 export function getStyleProfile(options?: IntelligenceRequestOptions) {
-  return authedRequest<StyleProfileData>("/api/intelligence/users/me/style-profile", undefined, options);
+  return authedRequest<StyleProfileData>("/api/v1/users/me/style-profile", undefined, options);
 }
 
 export function putStyleProfile(payload: StyleProfilePutRequest, options?: IntelligenceRequestOptions) {
   return authedRequest<StyleProfileData>(
-    "/api/intelligence/users/me/style-profile",
+    "/api/v1/users/me/style-profile",
     {
       method: "PUT",
       body: JSON.stringify(payload),

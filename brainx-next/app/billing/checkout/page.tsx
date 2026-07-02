@@ -13,9 +13,15 @@ function CheckoutContent() {
 
   useEffect(() => {
     const planId = searchParams.get("planId");
+    const billingCycle = searchParams.get("billingCycle");
     if (!planId) {
       setFailed(true);
       setMessage("플랜 정보가 올바르지 않습니다. 이 창을 닫고 다시 시도해 주세요.");
+      return;
+    }
+    if (billingCycle !== "MONTHLY" && billingCycle !== "YEARLY") {
+      setFailed(true);
+      setMessage("결제 주기 정보가 올바르지 않습니다. 이 창을 닫고 다시 시도해 주세요.");
       return;
     }
 
@@ -26,6 +32,7 @@ function CheckoutContent() {
         const origin = window.location.origin;
         const session = await createCheckoutSession(
           planId,
+          billingCycle,
           `${origin}/billing/checkout/success`,
           `${origin}/billing/checkout/fail`
         );
