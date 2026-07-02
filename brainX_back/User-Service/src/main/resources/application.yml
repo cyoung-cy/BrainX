@@ -94,6 +94,9 @@ brainx:
   service-token: ${SERVICE_TOKEN:local-service-token}
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoint:
     health:
       probes:
