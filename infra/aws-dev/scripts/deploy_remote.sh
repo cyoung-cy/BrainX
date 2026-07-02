@@ -154,7 +154,8 @@ write_env() {
 
 for key in \
   GATEWAY_SERVICE_TAG USER_SERVICE_TAG WORKSPACE_SERVICE_TAG INGESTION_SERVICE_TAG \
-  COMMERCE_SERVICE_TAG ADMIN_SERVICE_TAG INTELLIGENCE_SERVICE_TAG FRONTEND_TAG ADMIN_FRONTEND_TAG; do
+  COMMERCE_SERVICE_TAG ADMIN_SERVICE_TAG INTELLIGENCE_SERVICE_TAG MCP_SERVICE_TAG \
+  FRONTEND_TAG ADMIN_FRONTEND_TAG; do
   ensure_tag "$key"
 done
 
@@ -174,6 +175,7 @@ for service in $services; do
     commerce-service) set_tag COMMERCE_SERVICE_TAG "$IMAGE_TAG" ;;
     admin-service) set_tag ADMIN_SERVICE_TAG "$IMAGE_TAG" ;;
     intelligence-service) set_tag INTELLIGENCE_SERVICE_TAG "$IMAGE_TAG" ;;
+    mcp-service) set_tag MCP_SERVICE_TAG "$IMAGE_TAG" ;;
     frontend) set_tag FRONTEND_TAG "$IMAGE_TAG" ;;
     admin-frontend) set_tag ADMIN_FRONTEND_TAG "$IMAGE_TAG" ;;
     caddy) ;;
@@ -248,7 +250,7 @@ if ! command -v psql >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-client
 fi
 
-for db_name in brainx_user brainx_workspace brainx_ingestion brainx_commerce brainx_admin brainx_intelligence; do
+for db_name in brainx_user brainx_workspace brainx_ingestion brainx_commerce brainx_admin brainx_intelligence brainx_mcp; do
   create_database "$db_name"
 done
 

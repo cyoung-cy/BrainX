@@ -94,10 +94,22 @@ spring:
               filters:
                 - RewritePath=/internal/v1/health/intelligence,/actuator/health
 
+            - id: internal-mcp-health
+              uri: ${MCP_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - Path=/internal/v1/health/mcp
+              filters:
+                - RewritePath=/internal/v1/health/mcp,/actuator/health
+
             - id: user-service-auth
               uri: ${USER_SERVICE_URL:http://localhost:8080}
               predicates:
                 - Path=/api/v1/auth/**
+
+            - id: mcp-service
+              uri: ${MCP_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - Path=/api/v1/mcp/**,/mcp,/mcp/**
 
             - id: user-service-users
               uri: ${USER_SERVICE_URL:http://localhost:8080}
@@ -149,3 +161,6 @@ brainx:
         - /api/v1/plans/**
         - /api/v1/assets/*/file
         - /api/v1/assets/proxy-image
+        - /api/v1/mcp/**
+        - /mcp
+        - /mcp/**

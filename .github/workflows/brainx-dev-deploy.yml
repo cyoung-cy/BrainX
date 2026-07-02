@@ -21,6 +21,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: brainx-dev-deploy
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
@@ -148,6 +152,9 @@ jobs:
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push image
         shell: bash
         env:
@@ -185,6 +192,10 @@ jobs:
               CONTEXT="brainX_back/Intelligence-Service"
               DOCKERFILE="infra/aws-dev/dockerfiles/intelligence-service.Dockerfile"
               ;;
+            mcp-service)
+              CONTEXT="brainX_back/Mcp-Service"
+              DOCKERFILE="brainX_back/Mcp-Service/Dockerfile"
+              ;;
             frontend)
               CONTEXT="brainx-next"
               DOCKERFILE="infra/aws-dev/dockerfiles/brainx-next.Dockerfile"
@@ -214,15 +225,18 @@ jobs:
             )
           fi
 
-          docker build \
+          CACHE_REF="$IMAGE_URI:buildcache"
+
+          docker buildx build \
+            --progress=plain \
+            --push \
             -f "$DOCKERFILE" \
             -t "$IMAGE_URI:$IMAGE_TAG" \
             -t "$IMAGE_URI:dev-latest" \
+            --cache-from "type=registry,ref=$CACHE_REF" \
+            --cache-to "type=registry,ref=$CACHE_REF,mode=max,image-manifest=true,oci-mediatypes=true" \
             "${BUILD_ARGS[@]}" \
             "$CONTEXT"
-
-          docker push "$IMAGE_URI:$IMAGE_TAG"
-          docker push "$IMAGE_URI:dev-latest"
 
   deploy:
     name: Deploy changed services
