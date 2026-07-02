@@ -20,16 +20,19 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
 
-brainx:
-  jwt:
-    secret: test_ingestion_secret_that_is_long_enough_for_hmac
+jwt:
+  secret: test_ingestion_secret_that_is_long_enough_for_hmac
 
 notion:
   client-id: test-notion-client-id
   client-secret: test-notion-client-secret
   token-url: https://api.notion.com/v1/oauth/token
+  oauth-url: https://api.notion.com/v1/oauth/authorize
 
 asset:
   max-size-bytes: 5368709120
   storage:
     base-path: /tmp/brainx-test-assets
+
+cdn:
+  base-url: https://cdn.brainx.com

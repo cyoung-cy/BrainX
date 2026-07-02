@@ -19,7 +19,7 @@ import org.springframework.web.client.RestTemplate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.BDDMockito.given;
 
 /**
  * [시스템 테스트] 에셋 업로드 전체 흐름 — 세션 생성 · 바이너리 업로드 · 완료 E2E 검증
@@ -47,8 +47,9 @@ class AssetUploadSystemTest {
     @BeforeEach
     void setUp() throws Exception {
         assetRepository.deleteAll();
-        doNothing().when(storageService).store(any(), any());
-        doNothing().when(storageService).delete(any());
+        given(storageService.resolvePath(any(), any()))
+                .willReturn(java.nio.file.Paths.get("test-asset-storage", "dummy"));
+        given(storageService.store(any(), any())).willReturn(1024L);
     }
 
     private AssetUploadSessionCreateRequest sessionRequest(String fileName, String contentType, long sizeBytes) {
@@ -75,9 +76,9 @@ class AssetUploadSystemTest {
                 sessionRequest("테스트_이미지.png", "image/png", 1024L * 1024L));
 
         // then
-        assertThat(response.getAssetId()).isNotBlank();
+        assertThat(response.getUploadSessionId()).isNotBlank();
         assertThat(response.getUploadUrl()).isNotBlank();
-        assertThat(assetRepository.findById(response.getAssetId())).isPresent();
+        assertThat(assetRepository.findById(response.getUploadSessionId())).isPresent();
     }
 
     @Test
@@ -91,15 +92,15 @@ class AssetUploadSystemTest {
         // 바이너리 업로드
         MockMultipartFile file = new MockMultipartFile(
                 "file", "document.pdf", "application/pdf", new byte[1024]);
-        assetService.uploadBinary(USER_ID, session.getAssetId(), file);
+        assetService.uploadBinary(USER_ID, session.getUploadSessionId(), file);
 
         // when — 완료 처리
         AssetUploadCompleteResponse completed = assetService.completeUpload(USER_ID,
-                session.getAssetId(), completeRequest("sha256-dummy-checksum"));
+                session.getUploadSessionId(), completeRequest("sha256-dummy-checksum"));
 
         // then
-        assertThat(completed.getAssetId()).isEqualTo(session.getAssetId());
-        assertThat(completed.getDownloadUrl()).isNotBlank();
+        assertThat(completed.getAssetId()).isEqualTo(session.getUploadSessionId());
+        assertThat(completed.getStatus()).isEqualTo("UPLOADED");
     }
 
     @Test
@@ -113,7 +114,7 @@ class AssetUploadSystemTest {
         // when / then
         assertThatThrownBy(() -> assetService.createUploadSession(USER_ID, req))
                 .isInstanceOf(BrainXException.class)
-                .satisfies(ex -> assertThat(((BrainXException) ex).getCode())
+                .satisfies(ex -> assertThat(((BrainXException) ex).getErrorCode())
                         .isEqualTo("FILE_TOO_LARGE"));
     }
 
@@ -130,12 +131,12 @@ class AssetUploadSystemTest {
         // 바이너리 업로드 (소유자가 수행)
         MockMultipartFile file = new MockMultipartFile("file", "private.docx",
                 "application/octet-stream", new byte[100]);
-        assetService.uploadBinary(USER_ID, session.getAssetId(), file);
+        assetService.uploadBinary(USER_ID, session.getUploadSessionId(), file);
 
         // when / then — user-B가 완료 시도 → 예외
         assertThatThrownBy(() -> assetService.completeUpload(
                 "different-user-999",
-                session.getAssetId(),
+                session.getUploadSessionId(),
                 completeRequest("sha256-checksum-123")))
                 .isInstanceOf(BrainXException.class);
     }

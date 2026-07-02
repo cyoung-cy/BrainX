@@ -21,18 +21,12 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 
 /**
- * [ING-01] 단위 테스트: Notion OAuth 토큰 교환 응답 body=null 시 NPE → BrainXException 래핑 버그
+ * [ING-01] 단위 테스트: Notion OAuth 토큰 교환 응답 body=null 또는 access_token 누락 시 처리 확인
  *
- * NotionApiService.java:61-66
- *   Map<String, Object> data = res.getBody();  // null 가능
- *   return new NotionTokenResult(
- *       (String) data.get("access_token"),     // NPE
- *       ...
- *
- * 실제 동작: NPE는 catch (Exception e) 블록에서 잡혀 BrainXException(NOTION_TOKEN_ERROR)으로 변환됨
- * → 근본 원인(NPE)을 숨기므로 여전히 버그임 — null 가드가 필요
- *
- * 수정 방향: data == null 시 명시적 예외 처리 또는 Optional 사용
+ * NotionApiService.exchangeToken 수정 후 동작:
+ *   응답 바디가 null이거나 access_token이 없으면 명시적으로 BrainXException(NOTION_TOKEN_ERROR)을 던진다.
+ *   (수정 전에는 NPE가 catch(Exception e)에서 잡혀 같은 예외로 변환되긴 했지만, 예외 클래스명·메시지가
+ *   그대로 노출되고 null 가드가 없었다.)
  */
 @ExtendWith(MockitoExtension.class)
 class NotionApiServiceTokenNullTest {
@@ -52,7 +46,7 @@ class NotionApiServiceTokenNullTest {
     }
 
     @Test
-    @DisplayName("[ING-01] Notion 토큰 교환 응답 body=null → BrainXException(NOTION_TOKEN_ERROR) — NPE 래핑 확인")
+    @DisplayName("[ING-01] Notion 토큰 교환 응답 body=null → BrainXException(NOTION_TOKEN_ERROR)")
     void exchangeToken_whenResponseBodyIsNull_throwsBrainXException() {
         // given — null body 응답
         @SuppressWarnings("unchecked")
@@ -60,17 +54,16 @@ class NotionApiServiceTokenNullTest {
         given(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))
                 .willReturn(nullBodyResponse);
 
-        // when / then — NPE가 catch (Exception e)에서 잡혀 BrainXException으로 래핑됨
+        // when / then — 명시적 null 가드에서 BrainXException(NOTION_TOKEN_ERROR)을 던짐
         assertThatThrownBy(() -> notionApiService.exchangeToken("auth-code", "http://localhost/callback"))
                 .isInstanceOf(BrainXException.class)
-                .satisfies(ex -> assertThat(((BrainXException) ex).getCode())
+                .satisfies(ex -> assertThat(((BrainXException) ex).getErrorCode())
                         .isEqualTo("NOTION_TOKEN_ERROR"));
-        // 수정 후에는 null 가드를 추가하고 더 명확한 오류 메시지를 제공해야 함
     }
 
     @Test
-    @DisplayName("[ING-01] Notion 응답에 access_token 키 누락 시 null accessToken 반환 — 다운스트림 NPE 위험")
-    void exchangeToken_whenAccessTokenMissing_returnsNullAccessToken() {
+    @DisplayName("[ING-01] Notion 응답에 access_token 키 누락 시 BrainXException(NOTION_TOKEN_ERROR)")
+    void exchangeToken_whenAccessTokenMissing_throwsBrainXException() {
         // given — body는 있지만 access_token 없음
         @SuppressWarnings("unchecked")
         ResponseEntity<Map> response = new ResponseEntity<>(
@@ -80,12 +73,11 @@ class NotionApiServiceTokenNullTest {
         given(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))
                 .willReturn(response);
 
-        // when
-        var result = notionApiService.exchangeToken("auth-code", "http://localhost/callback");
-
-        // then — access_token이 null인 상태로 반환 → 사용 시 NPE 유발
-        assertThat(result.getAccessToken()).isNull();
-        assertThat(result.getWorkspaceId()).isEqualTo("ws-123");
+        // when / then — access_token이 없으면 null accessToken을 반환하는 대신 명시적으로 예외를 던짐
+        assertThatThrownBy(() -> notionApiService.exchangeToken("auth-code", "http://localhost/callback"))
+                .isInstanceOf(BrainXException.class)
+                .satisfies(ex -> assertThat(((BrainXException) ex).getErrorCode())
+                        .isEqualTo("NOTION_TOKEN_ERROR"));
     }
 
     @Test
