@@ -10,5 +10,6 @@ public interface NoteLinkRepository extends JpaRepository<NoteLink, String> {
     List<NoteLink> findByUserId(String userId);
     List<NoteLink> findBySourceNoteIdAndUserId(String sourceNoteId, String userId);
     List<NoteLink> findByTargetNoteIdAndUserId(String targetNoteId, String userId);
+    Optional<NoteLink> findFirstByUserIdAndSourceNoteIdAndTargetNoteId(String userId, String sourceNoteId, String targetNoteId);
     Optional<NoteLink> findByLinkIdAndSourceNoteIdAndUserId(String linkId, String sourceNoteId, String userId);
 }
