@@ -32,6 +32,8 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.5'
+    runtimeOnly 'io.github.mweirauch:micrometer-jvm-extras:0.2.2'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'org.apache.pdfbox:pdfbox:2.0.31'
     implementation 'org.apache.poi:poi-ooxml:5.2.5'

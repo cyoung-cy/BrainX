@@ -25,3 +25,27 @@ scrape_configs:
     static_configs:
       - targets:
           - workspace-service:8082
+
+  - job_name: admin-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - admin-service:8085
+
+  - job_name: commerce-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - commerce-service:8084
+
+  - job_name: ingestion-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - ingestion-service:8083
+
+  - job_name: intelligence-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - intelligence-service:8086
