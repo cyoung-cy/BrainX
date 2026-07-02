@@ -2647,10 +2647,15 @@ function CustomBubbleMenu({
     }
     const rect = menuRef.current.getBoundingClientRect();
     const margin = 8;
+    // 선택 영역과 툴바 사이 간격 — 이전에는 간격이 0이라 툴바가 선택 영역 바로 위 경계에 딱
+    // 붙어 겹쳐 보였다. anchor.top/bottom은 rangeToAnchorRect에서 이미 드래그 방향과 무관하게
+    // (문서 순서 기준으로) 정규화돼 있으므로, 순방향/역방향 드래그 모두 이 값 하나로 동일하게
+    // 처리된다.
+    const gap = 8;
     let left = anchor.left - rect.width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
-      let top = anchor.top - rect.height + 0;
-    if (top < margin) top = anchor.bottom + 10; // 위쪽 공간이 부족하면 선택 영역 아래로
+    let top = anchor.top - rect.height - gap;
+    if (top < margin) top = anchor.bottom + gap; // 위쪽 공간이 부족할 때만 선택 영역 아래로
     setPos({ left, top });
   }, [anchor]);
 
