@@ -174,7 +174,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"User-Service\"}"
+          "expr": "process_files_open_files{application=\"User-Service\"} or process_open_fds{application=\"User-Service\"}"
         }
       ]
     },
@@ -330,7 +330,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"Gateway-Service\"}"
+          "expr": "process_files_open_files{application=\"Gateway-Service\"} or process_open_fds{application=\"Gateway-Service\"}"
         }
       ]
     },
@@ -486,7 +486,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"Workspace-Service\"}"
+          "expr": "process_files_open_files{application=\"Workspace-Service\"} or process_open_fds{application=\"Workspace-Service\"}"
         }
       ]
     },
@@ -642,7 +642,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"Admin-Service\"}"
+          "expr": "process_files_open_files{application=\"Admin-Service\"} or process_open_fds{application=\"Admin-Service\"}"
         }
       ]
     },
@@ -798,7 +798,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"Commerce-Service\"}"
+          "expr": "process_files_open_files{application=\"Commerce-Service\"} or process_open_fds{application=\"Commerce-Service\"}"
         }
       ]
     },
@@ -954,7 +954,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"ingestion-service\"}"
+          "expr": "process_files_open_files{application=\"ingestion-service\"} or process_open_fds{application=\"ingestion-service\"}"
         }
       ]
     },
@@ -1110,7 +1110,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "process_files_open_files{application=\"intelligence-service\"}"
+          "expr": "process_files_open_files{application=\"intelligence-service\"} or process_open_fds{application=\"intelligence-service\"}"
         }
       ]
     }
