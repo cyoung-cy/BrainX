@@ -223,6 +223,9 @@ spring:
                     fallbackUri: forward:/fallback/admin
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoint:
     health:
       probes:

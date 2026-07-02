@@ -253,6 +253,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       SERVICE_TOKEN: ${SERVICE_TOKEN}
       GATEWAY_SERVICE_URL: ${GATEWAY_SERVICE_URL:-http://gateway-service:8088}
+      USER_SERVICE_URL: http://user-service:8080
+      COMMERCE_SERVICE_URL: http://commerce-service:8084
+      WORKSPACE_SERVICE_URL: http://workspace-service:8082
+      INGESTION_SERVICE_URL: http://ingestion-service:8083
+      INTELLIGENCE_SERVICE_URL: http://intelligence-service:8086
       SEED_ADMIN_LOGIN_ID: ${SEED_ADMIN_LOGIN_ID:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-BrainX Admin}
